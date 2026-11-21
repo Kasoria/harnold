@@ -1,3 +1,4 @@
+import { pluginStore } from "./plugins.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -292,7 +293,18 @@ function discoverSkills(scope: SkillScope, project: Project | null): Skill[] {
 function skillOptionFor(project: Project): string[] | "all" {
   const disabledNames = disabledSkillNames();
   if (!disabledNames.size) return "all";
-  return skillStore.list(project).filter((skill) => skill.enabled).map((skill) => skill.name);
+  // A list hides everything unlisted – so the skills of enabled plugins (`plugin:skill`) are listed too.
+  const pluginSkillNames = pluginStore
+    .list()
+    .filter((plugin) => plugin.enabled)
+    .flatMap((plugin) => {
+      try {
+        return fs.readdirSync(path.join(plugin.path, "skills"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `${plugin.name}:${entry.name}`);
+      } catch {
+        return [];
+      }
+    });
+  return [...skillStore.list(project).filter((skill) => skill.enabled).map((skill) => skill.name), ...pluginSkillNames];
 }
 
 function resolveSkillFile(scope: SkillScope, project: Project | null, skillDirectory: string): string {

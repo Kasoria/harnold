@@ -19,8 +19,9 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 | Workspace | Rest | Canvas / Preview / Code / Dateien |
 
 ### Sidebar
-- Oben: **Heute** – Startansicht bei frischem Öffnen. Nur: wartende Freigaben (direkt erlauben/ablehnen), laufende Sessions, Task-Ergebnisse der letzten 24 h, 3 Sessions zum Weitermachen. Leere Bereiche entfallen.
-- Baum: **Projekt** (farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
+- Ganz oben: **Quick Chat** – Chat ohne Projekt (eingebautes Projekt „Quick Chats“, erscheint als eigene Gruppe über den Projekten; Auto-Löschen nach X Tagen in Einstellungen › Allgemein).
+- Darunter: **Heute** – Startansicht bei frischem Öffnen. Nur: wartende Freigaben (direkt erlauben/ablehnen), laufende Sessions, Task-Ergebnisse der letzten 24 h, 3 Sessions zum Weitermachen. Leere Bereiche entfallen.
+- Baum: **Projekt** (Emoji-Icon oder farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
 - Feature-Navigation: Heute, Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
@@ -42,7 +43,8 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Codeblöcke und Antworten mit Kopieren-Button (bei Hover).
 - Systemereignisse (verschoben, komprimiert) als schmale Trennlinie mit Text.
 - Slash-Commands: Popup beim Tippen von „/“ (Harnold-Commands + die des Agents).
-- Destruktive Aktionen immer mit Bestätigungsdialog (`confirmAction`), nie `window.confirm`.
+- Destruktive Aktionen immer mit Bestätigungsdialog (`confirmAction`), nie `window.confirm`. Aktion links, Abbrechen rechts, Fokus auf der Aktion (Enter bestätigt, Esc bricht ab, ←/→ wechselt).
+- Gesendete Nachricht bearbeiten → neue Version der Unterhaltung ab dort; Umschalter „‹ 1/2 ›“ an der Nachricht. Sidebar zeigt je Unterhaltung eine Zeile (öffnet die zuletzt genutzte Version).
 - Composer: Anhang, Textfeld („… Datei oder Screenshot einfügen/ablegen“), Mikrofon, runder Senden-Button. Darunter: Modell, Permission-Modus, Kontext-Ring.
 
 ### Workspace
@@ -56,7 +58,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 
 - Neutrales Grau, weiße Flächen, feine Rahmen (1px, sehr hell), Radius 8–10px.
 - Schrift: System/Inter, 13–14px; Sekundärtext gedämpftes Grau.
-- Farbe nur für Status, Projekt-Avatare und primäre Aktion.
+- Farbe nur für Status, Projekt-Avatare und Akzent (Blau: primäre Aktion, Auswahl, Fokus); Rot nur destruktiv.
 - Icons 16px, Linienstil.
 - Dicht, aber mit Luft: Zeilenhöhe Sidebar ~26px.
 

@@ -1,4 +1,5 @@
-import { Blocks, Brain, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Trash2 } from "lucide-react";
+import { Blocks, Brain, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquare, MessageSquarePlus, MessagesSquare, Moon, Palette, Plus, Settings, Smile, Sun, Trash2 } from "lucide-react";
+import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session } from "@/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,10 +17,13 @@ type AppSidebarProps = {
   onToggleProject: (projectId: string, expanded: boolean) => void;
   activeSessionId: string | null;
   sessionStatusFor: (sessionId: string) => SessionStatus;
+  /** Opens a conversation (its top session; the app picks the last used version). */
   onSelectSession: (projectId: string, sessionId: string) => void;
   onCreateSession: (projectId: string) => void;
   onDeleteSession: (session: Session) => void;
   onNewProject: () => void;
+  onNewQuickChat: () => void;
+  onEditProjectIcon: (project: Project) => void;
   activeScreen: ScreenName;
   onOpenScreen: (screen: ScreenName) => void;
   darkMode: boolean;
@@ -66,7 +70,7 @@ function HoverAction(props: { label: string; onClick: () => void; children: Reac
               props.onClick();
             }
           }}
-          className="ml-auto flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100"
+          className="flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100"
         >
           {props.children}
         </span>
@@ -103,14 +107,84 @@ function EnvironmentSwitcher(props: Pick<AppSidebarProps, "environments" | "acti
   );
 }
 
+/** Status of a conversation: the most urgent state among its versions. */
+function conversationStatus(members: Session[], sessionStatusFor: (sessionId: string) => SessionStatus): SessionStatus {
+  const statuses = members.map((member) => sessionStatusFor(member.id));
+  return (["waiting", "running", "error"] as const).find((status) => statuses.includes(status)) ?? "idle";
+}
+
+function ProjectTreeItem({ project, ...props }: AppSidebarProps & { project: Project }) {
+  const expanded = props.expandedProjectIds.has(project.id);
+  const projectSessions = props.sessionsByProjectId[project.id] ?? [];
+  // Versions created by editing a message appear once, as their conversation.
+  const conversations = projectSessions.filter((session) => !session.forkOriginSessionId);
+  const activeConversationId = props.activeSessionId ? conversationRootId(props.activeSessionId, projectSessions) : null;
+  const isQuick = project.kind === "quick";
+  return (
+    <li>
+      <Collapsible open={expanded} onOpenChange={(open) => props.onToggleProject(project.id, open)}>
+        <CollapsibleTrigger className={cn(rowClassName, "font-medium")} title={isQuick ? undefined : project.path}>
+          {isQuick ? <MessageSquare className="size-4 text-muted-foreground" /> : <ProjectAvatar name={project.name} icon={project.icon} />}
+          <span className="truncate">{project.name}</span>
+          <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", expanded && "rotate-90")} />
+          <span className="ml-auto flex items-center gap-0.5">
+            {!isQuick && (
+              <HoverAction label="Icon ändern" onClick={() => props.onEditProjectIcon(project)}>
+                <Smile className="size-3.5" />
+              </HoverAction>
+            )}
+            <HoverAction label={isQuick ? "Neuer Quick Chat" : "Neue Session"} onClick={() => (isQuick ? props.onNewQuickChat() : props.onCreateSession(project.id))}>
+              <Plus className="size-3.5" />
+            </HoverAction>
+          </span>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="collapsible-animated">
+          <ul className="space-y-0.5 py-0.5 pl-3">
+            {conversations.length === 0 && (
+              <li>
+                <button className={cn(rowClassName, "text-muted-foreground")} onClick={() => props.onCreateSession(project.id)}>
+                  <Plus className="size-3.5" /> Neue Session
+                </button>
+              </li>
+            )}
+            {conversations.map((session) => (
+              <li key={session.id}>
+                <button
+                  className={cn(rowClassName, props.activeScreen === "workspace" && session.id === activeConversationId && activeRowClassName)}
+                  onClick={() => props.onSelectSession(project.id, session.id)}
+                >
+                  <StatusDot status={conversationStatus(conversationMembers(session.id, projectSessions), props.sessionStatusFor)} className="mx-1" />
+                  <span className="truncate">{session.title}</span>
+                  <span className="ml-auto flex">
+                    <HoverAction label="Session löschen" onClick={() => props.onDeleteSession(session)}>
+                      <Trash2 className="size-3.5" />
+                    </HoverAction>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
+    </li>
+  );
+}
+
 export function AppSidebar(props: AppSidebarProps) {
   const activeEnvironment = props.environments.find((environment) => environment.id === props.activeEnvironmentId) ?? null;
-  const visibleProjects = activeEnvironment ? props.projects.filter((project) => activeEnvironment.projectIds.includes(project.id)) : props.projects;
+  const quickChatProject = props.projects.find((project) => project.kind === "quick") ?? null;
+  const regularProjects = props.projects.filter((project) => project.kind !== "quick");
+  const visibleProjects = activeEnvironment ? regularProjects.filter((project) => activeEnvironment.projectIds.includes(project.id)) : regularProjects;
+  const hasQuickChats = Boolean(quickChatProject && (props.sessionsByProjectId[quickChatProject.id] ?? []).length > 0);
   return (
     <aside className="flex h-full flex-col bg-sidebar">
       <div className="flex h-12 shrink-0 items-center px-4 text-[15px] font-semibold tracking-tight">Harnold</div>
 
       <nav className="space-y-0.5 px-2 pb-2">
+        <button className={rowClassName} onClick={props.onNewQuickChat}>
+          <MessageSquarePlus className="size-4 text-muted-foreground" />
+          Quick Chat
+        </button>
         {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
           <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>
             <ScreenIcon className="size-4 text-muted-foreground" />
@@ -133,6 +207,11 @@ export function AppSidebar(props: AppSidebarProps) {
             onOpenScreen={props.onOpenScreen}
           />
         )}
+        {quickChatProject && hasQuickChats && (
+          <ul className="mb-1">
+            <ProjectTreeItem project={quickChatProject} {...props} />
+          </ul>
+        )}
         <div className="flex items-center justify-between px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Projekte
           <Tooltip>
@@ -154,51 +233,9 @@ export function AppSidebar(props: AppSidebarProps) {
         )}
 
         <ul className="space-y-0.5">
-          {visibleProjects.map((project) => {
-            const expanded = props.expandedProjectIds.has(project.id);
-            const projectSessions = props.sessionsByProjectId[project.id] ?? [];
-            return (
-              <li key={project.id}>
-                <Collapsible open={expanded} onOpenChange={(open) => props.onToggleProject(project.id, open)}>
-                  <CollapsibleTrigger className={cn(rowClassName, "font-medium")} title={project.path}>
-                    <ProjectAvatar name={project.name} />
-                    <span className="truncate">{project.name}</span>
-                    <ChevronRight
-                      className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", expanded && "rotate-90")}
-                    />
-                    <HoverAction label="Neue Session" onClick={() => props.onCreateSession(project.id)}>
-                      <Plus className="size-3.5" />
-                    </HoverAction>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="collapsible-animated">
-                    <ul className="space-y-0.5 py-0.5 pl-3">
-                      {projectSessions.length === 0 && (
-                        <li>
-                          <button className={cn(rowClassName, "text-muted-foreground")} onClick={() => props.onCreateSession(project.id)}>
-                            <Plus className="size-3.5" /> Neue Session
-                          </button>
-                        </li>
-                      )}
-                      {projectSessions.map((session) => (
-                        <li key={session.id}>
-                          <button
-                            className={cn(rowClassName, props.activeScreen === "workspace" && session.id === props.activeSessionId && activeRowClassName)}
-                            onClick={() => props.onSelectSession(project.id, session.id)}
-                          >
-                            <StatusDot status={props.sessionStatusFor(session.id)} className="mx-1" />
-                            <span className="truncate">{session.title}</span>
-                            <HoverAction label="Session löschen" onClick={() => props.onDeleteSession(session)}>
-                              <Trash2 className="size-3.5" />
-                            </HoverAction>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </CollapsibleContent>
-                </Collapsible>
-              </li>
-            );
-          })}
+          {visibleProjects.map((project) => (
+            <ProjectTreeItem key={project.id} project={project} {...props} />
+          ))}
         </ul>
       </div>
 

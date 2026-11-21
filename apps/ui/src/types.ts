@@ -1,5 +1,18 @@
-export type Project = { id: string; name: string; path: string; createdAt: number };
-export type Session = { id: string; projectId: string; title: string; updatedAt: number; running?: boolean };
+/** kind "quick" = built-in home of chats without a project. */
+export type Project = { id: string; name: string; path: string; icon: string | null; kind: "project" | "quick"; createdAt: number };
+export type Session = {
+  id: string;
+  projectId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  running?: boolean;
+  /** Set on a version created by editing a message: the session/message it is an alternative to. */
+  forkOriginSessionId: string | null;
+  forkOriginItemId: string | null;
+  /** The edited user message in this version. */
+  forkItemId: string | null;
+};
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
 
 export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
@@ -151,6 +164,9 @@ export type McpServer = Omit<McpServerInput, "env" | "headers"> & {
 };
 export type SkillScope = "user" | "project";
 export type Skill = { name: string; description: string; scope: SkillScope; path: string; enabled: boolean };
+export type PluginSource = "claude-code" | "claude-desktop" | "folder";
+export type PluginInfo = { id: string; name: string; description: string; version: string | null; source: PluginSource; path: string; enabled: boolean };
+export type QuickChatSettings = { autoDeleteDays: number | null };
 
 export type TokenType = "color" | "dimension" | "fontFamily" | "fontWeight" | "number" | "shadow" | "duration" | "other";
 export type FlatToken = { path: string; cssVariable: string; value: string; resolvedValue: string; type: TokenType };

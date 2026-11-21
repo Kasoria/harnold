@@ -8,7 +8,15 @@ function hueForName(name: string): number {
   return avatarHues[Math.abs(hash) % avatarHues.length];
 }
 
-export function ProjectAvatar({ name, className }: { name: string; className?: string }) {
+/** Project's own emoji/icon if set, else a coloured letter. */
+export function ProjectAvatar({ name, icon, className }: { name: string; icon?: string | null; className?: string }) {
+  if (icon) {
+    return (
+      <span className={cn("inline-flex size-5 shrink-0 items-center justify-center text-[15px] leading-none", className)} aria-hidden>
+        {icon}
+      </span>
+    );
+  }
   const hue = hueForName(name);
   return (
     <span

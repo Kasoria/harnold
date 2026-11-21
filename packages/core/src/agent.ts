@@ -11,6 +11,7 @@ import { createMediaServer, mediaInstructions, mediaServerName } from "./media-t
 import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
 import { agentCommands } from "./slash-commands.ts";
+import { agentPluginOptions } from "./plugins.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
@@ -36,10 +37,14 @@ const pendingPermissions = new Map<string, PendingPermission>();
 /** Actions that must wait until a session's turn is over (e.g. moving it to another project). */
 const afterTurnActions = new Map<string, (() => void)[]>();
 
-function persistAndPublish(sessionId: string, payload: ChatItemPayload): void {
+function persistAndPublish(sessionId: string, payload: ChatItemPayload) {
   const chatItem = chatItemStore.append(sessionId, payload);
   eventHub.publish({ type: "chat_item", sessionId, chatItem });
+  return chatItem;
 }
+
+/** Per-turn bookkeeping: the last main-thread transcript entry is the fork point for edits of later messages. */
+type TurnTracking = { lastChainUuid?: string };
 
 function stringifyToolResultContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -52,10 +57,13 @@ function stringifyToolResultContent(content: unknown): string {
 }
 
 /** Maps one SDK message onto Harnold chat items / live events. */
-function handleAgentMessage(sessionId: string, projectId: string, agentMessage: SDKMessage): void {
+function handleAgentMessage(sessionId: string, projectId: string, agentMessage: SDKMessage, turnTracking: TurnTracking): void {
+  if ((agentMessage.type === "assistant" || agentMessage.type === "user") && !agentMessage.parent_tool_use_id && agentMessage.uuid) {
+    turnTracking.lastChainUuid = agentMessage.uuid;
+  }
   switch (agentMessage.type) {
     case "system":
-      if (agentMessage.subtype === "init") sessionStore.update(sessionId, { agentSessionId: agentMessage.session_id });
+      if (agentMessage.subtype === "init") sessionStore.update(sessionId, { agentSessionId: agentMessage.session_id, pendingFork: null });
       else if (agentMessage.subtype === "compact_boundary") {
         const { pre_tokens: tokensBefore, post_tokens: tokensAfter } = agentMessage.compact_metadata;
         const tokenText = (tokenCount: number) => `${Math.round(tokenCount / 1000)}k`;
@@ -113,6 +121,8 @@ function handleAgentMessage(sessionId: string, projectId: string, agentMessage: 
         costUsd: agentMessage.total_cost_usd,
         durationMs: agentMessage.duration_ms,
         errorText: agentMessage.subtype === "success" ? undefined : agentMessage.errors.join("\n"),
+        agentSessionId: sessionStore.get(sessionId)?.agentSessionId ?? undefined,
+        lastChainUuid: turnTracking.lastChainUuid,
       });
       return;
     default:
@@ -137,7 +147,11 @@ export const agentRuntime = {
       sessionStore.update(sessionId, { title: text.slice(0, 60) });
       eventHub.publish({ type: "sessions_changed", projectId: project.id });
     }
-    persistAndPublish(sessionId, { kind: "user_text", text });
+    const userChatItem = persistAndPublish(sessionId, { kind: "user_text", text });
+    if (session.forkOriginSessionId && !session.forkItemId) sessionStore.update(sessionId, { forkItemId: userChatItem.id });
+    // A version created by editing a message picks the conversation up at the point before that message.
+    const pendingFork = session.agentSessionId ? null : session.pendingFork;
+    const turnTracking: TurnTracking = {};
 
     const abortController = new AbortController();
     const outcome: TurnOutcome = { success: false, finalText: "" };
@@ -146,15 +160,18 @@ export const agentRuntime = {
 
     try {
       const integrationOptions = agentIntegrationOptions(project);
+      const pluginOptions = agentPluginOptions();
       const agentStream = query({
-        prompt: text,
+        prompt: pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text,
         options: {
           cwd: project.path,
           // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
           env: agentSetup.env,
           // All design systems are open to the agent (it may create/link one mid-turn).
           additionalDirectories: [designSystemsDirectory],
-          resume: session.agentSessionId ?? undefined,
+          ...(pendingFork?.mode === "resume"
+            ? { resume: pendingFork.agentSessionId, resumeSessionAt: pendingFork.resumeAt, forkSession: true }
+            : { resume: session.agentSessionId ?? undefined }),
           model: model ?? agentSetup.model ?? agentModelSettings.read(),
           thinking: { type: "adaptive", display: "summarized" },
           permissionMode,
@@ -165,6 +182,8 @@ export const agentRuntime = {
           mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId) },
           allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
           skills: integrationOptions.skills,
+          settings: pluginOptions.settings,
+          plugins: pluginOptions.plugins,
           abortController,
           canUseTool: (toolName, input, { signal }) =>
             new Promise<PermissionResult>((resolve) => {
@@ -179,7 +198,7 @@ export const agentRuntime = {
         },
       });
       for await (const agentMessage of agentStream) {
-        handleAgentMessage(sessionId, project.id, agentMessage);
+        handleAgentMessage(sessionId, project.id, agentMessage, turnTracking);
         if (agentMessage.type === "system" && agentMessage.subtype === "init") {
           const terminalOnlyNames = agentMessage.terminal_slash_commands ?? [];
           agentStream

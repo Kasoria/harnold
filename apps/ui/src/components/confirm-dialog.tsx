@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -37,6 +37,8 @@ export function ConfirmDialogHost() {
     };
   }, []);
 
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+
   const answer = (confirmed: boolean) => {
     pendingConfirmation?.resolve(confirmed);
     setPendingConfirmation(null);
@@ -44,17 +46,34 @@ export function ConfirmDialogHost() {
 
   return (
     <Dialog open={Boolean(pendingConfirmation)} onOpenChange={(open) => !open && answer(false)}>
-      <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+      <DialogContent
+        className="sm:max-w-sm"
+        showCloseButton={false}
+        // Focus lands on the action: Enter confirms, Esc cancels, ←/→ switch between the two buttons.
+        onOpenAutoFocus={(focusEvent) => {
+          focusEvent.preventDefault();
+          confirmButtonRef.current?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-[15px]">{pendingConfirmation?.title}</DialogTitle>
           {pendingConfirmation?.description && <DialogDescription>{pendingConfirmation.description}</DialogDescription>}
         </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => answer(false)}>
-            Abbrechen
-          </Button>
-          <Button autoFocus variant={pendingConfirmation?.destructive === false ? "default" : "destructive"} onClick={() => answer(true)}>
+        <DialogFooter
+          className="grid grid-cols-2 sm:grid sm:justify-stretch"
+          onKeyDown={(keyboardEvent) => {
+            if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") return;
+            const footerButtons = [...keyboardEvent.currentTarget.querySelectorAll("button")];
+            const nextButton = footerButtons[(footerButtons.indexOf(document.activeElement as HTMLButtonElement) + 1) % footerButtons.length];
+            nextButton?.focus();
+            keyboardEvent.preventDefault();
+          }}
+        >
+          <Button ref={confirmButtonRef} variant={pendingConfirmation?.destructive === false ? "default" : "destructive"} onClick={() => answer(true)}>
             {pendingConfirmation?.confirmLabel ?? "Löschen"}
+          </Button>
+          <Button variant="outline" onClick={() => answer(false)}>
+            Abbrechen
           </Button>
         </DialogFooter>
       </DialogContent>

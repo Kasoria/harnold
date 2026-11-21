@@ -12,6 +12,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { StatusDot } from "@/components/status-dot";
 import { FormField } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
+import { PluginsView } from "./plugins-view";
 
 
 type KeyValueRow = { key: string; value: string; stored: boolean };
@@ -239,7 +240,7 @@ function McpServerEditor(props: {
   );
 }
 
-export type IntegrationsTab = "mcp" | "skills";
+export type IntegrationsTab = "mcp" | "skills" | "plugins";
 
 type IntegrationsScreenProps = {
   project: Project | null;
@@ -531,10 +532,11 @@ export function IntegrationsScreen(props: IntegrationsScreenProps) {
       title="Integrationen"
       tabs={
         <SegmentedControl
-          className="w-52"
+          className="w-72"
           options={[
             { value: "mcp", label: "MCP-Server" },
             { value: "skills", label: "Skills" },
+            { value: "plugins", label: "Plugins" },
           ]}
           value={props.activeTab}
           onValueChange={(tab) => props.onNavigate(tab, null)}
@@ -542,7 +544,7 @@ export function IntegrationsScreen(props: IntegrationsScreenProps) {
       }
       actions={
         <Button size="sm" variant="secondary" onClick={() => props.onNavigate(props.activeTab, "new")}>
-          <Plus className="size-3.5" /> {props.activeTab === "mcp" ? "MCP-Server hinzufügen" : "Skill anlegen"}
+          <Plus className="size-3.5" /> {props.activeTab === "mcp" ? "MCP-Server hinzufügen" : props.activeTab === "plugins" ? "Ordner hinzufügen" : "Skill anlegen"}
         </Button>
       }
     >
@@ -552,6 +554,14 @@ export function IntegrationsScreen(props: IntegrationsScreenProps) {
           project={props.project}
           selectedItemId={props.selectedItemId}
           onSelect={(itemId) => props.onNavigate("mcp", itemId)}
+          changeCounter={props.integrationsChangeCounter}
+          onError={props.onError}
+        />
+      ) : props.activeTab === "plugins" ? (
+        <PluginsView
+          key="plugins"
+          selectedItemId={props.selectedItemId}
+          onSelect={(itemId) => props.onNavigate("plugins", itemId)}
           changeCounter={props.integrationsChangeCounter}
           onError={props.onError}
         />

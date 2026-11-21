@@ -7,6 +7,7 @@ import { ModelSelect } from "@/components/model-select";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
+import { QuickChatAutoDeleteSetting } from "./settings/quick-chat-settings";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -237,6 +238,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 </SelectContent>
               </Select>
             </div>
+            <QuickChatAutoDeleteSetting onSaved={props.onSaved} onError={props.onError} />
 
             <div className="grid gap-2">
               <span className="text-sm">Workspace</span>

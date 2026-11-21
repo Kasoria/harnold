@@ -28,12 +28,39 @@ database.exec(`
   CREATE INDEX IF NOT EXISTS chat_items_by_session ON chat_items(session_id, created_at);
 `);
 
-export type Project = { id: string; name: string; path: string; createdAt: number };
+/** Adds columns to existing databases (CREATE TABLE IF NOT EXISTS does not). */
+function addColumnIfMissing(tableName: string, columnName: string, columnDefinition: string): void {
+  const existingColumns = database.prepare(`PRAGMA table_info(${tableName})`).all().map((row) => String(row.name));
+  if (!existingColumns.includes(columnName)) database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+}
+addColumnIfMissing("projects", "icon", "TEXT");
+addColumnIfMissing("projects", "kind", "TEXT NOT NULL DEFAULT 'project'");
+addColumnIfMissing("sessions", "fork_origin_session_id", "TEXT");
+addColumnIfMissing("sessions", "fork_origin_item_id", "TEXT");
+addColumnIfMissing("sessions", "fork_item_id", "TEXT");
+addColumnIfMissing("sessions", "pending_fork", "TEXT");
+
+/** "quick" = the built-in home of chats without a project (Quick Chats). */
+export type ProjectKind = "project" | "quick";
+export type Project = { id: string; name: string; path: string; icon: string | null; kind: ProjectKind; createdAt: number };
+
+/** How a forked session's agent picks up the conversation on its first turn. */
+export type PendingFork =
+  | { mode: "resume"; agentSessionId: string; resumeAt: string }
+  /** No agent fork point known (older history): the prior conversation goes into the first prompt. */
+  | { mode: "transcript"; transcript: string };
+
 export type Session = {
   id: string;
   projectId: string;
   title: string;
   agentSessionId: string | null;
+  /** Set on a version created by editing a message: the session/message it is an alternative to. */
+  forkOriginSessionId: string | null;
+  forkOriginItemId: string | null;
+  /** The edited user message in this version. */
+  forkItemId: string | null;
+  pendingFork: PendingFork | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -47,7 +74,16 @@ export type ChatItemPayload =
   | { kind: "notice"; text: string }
   | { kind: "tool_use"; toolUseId: string; toolName: string; input: unknown }
   | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean }
-  | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string };
+  | {
+      kind: "turn_result";
+      success: boolean;
+      costUsd: number;
+      durationMs: number;
+      errorText?: string;
+      /** Agent session + last transcript entry of this turn: where an edited later message forks off. */
+      agentSessionId?: string;
+      lastChainUuid?: string;
+    };
 
 export type ChatItem = ChatItemPayload & { id: string; sessionId: string; createdAt: number };
 
@@ -57,6 +93,8 @@ const mapProject = (row: Row): Project => ({
   id: String(row.id),
   name: String(row.name),
   path: String(row.path),
+  icon: row.icon ? String(row.icon) : null,
+  kind: row.kind === "quick" ? "quick" : "project",
   createdAt: Number(row.created_at),
 });
 
@@ -65,6 +103,10 @@ const mapSession = (row: Row): Session => ({
   projectId: String(row.project_id),
   title: String(row.title),
   agentSessionId: row.agent_session_id ? String(row.agent_session_id) : null,
+  forkOriginSessionId: row.fork_origin_session_id ? String(row.fork_origin_session_id) : null,
+  forkOriginItemId: row.fork_origin_item_id ? String(row.fork_origin_item_id) : null,
+  forkItemId: row.fork_item_id ? String(row.fork_item_id) : null,
+  pendingFork: row.pending_fork ? (JSON.parse(String(row.pending_fork)) as PendingFork) : null,
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -77,12 +119,19 @@ export const projectStore = {
     const row = database.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);
     return row ? mapProject(row) : undefined;
   },
-  create(name: string, projectPath: string): Project {
-    const project: Project = { id: randomUUID(), name, path: projectPath, createdAt: Date.now() };
+  create(name: string, projectPath: string, kind: ProjectKind = "project"): Project {
+    const project: Project = { id: randomUUID(), name, path: projectPath, icon: null, kind, createdAt: Date.now() };
     database
-      .prepare("INSERT INTO projects (id, name, path, created_at) VALUES (?, ?, ?, ?)")
-      .run(project.id, project.name, project.path, project.createdAt);
+      .prepare("INSERT INTO projects (id, name, path, kind, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(project.id, project.name, project.path, project.kind, project.createdAt);
     return project;
+  },
+  update(projectId: string, changes: { name?: string; icon?: string | null }): void {
+    const current = projectStore.get(projectId);
+    if (!current) return;
+    database
+      .prepare("UPDATE projects SET name = ?, icon = ? WHERE id = ?")
+      .run(changes.name ?? current.name, changes.icon === undefined ? current.icon : changes.icon, projectId);
   },
   remove(projectId: string): void {
     database.prepare("DELETE FROM chat_items WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)").run(projectId);
@@ -102,29 +151,58 @@ export const sessionStore = {
     const row = database.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
     return row ? mapSession(row) : undefined;
   },
-  create(projectId: string, title: string): Session {
+  create(
+    projectId: string,
+    title: string,
+    fork?: { originSessionId: string; originItemId: string; pendingFork: PendingFork | null },
+  ): Session {
     const now = Date.now();
-    const session: Session = { id: randomUUID(), projectId, title, agentSessionId: null, createdAt: now, updatedAt: now };
+    const session: Session = {
+      id: randomUUID(),
+      projectId,
+      title,
+      agentSessionId: null,
+      forkOriginSessionId: fork?.originSessionId ?? null,
+      forkOriginItemId: fork?.originItemId ?? null,
+      forkItemId: null,
+      pendingFork: fork?.pendingFork ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
     database
-      .prepare("INSERT INTO sessions (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .run(session.id, projectId, title, now, now);
+      .prepare(
+        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(session.id, projectId, title, session.forkOriginSessionId, session.forkOriginItemId, session.pendingFork ? JSON.stringify(session.pendingFork) : null, now, now);
     return session;
   },
   /** `agentSessionId: null` starts a fresh agent context on the next turn. */
-  update(sessionId: string, changes: { title?: string; agentSessionId?: string | null; projectId?: string }): void {
+  update(
+    sessionId: string,
+    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null },
+  ): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
+    const pendingFork = changes.pendingFork === undefined ? current.pendingFork : changes.pendingFork;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, updated_at = ? WHERE id = ?")
       .run(
         changes.title ?? current.title,
         changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
         changes.projectId ?? current.projectId,
+        changes.forkItemId ?? current.forkItemId,
+        pendingFork ? JSON.stringify(pendingFork) : null,
         Date.now(),
         sessionId,
       );
   },
+  /** Versions created by editing a message in this session. */
+  listForks(sessionId: string): Session[] {
+    return database.prepare("SELECT * FROM sessions WHERE fork_origin_session_id = ?").all(sessionId).map(mapSession);
+  },
+  /** Removes the session and every version forked from it. */
   remove(sessionId: string): void {
+    for (const fork of sessionStore.listForks(sessionId)) sessionStore.remove(fork.id);
     database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
     database.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
   },
@@ -145,8 +223,8 @@ export const chatItemStore = {
   clear(sessionId: string): void {
     database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
   },
-  append(sessionId: string, payload: ChatItemPayload): ChatItem {
-    const chatItem: ChatItem = { ...payload, id: randomUUID(), sessionId, createdAt: Date.now() };
+  append(sessionId: string, payload: ChatItemPayload, createdAt = Date.now()): ChatItem {
+    const chatItem: ChatItem = { ...payload, id: randomUUID(), sessionId, createdAt };
     database
       .prepare("INSERT INTO chat_items (id, session_id, payload, created_at) VALUES (?, ?, ?, ?)")
       .run(chatItem.id, sessionId, JSON.stringify(payload), chatItem.createdAt);

@@ -13,8 +13,9 @@
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.235 0.004 90);
-  --primary-foreground: oklch(0.985 0 0);
+  /* Akzent (primäre Aktionen, Auswahl, Fokus): Blau. */
+  --primary: oklch(0.55 0.19 259);
+  --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.955 0.003 90);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.955 0.003 90);
@@ -24,7 +25,7 @@
   --destructive: oklch(0.577 0.215 27);
   --border: oklch(0.89 0.004 90);
   --input: oklch(0.86 0.004 90);
-  --ring: oklch(0.6 0.01 90);
+  --ring: oklch(0.62 0.15 259);
   --sidebar: oklch(0.96 0.003 90);
   --canvas: oklch(0.935 0.004 90);
   --status-running: oklch(0.66 0.17 150);
@@ -40,8 +41,8 @@
   --card-foreground: var(--foreground);
   --popover: oklch(0.235 0.003 90);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.97 0.002 90);
-  --primary-foreground: oklch(0.2 0.003 90);
+  --primary: oklch(0.6 0.18 258);
+  --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.27 0.003 90);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.27 0.003 90);
@@ -51,7 +52,7 @@
   --destructive: oklch(0.66 0.19 25);
   --border: oklch(0.33 0.003 90);
   --input: oklch(0.37 0.003 90);
-  --ring: oklch(0.6 0.006 90);
+  --ring: oklch(0.65 0.14 258);
   --sidebar: oklch(0.165 0.003 90);
   --canvas: oklch(0.155 0.003 90);
 }
@@ -91,7 +92,7 @@
 @layer base {
   * { @apply border-border outline-ring/50; }
   html, body, #root { height: 100%; }
-  html { scrollbar-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent) transparent; }
+  html { accent-color: var(--primary); scrollbar-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent) transparent; }
   body { @apply bg-background text-foreground antialiased; font-size: 14px; }
   button { cursor: pointer; }
   h1, h2, h3, h4 { text-wrap: balance; }

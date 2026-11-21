@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chatItemStore, projectStore, sessionStore } from "./db.ts";
+import { chatItemStore, projectStore, sessionStore, type ChatItem, type PendingFork, type Session } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { config } from "./config.ts";
 import { agentRuntime } from "./agent.ts";
@@ -81,7 +81,50 @@ function moveNow(sessionId: string, targetProjectId: string): void {
   eventHub.publish({ type: "session_moved", sessionId, fromProjectId: fromProject.id, toProjectId: toProject.id });
 }
 
+/** Plain-text history for a fork without a known agent fork point. */
+function transcriptOf(chatItems: ChatItem[]): string {
+  const lines = chatItems.flatMap((chatItem) =>
+    chatItem.kind === "user_text" ? [`Nutzer: ${chatItem.text}`] : chatItem.kind === "assistant_text" ? [`Assistent: ${chatItem.text}`] : [],
+  );
+  return `Bisheriger Verlauf dieser Unterhaltung (zur Orientierung, nicht erneut ausführen):\n\n${lines.join("\n\n").slice(-30_000)}\n\n---\nNeue Nachricht:`;
+}
+
+/** Root of a message's versions: an edited message in a version belongs to the versions of the message it replaced. */
+function versionRootOf(session: Session, itemId: string): { sessionId: string; itemId: string } {
+  if (session.forkItemId === itemId && session.forkOriginSessionId && session.forkOriginItemId) {
+    return { sessionId: session.forkOriginSessionId, itemId: session.forkOriginItemId };
+  }
+  return { sessionId: session.id, itemId };
+}
+
 export const sessionActions = {
+  /**
+   * Editing a sent message creates a new version of the conversation from that point on:
+   * a session with the history before the message, whose agent forks off at the same place.
+   */
+  forkForEdit(sessionId: string, itemId: string): Session {
+    const session = requireSession(sessionId);
+    const chatItems = chatItemStore.list(sessionId);
+    const editedIndex = chatItems.findIndex((chatItem) => chatItem.id === itemId && chatItem.kind === "user_text");
+    if (editedIndex < 0) throw new Error("Nachricht nicht gefunden");
+    const keptItems = chatItems.slice(0, editedIndex);
+    const lastTurnResult = [...keptItems].reverse().find((chatItem) => chatItem.kind === "turn_result");
+    let pendingFork: PendingFork | null = null;
+    if (lastTurnResult?.kind === "turn_result") {
+      pendingFork = lastTurnResult.agentSessionId && lastTurnResult.lastChainUuid
+        ? { mode: "resume", agentSessionId: lastTurnResult.agentSessionId, resumeAt: lastTurnResult.lastChainUuid }
+        : { mode: "transcript", transcript: transcriptOf(keptItems) };
+    }
+    const versionRoot = versionRootOf(session, itemId);
+    const forkedSession = sessionStore.create(session.projectId, session.title, { originSessionId: versionRoot.sessionId, originItemId: versionRoot.itemId, pendingFork });
+    for (const keptItem of keptItems) {
+      const { id: _id, sessionId: _sessionId, createdAt, ...payload } = keptItem;
+      chatItemStore.append(forkedSession.id, payload, createdAt);
+    }
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+    return forkedSession;
+  },
+
   /** Moves a session (and its agent context) into another project – and thereby into that project's environment. */
   move(sessionId: string, targetProjectId: string): { deferred: boolean } {
     requireSession(sessionId);

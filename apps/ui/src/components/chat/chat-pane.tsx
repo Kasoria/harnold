@@ -25,6 +25,8 @@ import { safeStorage } from "@/lib/storage";
 import { useSpeechPlayback } from "@/hooks/use-speech-playback";
 import { ToolGroup, summarizeToolInput, type ToolResultItem, type ToolUseItem } from "./tool-group";
 import { Composer } from "./composer";
+import { UserMessage } from "./user-message";
+import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
 
 type ChatPaneProps = {
@@ -51,6 +53,11 @@ type ChatPaneProps = {
   onInterrupt: () => void;
   onAnswerPermission: (requestId: string, allow: boolean) => void;
   onDeleteSession: () => void;
+  /** All sessions of the project – needed to find the versions of edited messages. */
+  projectSessions: Session[];
+  onOpenVersion: (sessionId: string) => void;
+  /** Edit a sent message: continues as a new version from there. */
+  onEditMessage: (itemId: string, text: string) => void;
   sttReady: boolean;
   ttsReady: boolean;
   onError: (unknownError: unknown) => void;
@@ -258,12 +265,19 @@ export function ChatPane(props: ChatPaneProps) {
             }
             const { chatItem } = renderBlock;
             switch (chatItem.kind) {
-              case "user_text":
+              case "user_text": {
+                const versions = props.session ? messageVersions(props.session, chatItem.id, props.projectSessions) : null;
                 return (
-                  <div key={chatItem.id} className="animate-in fade-in self-end rounded-xl bg-muted px-3.5 py-2 whitespace-pre-wrap duration-200 max-w-[85%]">
-                    {chatItem.text}
-                  </div>
+                  <UserMessage
+                    key={chatItem.id}
+                    text={chatItem.text}
+                    versions={versions && versions.versionSessionIds.length > 1 ? { currentIndex: versions.currentIndex, total: versions.versionSessionIds.length } : null}
+                    onShowVersion={(versionIndex) => versions && props.onOpenVersion(versions.versionSessionIds[versionIndex])}
+                    canEdit={!running}
+                    onSubmitEdit={(editedText) => props.onEditMessage(chatItem.id, editedText)}
+                  />
                 );
+              }
               case "assistant_text":
                 return (
                   <div key={chatItem.id} className="group/answer relative animate-in fade-in duration-200">

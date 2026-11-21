@@ -1,4 +1,4 @@
-import type { AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -45,6 +45,17 @@ export const api = {
   importCurrentAccounts: (environmentId: string) =>
     request<{ environment: Environment; found: string[]; notFound: string[] }>("POST", `/api/environments/${environmentId}/import`),
   checkEnvironmentAccounts: (environmentId: string) => request<EnvironmentAccountChecks>("POST", `/api/environments/${environmentId}/check`),
+  updateProject: (projectId: string, changes: { name?: string; icon?: string | null }) => request<Project>("PATCH", `/api/projects/${projectId}`, changes),
+  createQuickChat: () => request<Session>("POST", "/api/quick-chats"),
+  readQuickChatSettings: () => request<QuickChatSettings>("GET", "/api/settings/quick-chats"),
+  saveQuickChatSettings: (settings: QuickChatSettings) => request<QuickChatSettings>("PUT", "/api/settings/quick-chats", settings),
+  /** Sends an edited version of a message; returns the new version (session). */
+  editMessage: (sessionId: string, itemId: string, text: string, permissionMode: PermissionMode, model?: string) =>
+    request<Session>("POST", `/api/sessions/${sessionId}/edit`, { itemId, text, permissionMode, model: model || undefined }),
+  listPlugins: () => request<PluginInfo[]>("GET", "/api/plugins"),
+  setPluginEnabled: (pluginId: string, enabled: boolean) => request<{ ok: true }>("PUT", "/api/plugins/enabled", { pluginId, enabled }),
+  addPluginFolder: (folderPath: string) => request<PluginInfo>("POST", "/api/plugins/folders", { path: folderPath }),
+  removePluginFolder: (pluginId: string) => request<{ ok: true }>("POST", "/api/plugins/folders/remove", { pluginId }),
   listSessions: (projectId: string) => request<Session[]>("GET", `/api/projects/${projectId}/sessions`),
   createSession: (projectId: string) => request<Session>("POST", `/api/projects/${projectId}/sessions`),
   deleteSession: (sessionId: string) => request("DELETE", `/api/sessions/${sessionId}`),

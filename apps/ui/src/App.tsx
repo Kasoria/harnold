@@ -25,6 +25,8 @@ import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
 import { Button } from "@/components/ui/button";
 import type { InheritedModel } from "@/components/model-select";
 import { ConfirmDialogHost, confirmAction } from "@/components/confirm-dialog";
+import { ProjectIconDialog } from "@/components/project-icon-dialog";
+import { conversationMembers, latestVersionId } from "@/lib/session-versions";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
@@ -60,6 +62,7 @@ export function App() {
   const [defaultModel, setDefaultModel] = useState("claude-opus-5-5");
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => safeStorage.getItem(activeEnvironmentStorageKey));
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
+  const [iconDialogProject, setIconDialogProject] = useState<Project | null>(null);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const [panelsAnimating, setPanelsAnimating] = useState(false);
@@ -151,7 +154,7 @@ export function App() {
       .listProjects()
       .then((loadedProjects) => {
         setProjects(loadedProjects);
-        const firstProject = loadedProjects[0];
+        const firstProject = loadedProjects.find((project) => project.kind !== "quick");
         if (firstProject) {
           setActiveProjectId(firstProject.id);
           setExpandedProjectIds(new Set([firstProject.id]));
@@ -350,15 +353,52 @@ export function App() {
     }
   };
 
+  /** Chat without a project: lives in the built-in Quick Chats project. */
+  const createQuickChat = async () => {
+    try {
+      const session = await api.createQuickChat();
+      if (!projects.some((project) => project.id === session.projectId)) setProjects(await api.listProjects());
+      setSessionsByProjectId((previous) => ({ ...previous, [session.projectId]: [session, ...(previous[session.projectId] ?? [])] }));
+      setExpandedProjectIds((previous) => new Set(previous).add(session.projectId));
+      setActiveProjectId(session.projectId);
+      setActiveSessionId(session.id);
+      navigate("/");
+    } catch (creationError) {
+      reportError(creationError);
+    }
+  };
+
+  /** Sends an edited message as a new version of the conversation and switches to it. */
+  const editMessage = async (itemId: string, text: string) => {
+    if (!activeSessionId || !activeProjectId) return;
+    try {
+      const permissionMode = (safeStorage.getItem("harnold.permissionMode") as PermissionMode | null) ?? "default";
+      const versionSession = await api.editMessage(activeSessionId, itemId, text, permissionMode, safeStorage.getItem("harnold.model") ?? undefined);
+      setSessionsByProjectId((previous) => ({ ...previous, [versionSession.projectId]: [versionSession, ...(previous[versionSession.projectId] ?? [])] }));
+      setActiveSessionId(versionSession.id);
+    } catch (editError) {
+      reportError(editError);
+    }
+  };
+
+  const updateProjectIcon = (project: Project, icon: string | null) =>
+    api
+      .updateProject(project.id, { icon })
+      .then((updatedProject) => setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate))))
+      .catch(reportError);
+
   const deleteSession = async (session: Session) => {
-    if (!(await confirmAction({ title: `Session „${session.title}“ löschen?`, description: "Der Verlauf geht verloren." }))) return;
+    const projectSessions = sessionsByProjectId[session.projectId] ?? [];
+    const removedSessionIds = new Set(conversationMembers(session.id, projectSessions).map((member) => member.id));
+    const description = removedSessionIds.size > 1 ? `Der Verlauf inkl. ${removedSessionIds.size - 1} bearbeiteter Version(en) geht verloren.` : "Der Verlauf geht verloren.";
+    if (!(await confirmAction({ title: `Session „${session.title}“ löschen?`, description }))) return;
     try {
       await api.deleteSession(session.id);
       setSessionsByProjectId((previous) => ({
         ...previous,
-        [session.projectId]: (previous[session.projectId] ?? []).filter((existing) => existing.id !== session.id),
+        [session.projectId]: (previous[session.projectId] ?? []).filter((existing) => !removedSessionIds.has(existing.id)),
       }));
-      if (session.id === activeSessionId) setActiveSessionId(null);
+      if (activeSessionId && removedSessionIds.has(activeSessionId)) setActiveSessionId(null);
     } catch (deletionError) {
       reportError(deletionError);
     }
@@ -462,7 +502,7 @@ export function App() {
         return (
           <IntegrationsScreen
             project={activeProject}
-            activeTab={route.section === "skills" ? "skills" : "mcp"}
+            activeTab={route.section === "skills" || route.section === "plugins" ? route.section : "mcp"}
             selectedItemId={route.itemId}
             onNavigate={(tab: IntegrationsTab, itemId) => navigate(routePath("integrations", tab, itemId))}
             integrationsChangeCounter={integrationsChangeCounter}
@@ -488,7 +528,7 @@ export function App() {
             onSelect={(selection) => navigate(routePath("environments", selection))}
             environments={environments}
             workspaceDefaultModel={defaultModel}
-            projects={projects}
+            projects={projects.filter((project) => project.kind !== "quick")}
             onEnvironmentsChange={() => void refreshEnvironments()}
             onSaved={(message) => setToast({ message, tone: "info" })}
             onError={reportError}
@@ -541,7 +581,7 @@ export function App() {
               sessionStatusFor={sessionStatusFor}
               onSelectSession={(projectId, sessionId) => {
                 setActiveProjectId(projectId);
-                setActiveSessionId(sessionId);
+                setActiveSessionId(latestVersionId(sessionId, sessionsByProjectId[projectId] ?? []));
                 navigate("/");
               }}
               onCreateSession={(projectId) => {
@@ -550,6 +590,8 @@ export function App() {
               }}
               onDeleteSession={deleteSession}
               onNewProject={() => setNewProjectDialogOpen(true)}
+              onNewQuickChat={() => void createQuickChat()}
+              onEditProjectIcon={setIconDialogProject}
               activeScreen={route.screen}
               onOpenScreen={(screen) => navigate(screen === "workspace" ? "/" : routePath(screen))}
               darkMode={resolvedTheme === "dark"}
@@ -608,6 +650,9 @@ export function App() {
               onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
               onAnswerPermission={(requestId, allow) => api.answerPermission(requestId, allow).catch(reportError)}
               onDeleteSession={() => activeSession && void deleteSession(activeSession)}
+              projectSessions={activeProjectId ? (sessionsByProjectId[activeProjectId] ?? []) : []}
+              onOpenVersion={setActiveSessionId}
+              onEditMessage={(itemId, text) => void editMessage(itemId, text)}
               sttReady={voiceSettings?.sttReady ?? false}
               ttsReady={voiceSettings?.ttsReady ?? false}
               onError={reportError}
@@ -653,6 +698,11 @@ export function App() {
         <ClaudeOnboarding status={claudeStatus} onStatusChange={setClaudeStatus} onError={reportError} onDismiss={() => setOnboardingVisible(false)} />
       )}
       <ConfirmDialogHost />
+      <ProjectIconDialog
+        project={iconDialogProject}
+        onOpenChange={(open) => !open && setIconDialogProject(null)}
+        onSave={(icon) => iconDialogProject && void updateProjectIcon(iconDialogProject, icon)}
+      />
       <NewProjectDialog
         open={newProjectDialogOpen}
         onOpenChange={setNewProjectDialogOpen}

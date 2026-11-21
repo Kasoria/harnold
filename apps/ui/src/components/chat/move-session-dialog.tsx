@@ -44,7 +44,7 @@ export function MoveSessionDialog(props: MoveSessionDialogProps) {
                     props.onOpenChange(false);
                   }}
                 >
-                  <ProjectAvatar name={project.name} className="size-4 rounded text-[9px]" />
+                  <ProjectAvatar name={project.name} icon={project.icon} className="size-4 rounded text-[9px]" />
                   <span className="flex-1 truncate">{project.name}</span>
                   {current && <Check className="size-3.5 text-muted-foreground" />}
                 </button>

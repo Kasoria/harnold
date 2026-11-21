@@ -326,7 +326,7 @@ function EnvironmentEditor(props: {
               if (!project) return null;
               return (
                 <span key={projectId} className="inline-flex animate-in items-center gap-1.5 rounded-md border bg-background py-0.5 pr-1 pl-1.5 text-[12px] fade-in duration-150">
-                  <ProjectAvatar name={project.name} className="size-4 text-[9px]" />
+                  <ProjectAvatar name={project.name} icon={project.icon} className="size-4 text-[9px]" />
                   <span className="max-w-56 truncate">{project.name}</span>
                   <button type="button" className="rounded text-muted-foreground transition-colors hover:text-foreground" onClick={() => toggleProject(projectId)} aria-label="Entfernen">
                     <X className="size-3" />

@@ -23,6 +23,8 @@ import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSett
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
+import { deleteExpiredQuickChats, quickChatProject, quickChatSettings, startQuickChatCleanup } from "./quick-chats.ts";
+import { pluginStore } from "./plugins.ts";
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -78,7 +80,15 @@ app.post("/api/projects", async (context) => {
   return context.json(project);
 });
 
+app.patch("/api/projects/:projectId", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const body = z.object({ name: z.string().trim().min(1).optional(), icon: z.string().trim().max(16).nullable().optional() }).parse(await context.req.json());
+  projectStore.update(project.id, { name: body.name, icon: body.icon === "" ? null : body.icon });
+  return context.json(projectStore.get(project.id));
+});
+
 app.delete("/api/projects/:projectId", (context) => {
+  if (requireProject(context.req.param("projectId")).kind === "quick") throw new Error("Quick Chats lassen sich nicht entfernen");
   // Removes only Harnold's record; the folder on disk stays untouched.
   unwatchProject(context.req.param("projectId"));
   environmentStore.assignProject(context.req.param("projectId"), null);
@@ -147,6 +157,22 @@ app.post("/api/projects/:projectId/sessions", (context) => {
   return context.json(session);
 });
 
+// --- Quick Chats (no project) ---
+app.post("/api/quick-chats", (context) => {
+  const project = quickChatProject();
+  const session = sessionStore.create(project.id, "Neue Session");
+  eventHub.publish({ type: "sessions_changed", projectId: project.id });
+  return context.json(session);
+});
+
+app.get("/api/settings/quick-chats", (context) => context.json(quickChatSettings.read()));
+app.put("/api/settings/quick-chats", async (context) => {
+  const body = z.object({ autoDeleteDays: z.number().int().min(1).max(3650).nullable() }).parse(await context.req.json());
+  quickChatSettings.write(body);
+  deleteExpiredQuickChats();
+  return context.json(quickChatSettings.read());
+});
+
 app.delete("/api/sessions/:sessionId", (context) => {
   const session = sessionStore.get(context.req.param("sessionId"));
   if (session) {
@@ -187,6 +213,21 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
   await environmentStore.agentSetupFor(session.projectId); // friendly error when Claude access is missing
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
   return context.json({ ok: true });
+});
+
+/** Edit a sent message: new version of the conversation from that message on, then run it. */
+app.post("/api/sessions/:sessionId/edit", async (context) => {
+  const body = z
+    .object({ itemId: z.string(), text: z.string().min(1), permissionMode: permissionModeSchema.default("default"), model: z.string().optional() })
+    .parse(await context.req.json());
+  const session = sessionStore.get(context.req.param("sessionId"));
+  if (!session) throw new Error("Session nicht gefunden");
+  await environmentStore.agentSetupFor(session.projectId);
+  const forkedSession = sessionActions.forkForEdit(session.id, body.itemId);
+  void agentRuntime
+    .runTurn({ sessionId: forkedSession.id, text: body.text, permissionMode: body.permissionMode, model: body.model })
+    .catch((turnError) => console.error("[agent]", turnError));
+  return context.json(forkedSession);
 });
 
 app.post("/api/sessions/:sessionId/interrupt", (context) => {
@@ -560,6 +601,27 @@ app.put("/api/skills/:skillName/enabled", async (context) => {
   return context.json({ ok: true });
 });
 
+// --- Plugins ---
+app.get("/api/plugins", (context) => context.json(pluginStore.list()));
+app.put("/api/plugins/enabled", async (context) => {
+  const body = z.object({ pluginId: z.string().min(1), enabled: z.boolean() }).parse(await context.req.json());
+  pluginStore.setEnabled(body.pluginId, body.enabled);
+  eventHub.publish({ type: "integrations_changed" });
+  return context.json({ ok: true });
+});
+app.post("/api/plugins/folders", async (context) => {
+  const body = z.object({ path: z.string().min(1) }).parse(await context.req.json());
+  const plugin = pluginStore.addFolder(body.path);
+  eventHub.publish({ type: "integrations_changed" });
+  return context.json(plugin);
+});
+app.post("/api/plugins/folders/remove", async (context) => {
+  const body = z.object({ pluginId: z.string().min(1) }).parse(await context.req.json());
+  pluginStore.removeFolder(body.pluginId);
+  eventHub.publish({ type: "integrations_changed" });
+  return context.json({ ok: true });
+});
+
 // --- Live events ---
 app.get(
   "/ws",
@@ -594,6 +656,7 @@ for (const project of projectStore.list()) watchProject(project);
 startScheduler();
 channelManager.startAll();
 startMemory();
+startQuickChatCleanup();
 importLegacyProjectDesignSystems();
 watchDesignSystems();
 

@@ -4,9 +4,10 @@ import { database, projectStore } from "./db.ts";
 import { decryptSecret, encryptSecret } from "./secrets.ts";
 import { eventHub } from "./events.ts";
 import { claudeAuth, claudeProfileForEnvironment, removeClaudeProfile, subscriptionEnvironment } from "./claude-auth.ts";
+import { checkProviderAccount, detectGitIdentity, environmentProviders, findProvider, type AccountCheck } from "./environment-providers.ts";
 
 /**
- * Environments bundle accounts (GitHub, Vercel), git identity and variables. A project belongs to at most one
+ * Environments bundle accounts (any provider from the catalog), git identity, AI settings and variables. A project belongs to at most one
  * environment; every agent turn in that project runs with its credentials – no CLI re-login, no switching.
  */
 database.exec(`
@@ -44,9 +45,8 @@ export const environmentInputSchema = z.object({
   gitName: z.string().trim(),
   gitEmail: z.string().trim(),
   sshKeyPath: z.string().trim(),
-  /** undefined keeps the stored token, "" removes it. */
-  githubToken: z.string().optional(),
-  vercelToken: z.string().optional(),
+  /** Accounts by provider; listed accounts replace the stored list. An empty secret value keeps the stored one. */
+  accounts: z.array(z.object({ provider: z.string(), values: z.record(z.string(), z.string()) })).default([]),
   claudeMode: z.enum(["inherit", "subscription", "apiKey"]).default("inherit"),
   claudeApiKey: z.string().optional(),
   /** Default model for turns in this environment; "" = Harnold default. The composer's explicit choice wins. */
@@ -57,7 +57,13 @@ export const environmentInputSchema = z.object({
 });
 export type EnvironmentInput = z.infer<typeof environmentInputSchema>;
 
-type StoredSecrets = { githubToken?: string; vercelToken?: string; claudeApiKey?: string; variables: { key: string; value: string; secret: boolean }[] };
+type StoredAccount = { provider: string; values: Record<string, string> };
+type StoredSecrets = { accounts: StoredAccount[]; claudeApiKey?: string; variables: { key: string; value: string; secret: boolean }[] };
+/** Shape before accounts became generic. */
+type LegacySecrets = Partial<StoredSecrets> & { githubToken?: string; vercelToken?: string };
+
+/** Account as sent out: secret values are "", `setKeys` says which fields hold a value. */
+export type EnvironmentAccount = { provider: string; label: string; values: Record<string, string>; setKeys: string[] };
 
 export type Environment = {
   id: string;
@@ -65,8 +71,7 @@ export type Environment = {
   gitName: string;
   gitEmail: string;
   sshKeyPath: string;
-  githubTokenSet: boolean;
-  vercelTokenSet: boolean;
+  accounts: EnvironmentAccount[];
   claudeMode: EnvironmentClaudeMode;
   claudeApiKeySet: boolean;
   model: string;
@@ -78,7 +83,20 @@ export type Environment = {
 
 type Row = Record<string, unknown>;
 
-const readSecrets = (row: Row): StoredSecrets => (row.secrets ? (JSON.parse(decryptSecret(String(row.secrets))) as StoredSecrets) : { variables: [] });
+function readSecrets(row: Row): StoredSecrets {
+  const stored: LegacySecrets = row.secrets ? JSON.parse(decryptSecret(String(row.secrets))) : {};
+  const accounts = [...(stored.accounts ?? [])];
+  if (stored.githubToken && !accounts.some((account) => account.provider === "github")) accounts.push({ provider: "github", values: { GH_TOKEN: stored.githubToken } });
+  if (stored.vercelToken && !accounts.some((account) => account.provider === "vercel")) accounts.push({ provider: "vercel", values: { VERCEL_TOKEN: stored.vercelToken } });
+  return { accounts, claudeApiKey: stored.claudeApiKey, variables: stored.variables ?? [] };
+}
+
+const isSecretField = (providerId: string, key: string) => findProvider(providerId)?.fields.find((providerField) => providerField.key === key)?.secret ?? true;
+
+function presentAccount(account: StoredAccount): EnvironmentAccount {
+  const values = Object.fromEntries(Object.entries(account.values).map(([key, value]) => [key, isSecretField(account.provider, key) ? "" : value]));
+  return { provider: account.provider, label: findProvider(account.provider)?.label ?? account.provider, values, setKeys: Object.keys(account.values).filter((key) => account.values[key]) };
+}
 const projectIdsOf = (environmentId: string) =>
   database.prepare("SELECT project_id FROM environment_projects WHERE environment_id = ?").all(environmentId).map((row) => String(row.project_id));
 
@@ -90,8 +108,7 @@ function present(row: Row): Environment {
     gitName: String(row.git_name),
     gitEmail: String(row.git_email),
     sshKeyPath: String(row.ssh_key_path),
-    githubTokenSet: Boolean(secrets.githubToken),
-    vercelTokenSet: Boolean(secrets.vercelToken),
+    accounts: secrets.accounts.map(presentAccount),
     claudeMode: (String(row.claude_mode || "inherit") as EnvironmentClaudeMode),
     claudeApiKeySet: Boolean(secrets.claudeApiKey),
     model: String(row.model ?? ""),
@@ -119,9 +136,21 @@ function mergeSecrets(previous: StoredSecrets, input: EnvironmentInput): StoredS
     const value = variable.secret && !variable.value && previousVariable?.secret ? previousVariable.value : variable.value;
     return [{ key: variable.key, value, secret: variable.secret }];
   });
+  const seenProviders = new Set<string>();
+  const accounts = input.accounts.flatMap((account) => {
+    if (seenProviders.has(account.provider)) return [];
+    seenProviders.add(account.provider);
+    const previousValues = previous.accounts.find((stored) => stored.provider === account.provider)?.values ?? {};
+    const values = Object.fromEntries(
+      Object.entries({ ...previousValues, ...account.values }).flatMap(([key, value]) => {
+        const nextValue = isSecretField(account.provider, key) && !account.values[key]?.trim() ? previousValues[key] : account.values[key] ?? previousValues[key];
+        return nextValue?.trim() ? [[key, nextValue.trim()]] : [];
+      }),
+    );
+    return [{ provider: account.provider, values }];
+  });
   return {
-    githubToken: keepOrReplace(previous.githubToken, input.githubToken),
-    vercelToken: keepOrReplace(previous.vercelToken, input.vercelToken),
+    accounts,
     claudeApiKey: keepOrReplace(previous.claudeApiKey, input.claudeApiKey),
     variables,
   };
@@ -153,7 +182,7 @@ export const environmentStore = {
     const environmentId = randomUUID();
     database
       .prepare("INSERT INTO environments (id, name, git_name, git_email, ssh_key_path, secrets, claude_mode, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(environmentId, input.name, input.gitName, input.gitEmail, input.sshKeyPath, encryptSecret(JSON.stringify(mergeSecrets({ variables: [] }, input))), input.claudeMode, input.model, Date.now());
+      .run(environmentId, input.name, input.gitName, input.gitEmail, input.sshKeyPath, encryptSecret(JSON.stringify(mergeSecrets({ accounts: [], variables: [] }, input))), input.claudeMode, input.model, Date.now());
     writeProjects(environmentId, input.projectIds);
     publishChange();
     return environmentStore.get(environmentId);
@@ -199,11 +228,16 @@ export const environmentStore = {
     if (!row) return {};
     const secrets = readSecrets(row);
     const variables: Record<string, string> = {};
-    if (secrets.githubToken) {
+    for (const account of secrets.accounts) {
+      const aliases = findProvider(account.provider)?.aliases ?? {};
+      for (const [key, value] of Object.entries(account.values)) {
+        variables[key] = value;
+        for (const alias of aliases[key] ?? []) variables[alias] = value;
+      }
+    }
+    if (variables.GH_TOKEN) {
+      // git push/pull over HTTPS: drop other helpers (keychain, gh) and answer with the token.
       Object.assign(variables, {
-        GH_TOKEN: secrets.githubToken,
-        GITHUB_TOKEN: secrets.githubToken,
-        // git push/pull over HTTPS: drop other helpers (keychain, gh) and answer with the token.
         GIT_CONFIG_COUNT: "2",
         GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
         GIT_CONFIG_VALUE_0: "",
@@ -211,7 +245,6 @@ export const environmentStore = {
         GIT_CONFIG_VALUE_1: githubCredentialHelper,
       });
     }
-    if (secrets.vercelToken) variables.VERCEL_TOKEN = secrets.vercelToken;
     const gitName = String(row.git_name);
     const gitEmail = String(row.git_email);
     if (gitName) Object.assign(variables, { GIT_AUTHOR_NAME: gitName, GIT_COMMITTER_NAME: gitName });
@@ -256,9 +289,12 @@ export const environmentStore = {
   contextFor(projectId: string): string {
     const environment = environmentStore.forProject(projectId);
     if (!environment) return "";
-    const accounts = [environment.githubTokenSet && "GitHub (GH_TOKEN, git über HTTPS)", environment.vercelTokenSet && "Vercel (VERCEL_TOKEN)", environment.sshKeyPath && "SSH-Key für git"].filter(Boolean);
+    const accounts = [
+      ...environment.accounts.map((account) => `${account.label} (${account.setKeys.join(", ")}${account.provider === "github" ? ", git über HTTPS" : ""})`),
+      environment.sshKeyPath && "SSH-Key für git",
+    ].filter(Boolean);
     return [
-      `Umgebung „${environment.name}“ ist aktiv. Ihre Konten und Variablen sind in der Shell bereits gesetzt – nicht umloggen, kein \`gh auth switch\`/\`vercel login\`.`,
+      `Umgebung „${environment.name}“ ist aktiv. Ihre Konten und Variablen sind in der Shell bereits gesetzt – nicht umloggen (kein \`gh auth switch\`, \`vercel login\` o. Ä.); CLIs nutzen die Env-Variablen.`,
       accounts.length ? `Konten: ${accounts.join(", ")}.` : "",
       environment.gitName || environment.gitEmail ? `Git-Identität: ${[environment.gitName, environment.gitEmail && `<${environment.gitEmail}>`].filter(Boolean).join(" ")}.` : "",
       environment.variables.length ? `Variablen: ${environment.variables.map((variable) => variable.key).join(", ")}.` : "",
@@ -267,29 +303,89 @@ export const environmentStore = {
       .join("\n");
   },
 
-  /** Asks GitHub / Vercel who the stored tokens belong to. */
-  async checkAccounts(environmentId: string): Promise<{ github?: AccountCheck; vercel?: AccountCheck }> {
+  /** Asks each provider (where possible) who the stored credentials belong to. */
+  async checkAccounts(environmentId: string): Promise<Record<string, AccountCheck>> {
     const secrets = readSecrets(requireRow(environmentId));
-    const check = async (url: string, token: string, pickName: (body: Record<string, unknown>) => unknown): Promise<AccountCheck> => {
-      try {
-        const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, "user-agent": "harnold" }, signal: AbortSignal.timeout(10_000) });
-        if (!response.ok) return { ok: false, detail: response.status === 401 || response.status === 403 ? "Token ungültig" : `HTTP ${response.status}` };
-        return { ok: true, detail: String(pickName((await response.json()) as Record<string, unknown>) ?? "verbunden") };
-      } catch (checkError) {
-        return { ok: false, detail: checkError instanceof Error ? checkError.message : String(checkError) };
-      }
-    };
-    const [github, vercel] = await Promise.all([
-      secrets.githubToken ? check("https://api.github.com/user", secrets.githubToken, (body) => body.login) : undefined,
-      secrets.vercelToken
-        ? check("https://api.vercel.com/v2/user", secrets.vercelToken, (body) => {
-            const user = body.user as Record<string, unknown> | undefined;
-            return user?.username ?? user?.email;
-          })
-        : undefined,
-    ]);
-    return { github, vercel };
+    const results = await Promise.all(
+      secrets.accounts.map(async (account) => {
+        const provider = findProvider(account.provider);
+        return [account.provider, provider ? await checkProviderAccount(provider, account.values) : undefined] as const;
+      }),
+    );
+    return Object.fromEntries(results.filter((entry): entry is readonly [string, AccountCheck] => Boolean(entry[1])));
   },
+
+  /**
+   * Partial change (used by the agent): only given fields change, accounts/variables are merged by provider/key.
+   * Without environmentId a new environment is created.
+   */
+  save(environmentId: string | undefined, patch: EnvironmentPatch): Environment {
+    const current = environmentId ? environmentStore.get(environmentId) : null;
+    const removedProviders = new Set(patch.removeAccounts ?? []);
+    const accounts = (current?.accounts ?? []).filter((account) => !removedProviders.has(account.provider)).map((account) => ({ provider: account.provider, values: {} as Record<string, string> }));
+    for (const [provider, values] of Object.entries(patch.accounts ?? {})) {
+      const existing = accounts.find((account) => account.provider === provider);
+      if (existing) Object.assign(existing.values, values);
+      else accounts.push({ provider, values: { ...values } });
+    }
+    const removedVariables = new Set(patch.removeVariables ?? []);
+    const variables = (current?.variables ?? []).filter((variable) => !removedVariables.has(variable.key));
+    for (const variable of patch.variables ?? []) {
+      const existingIndex = variables.findIndex((existing) => existing.key === variable.key);
+      if (existingIndex >= 0) variables[existingIndex] = variable;
+      else variables.push(variable);
+    }
+    const input = environmentInputSchema.parse({
+      name: patch.name ?? current?.name ?? "Neue Umgebung",
+      gitName: patch.gitName ?? current?.gitName ?? "",
+      gitEmail: patch.gitEmail ?? current?.gitEmail ?? "",
+      sshKeyPath: patch.sshKeyPath ?? current?.sshKeyPath ?? "",
+      accounts,
+      claudeMode: patch.claudeMode ?? current?.claudeMode ?? "inherit",
+      claudeApiKey: patch.claudeApiKey,
+      model: patch.model ?? current?.model ?? "",
+      variables,
+      projectIds: [...new Set([...(current?.projectIds ?? []), ...(patch.addProjectIds ?? [])])].filter((projectId) => !(patch.removeProjectIds ?? []).includes(projectId)),
+    });
+    return current ? environmentStore.update(current.id, input) : environmentStore.create(input);
+  },
+
+  /** Takes the logins active on this machine (CLIs, config files, env, git config) into an environment. */
+  async importCurrent(environmentId: string | undefined, options: { name?: string; providerIds?: string[]; addProjectIds?: string[] }): Promise<{ environment: Environment; found: string[]; notFound: string[] }> {
+    const candidates = environmentProviders.filter((provider) => provider.detect && (!options.providerIds?.length || options.providerIds.includes(provider.id)));
+    const detected = await Promise.all(candidates.map(async (provider) => [provider, await provider.detect!().catch(() => null)] as const));
+    const accounts = Object.fromEntries(detected.flatMap(([provider, values]) => (values ? [[provider.id, values]] : [])));
+    const gitIdentity = await detectGitIdentity();
+    const current = environmentId ? environmentStore.get(environmentId) : null;
+    const environment = environmentStore.save(environmentId, {
+      name: options.name,
+      gitName: current?.gitName || gitIdentity.gitName || undefined,
+      gitEmail: current?.gitEmail || gitIdentity.gitEmail || undefined,
+      accounts,
+      addProjectIds: options.addProjectIds,
+    });
+    return {
+      environment,
+      found: detected.filter(([, values]) => values).map(([provider]) => provider.label),
+      notFound: detected.filter(([, values]) => !values).map(([provider]) => provider.label),
+    };
+  },
+
 };
 
-export type AccountCheck = { ok: boolean; detail: string };
+export type EnvironmentPatch = {
+  name?: string;
+  gitName?: string;
+  gitEmail?: string;
+  sshKeyPath?: string;
+  /** provider id → field values (merged into the stored account). */
+  accounts?: Record<string, Record<string, string>>;
+  removeAccounts?: string[];
+  claudeMode?: EnvironmentClaudeMode;
+  claudeApiKey?: string;
+  model?: string;
+  variables?: { key: string; value: string; secret: boolean }[];
+  removeVariables?: string[];
+  addProjectIds?: string[];
+  removeProjectIds?: string[];
+};

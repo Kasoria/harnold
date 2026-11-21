@@ -16,6 +16,7 @@ import { channelManager } from "./channels/manager.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
 import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
 import { environmentInputSchema, environmentStore } from "./environments.ts";
+import { presentProviders } from "./environment-providers.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
@@ -408,6 +409,11 @@ app.get("/design-systems/:designSystemId/*", (context) => {
 
 // --- Environments ---
 app.get("/api/environments", (context) => context.json(environmentStore.list()));
+app.get("/api/environment-providers", (context) => context.json(presentProviders()));
+app.post("/api/environments/:environmentId/import", async (context) => {
+  const result = await environmentStore.importCurrent(context.req.param("environmentId"), {});
+  return context.json(result);
+});
 app.post("/api/environments", async (context) => context.json(environmentStore.create(environmentInputSchema.parse(await context.req.json()))));
 app.put("/api/environments/:environmentId", async (context) =>
   context.json(environmentStore.update(context.req.param("environmentId"), environmentInputSchema.parse(await context.req.json()))),

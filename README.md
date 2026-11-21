@@ -76,8 +76,9 @@ Einstellungen → Claude → Modell (Standard Opus 5.5). Umgebung und Auswahl im
 
 ## Umgebungen
 
-- Eigener Screen. Eine Umgebung bündelt GitHub-Token, Vercel-Token, Git-Identität, optionalen SSH-Key und Variablen (verschlüsselt). Jedes Projekt gehört zu höchstens einer.
-- Jeder Agent-Durchlauf im Projekt (auch Tasks, Channels) läuft mit diesen Werten: `GH_TOKEN`, git über HTTPS per Token (Keychain/gh-Helper werden übergangen), `VERCEL_TOKEN`, `GIT_AUTHOR_*`, `GIT_SSH_COMMAND`. Kein Umloggen in der CLI.
+- Eigener Screen. Eine Umgebung bündelt beliebige Konten (GitHub, GitLab, Vercel, Netlify, Cloudflare, Supabase, AWS, Google Cloud, Fly.io, Railway, Render, npm, Expo, Stripe, Sentry, OpenAI, Gemini, Linear – Katalog in `environment-providers.ts`), Git-Identität, SSH-Key, KI und freie Variablen (verschlüsselt). Jedes Projekt gehört zu höchstens einer.
+- „Vom Rechner übernehmen“ bzw. im Chat „mach aus meinen aktuellen Anmeldungen eine Umgebung“: liest gh-Token, CLI-Logins, passende Env-Variablen und git-Identität im Core (Tokens laufen nicht durch den Chat). Agent-Tools `environment_import_current`, `environment_save`, `environment_check`, `environment_delete` (Änderungen mit Freigabe).
+- Jeder Agent-Durchlauf im Projekt (auch Tasks, Channels) läuft mit diesen Werten als Env-Variablen (z. B. `GH_TOKEN`, `VERCEL_TOKEN`, `CLOUDFLARE_API_TOKEN`); dazu git über HTTPS per GitHub-Token (Keychain/gh-Helper werden übergangen), `GIT_AUTHOR_*`, `GIT_SSH_COMMAND`. Kein Umloggen in der CLI.
 - KI je Umgebung: Claude-Zugang „Wie Einstellungen“, eigenes Claude-Konto (eigener Config-Ordner unter `~/.harnold/claude-accounts/<id>`, Skills/CLAUDE.md/Settings aus `~/.claude` verlinkt) oder eigener API-Key; dazu Standardmodell (Auswahl im Chat geht vor).
 - Sidebar-Umschalter zeigt nur die Projekte einer Umgebung; neue Projekte landen darin. „Konten prüfen“ zeigt, wem die Tokens gehören.
 

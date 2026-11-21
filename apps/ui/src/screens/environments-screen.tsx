@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { CheckCircle2, CircleAlert, Download, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "@/api";
-import type { ClaudeAuthStatus, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentVariable, Project } from "@/types";
+import type { ClaudeAuthStatus, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentProvider, EnvironmentVariable, Project } from "@/types";
 import { SegmentedControl } from "@/components/segmented-control";
 import { ClaudeAccountSection } from "@/components/claude-connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FormField } from "@/components/form-field";
 import { ModelSelect, modelLabel } from "@/components/model-select";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -25,10 +25,15 @@ type EnvironmentsScreenProps = {
 };
 
 const accountSummary = (environment: Environment) =>
-  [environment.claudeMode !== "inherit" && "eigenes Claude", environment.model && modelLabel(environment.model), environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH", environment.variables.length && `${environment.variables.length} Variablen`].filter(Boolean).join(" · ") ||
+  [environment.claudeMode !== "inherit" && "eigenes Claude", environment.model && modelLabel(environment.model), ...environment.accounts.map((account) => account.label), environment.sshKeyPath && "SSH", environment.variables.length && `${environment.variables.length} Variablen`].filter(Boolean).join(" · ") ||
   "noch keine Konten";
 
 export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
+  const [providers, setProviders] = useState<EnvironmentProvider[]>([]);
+  const { onError } = props;
+  useEffect(() => {
+    api.listEnvironmentProviders().then(setProviders).catch(onError);
+  }, [onError]);
   const selectedEnvironment = props.environments.find((environment) => environment.id === props.selection) ?? null;
   return (
     <ScreenLayout
@@ -64,6 +69,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
             <EnvironmentEditor
               key={selectedEnvironment?.id ?? "new"}
               environment={selectedEnvironment}
+              providers={providers}
               workspaceDefaultModel={props.workspaceDefaultModel}
               allEnvironments={props.environments}
               projects={props.projects}
@@ -96,7 +102,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
 }
 
 /** Token field: empty keeps the stored token; "Entfernen" clears it. */
-function TokenField(props: { label: string; id: string; hint?: string; stored: boolean; value: string | undefined; placeholder: string; check?: EnvironmentAccountChecks["github"]; onChange: (value: string | undefined) => void }) {
+function TokenField(props: { label: string; id: string; hint?: string; stored: boolean; value: string | undefined; placeholder: string; check?: EnvironmentAccountChecks[string]; onChange: (value: string | undefined) => void }) {
   const removed = props.value === "" && props.stored;
   return (
     <FormField label={props.label} htmlFor={props.id} hint={props.hint}>
@@ -128,6 +134,7 @@ function TokenField(props: { label: string; id: string; hint?: string; stored: b
 
 function EnvironmentEditor(props: {
   environment: Environment | null;
+  providers: EnvironmentProvider[];
   workspaceDefaultModel: string;
   allEnvironments: Environment[];
   projects: Project[];
@@ -137,24 +144,39 @@ function EnvironmentEditor(props: {
   onError: (unknownError: unknown) => void;
 }) {
   const existing = props.environment;
-  const [draft, setDraft] = useState<EnvironmentInput>(() => ({
-    name: existing?.name ?? "",
-    gitName: existing?.gitName ?? "",
-    gitEmail: existing?.gitEmail ?? "",
-    sshKeyPath: existing?.sshKeyPath ?? "",
-    githubToken: undefined,
-    vercelToken: undefined,
-    claudeMode: existing?.claudeMode ?? "inherit",
-    claudeApiKey: undefined,
-    model: existing?.model ?? "",
-    variables: existing?.variables ?? [],
-    projectIds: existing?.projectIds ?? [],
-  }));
+  const [draft, setDraft] = useState<EnvironmentInput>(() => draftFrom(existing));
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ found: string[]; notFound: string[] } | null>(null);
   const [accountChecks, setAccountChecks] = useState<EnvironmentAccountChecks>({});
 
-  const update = (changes: Partial<EnvironmentInput>) => setDraft((previous) => ({ ...previous, ...changes }));
+  // Changes from elsewhere (e.g. the agent) show up as long as nothing is being edited here.
+  useEffect(() => {
+    if (!dirty) setDraft(draftFrom(existing));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing]);
+
+  const update = (changes: Partial<EnvironmentInput>) => {
+    setDirty(true);
+    setDraft((previous) => ({ ...previous, ...changes }));
+  };
+
+  const importCurrent = async () => {
+    if (!existing) return;
+    setImporting(true);
+    try {
+      const result = await api.importCurrentAccounts(existing.id);
+      setDirty(false);
+      setDraft(draftFrom(result.environment));
+      setImportResult(result);
+    } catch (importError) {
+      props.onError(importError);
+    } finally {
+      setImporting(false);
+    }
+  };
   const updateVariable = (variableIndex: number, changes: Partial<EnvironmentVariable>) =>
     update({ variables: draft.variables.map((variable, index) => (index === variableIndex ? { ...variable, ...changes } : variable)) });
   const storedSecretKeys = new Set(existing?.variables.filter((variable) => variable.secret).map((variable) => variable.key) ?? []);
@@ -166,7 +188,8 @@ function EnvironmentEditor(props: {
       const input: EnvironmentInput = { ...draft, variables: draft.variables.filter((variable) => variable.key.trim()).map((variable) => ({ ...variable, key: variable.key.trim() })) };
       const savedEnvironment = existing ? await api.updateEnvironment(existing.id, input) : await api.createEnvironment(input);
       setAccountChecks({});
-      update({ githubToken: undefined, vercelToken: undefined, claudeApiKey: undefined });
+      setDirty(false);
+      setDraft(draftFrom(savedEnvironment));
       props.onSaved(savedEnvironment);
     } catch (saveError) {
       props.onError(saveError);
@@ -203,7 +226,7 @@ function EnvironmentEditor(props: {
       actions={
         existing && (
           <>
-            <Button size="sm" variant="secondary" className="h-7 gap-1.5 px-2 text-[12px]" disabled={checking || (!existing.githubTokenSet && !existing.vercelTokenSet)} onClick={() => void checkAccounts()}>
+            <Button size="sm" variant="secondary" className="h-7 gap-1.5 px-2 text-[12px]" disabled={checking || !existing.accounts.some((account) => props.providers.find((provider) => provider.id === account.provider)?.checkable)} onClick={() => void checkAccounts()}>
               {checking ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />} Konten prüfen
             </Button>
             <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={remove} aria-label="Löschen">
@@ -234,27 +257,16 @@ function EnvironmentEditor(props: {
           onError={props.onError}
         />
 
-        <section className="grid gap-4">
-          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Konten</h3>
-          <TokenField
-            label="GitHub-Token"
-            id="environment-github"
-            stored={existing?.githubTokenSet ?? false}
-            value={draft.githubToken}
-            placeholder="github_pat_…"
-            check={accountChecks.github}
-            onChange={(githubToken) => update({ githubToken })}
-          />
-          <TokenField
-            label="Vercel-Token"
-            id="environment-vercel"
-            stored={existing?.vercelTokenSet ?? false}
-            value={draft.vercelToken}
-            placeholder="Token"
-            check={accountChecks.vercel}
-            onChange={(vercelToken) => update({ vercelToken })}
-          />
-        </section>
+        <AccountsSection
+          providers={props.providers}
+          accounts={draft.accounts}
+          storedAccounts={existing?.accounts ?? []}
+          checks={accountChecks}
+          importing={importing}
+          importResult={importResult}
+          onImport={existing ? () => void importCurrent() : undefined}
+          onChange={(accounts) => update({ accounts })}
+        />
 
         <section className="grid gap-4">
           <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Git</h3>
@@ -423,6 +435,116 @@ function AiSection(props: {
       <FormField label="Modell">
         <ModelSelect value={props.model} onChange={(model) => props.onChange({ model })} inherited={{ model: props.workspaceDefaultModel, source: "Einstellungen" }} />
       </FormField>
+    </section>
+  );
+}
+
+function draftFrom(environment: Environment | null): EnvironmentInput {
+  return {
+    name: environment?.name ?? "",
+    gitName: environment?.gitName ?? "",
+    gitEmail: environment?.gitEmail ?? "",
+    sshKeyPath: environment?.sshKeyPath ?? "",
+    accounts: environment?.accounts.map((account) => ({ provider: account.provider, values: account.values })) ?? [],
+    claudeMode: environment?.claudeMode ?? "inherit",
+    claudeApiKey: undefined,
+    model: environment?.model ?? "",
+    variables: environment?.variables ?? [],
+    projectIds: environment?.projectIds ?? [],
+  };
+}
+
+/** Any number of provider accounts; fields come from the provider catalog. */
+function AccountsSection(props: {
+  providers: EnvironmentProvider[];
+  accounts: EnvironmentInput["accounts"];
+  storedAccounts: Environment["accounts"];
+  checks: EnvironmentAccountChecks;
+  importing: boolean;
+  importResult: { found: string[]; notFound: string[] } | null;
+  onImport?: () => void;
+  onChange: (accounts: EnvironmentInput["accounts"]) => void;
+}) {
+  const providerOf = (providerId: string) => props.providers.find((provider) => provider.id === providerId);
+  const availableProviders = props.providers.filter((provider) => !props.accounts.some((account) => account.provider === provider.id));
+  const setValue = (providerId: string, key: string, value: string) =>
+    props.onChange(props.accounts.map((account) => (account.provider === providerId ? { ...account, values: { ...account.values, [key]: value } } : account)));
+
+  return (
+    <section className="grid gap-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Konten</h3>
+        <div className="ml-auto flex items-center gap-1">
+          {props.onImport && (
+            <Button type="button" size="sm" variant="ghost" className="h-6 gap-1 px-1.5 text-[12px] text-muted-foreground" disabled={props.importing} onClick={props.onImport}>
+              {props.importing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} Vom Rechner übernehmen
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="ghost" className="h-6 gap-1 px-1.5 text-[12px] text-muted-foreground" disabled={availableProviders.length === 0}>
+                <Plus className="size-3.5" /> Konto
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-96 w-52 overflow-y-auto">
+              {availableProviders.map((provider) => (
+                <DropdownMenuItem key={provider.id} className="text-[13px]" onSelect={() => props.onChange([...props.accounts, { provider: provider.id, values: {} }])}>
+                  {provider.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {props.importResult && (
+        <p className="animate-in text-[12px] text-muted-foreground fade-in duration-150">
+          Übernommen: {props.importResult.found.join(", ") || "nichts gefunden"}
+        </p>
+      )}
+
+      {props.accounts.map((account) => {
+        const provider = providerOf(account.provider);
+        const storedKeys = props.storedAccounts.find((stored) => stored.provider === account.provider)?.setKeys ?? [];
+        const check = props.checks[account.provider];
+        return (
+          <div key={account.provider} className="grid animate-in gap-2.5 rounded-xl border p-3 fade-in duration-150">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium">{provider?.label ?? account.provider}</span>
+              {check && (
+                <span className={`flex items-center gap-1 text-[12px] ${check.ok ? "text-status-running" : "text-destructive"}`}>
+                  {check.ok ? <CheckCircle2 className="size-3.5" /> : <CircleAlert className="size-3.5" />}
+                  {check.detail}
+                </span>
+              )}
+              <button
+                type="button"
+                className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => props.onChange(props.accounts.filter((candidate) => candidate.provider !== account.provider))}
+                aria-label="Konto entfernen"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(provider?.fields ?? Object.keys(account.values).map((key) => ({ key, label: key, secret: true, placeholder: undefined }))).map((providerField) => (
+                <FormField key={providerField.key} label={providerField.label} htmlFor={`${account.provider}-${providerField.key}`}>
+                  <Input
+                    id={`${account.provider}-${providerField.key}`}
+                    type={providerField.secret ? "password" : "text"}
+                    autoComplete="off"
+                    className="font-mono text-[12.5px]"
+                    title={providerField.key}
+                    value={account.values[providerField.key] ?? ""}
+                    placeholder={providerField.secret && storedKeys.includes(providerField.key) ? "gespeichert" : (providerField.placeholder ?? providerField.key)}
+                    onChange={(changeEvent) => setValue(account.provider, providerField.key, changeEvent.target.value)}
+                  />
+                </FormField>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

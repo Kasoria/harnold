@@ -206,8 +206,7 @@ export type Environment = {
   gitName: string;
   gitEmail: string;
   sshKeyPath: string;
-  githubTokenSet: boolean;
-  vercelTokenSet: boolean;
+  accounts: EnvironmentAccount[];
   claudeMode: EnvironmentClaudeMode;
   claudeApiKeySet: boolean;
   /** "" = Harnold default. */
@@ -223,8 +222,8 @@ export type EnvironmentInput = {
   gitEmail: string;
   sshKeyPath: string;
   /** undefined keeps the stored token, "" removes it. */
-  githubToken?: string;
-  vercelToken?: string;
+  /** Listed accounts replace the stored ones; an empty secret value keeps the stored one. */
+  accounts: { provider: string; values: Record<string, string> }[];
   claudeMode: EnvironmentClaudeMode;
   claudeApiKey?: string;
   model: string;
@@ -232,7 +231,10 @@ export type EnvironmentInput = {
   projectIds: string[];
 };
 export type AccountCheck = { ok: boolean; detail: string };
-export type EnvironmentAccountChecks = { github?: AccountCheck; vercel?: AccountCheck };
+export type EnvironmentAccountChecks = Record<string, AccountCheck>;
+/** Secret values come back ""; setKeys = fields that hold a value. */
+export type EnvironmentAccount = { provider: string; label: string; values: Record<string, string>; setKeys: string[] };
+export type EnvironmentProvider = { id: string; label: string; fields: { key: string; label: string; secret: boolean; placeholder?: string }[]; checkable: boolean };
 
 export type SessionReference = { sessionId: string; sessionTitle: string; projectId: string; projectName: string };
 export type TodayOverview = {

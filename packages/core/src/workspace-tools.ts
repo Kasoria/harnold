@@ -13,6 +13,7 @@ import { voiceConfig } from "./voice.ts";
 import { imageConfig } from "./image-generation.ts";
 import { memoryConfig } from "./memory.ts";
 import { environmentStore } from "./environments.ts";
+import { environmentProviders } from "./environment-providers.ts";
 
 /**
  * In-process MCP server giving the agent access to everything in Harnold (projects, sessions, design systems,
@@ -20,7 +21,7 @@ import { environmentStore } from "./environments.ts";
  */
 export const workspaceServerName = "harnold";
 
-const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list"];
+const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list", "environment_check"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
 const autoAllowedWriteToolNames = ["design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
 export const workspaceToolNames = [...readOnlyToolNames, ...autoAllowedWriteToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
@@ -28,9 +29,11 @@ export const workspaceToolNames = [...readOnlyToolNames, ...autoAllowedWriteTool
 export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
 - Wenn der Nutzer etwas aus Harnold anspricht ("erstelle ein Design System und nutze es", "plane einen Task", "was lief in der anderen Session"), erledige es direkt mit diesen Tools – der Nutzer muss nichts manuell in den Screens verknüpfen.
+- Umgebungen (Konten/Tokens je Kontext): environment_import_current übernimmt die auf dem Rechner angemeldeten Konten (gh, vercel, netlify, supabase, npm, git-Identität …) direkt im Core – Tokens laufen dabei nicht durch den Chat. environment_save legt an/ändert (auch Tokens, die der Nutzer nennt), environment_check prüft die Konten.
 - Überblick: overview. Design Systems: design_system_create (verknüpft standardmäßig mit diesem Projekt), design_system_link, design_system_write_tokens, design_system_write_file. Ein neu verknüpftes System gilt sofort; binde dessen tokens.css wie im Tool-Ergebnis beschrieben ein.
 `.trim();
 
+const providerCatalogText = environmentProviders.map((provider) => `${provider.id} (${provider.label}): ${provider.fields.map((providerField) => providerField.key).join(", ")}`).join("; ");
 const textResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
 const errorResult = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true });
 const formatTime = (timestamp: number | null) => (timestamp ? new Date(timestamp).toLocaleString("de-DE") : "–");
@@ -124,7 +127,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
               .map((environment) =>
                 [
                   `${environment.name} – id ${environment.id}`,
-                  `  Konten: ${[environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH-Key"].filter(Boolean).join(", ") || "keine"}`,
+                  `  Konten: ${[...environment.accounts.map((account) => `${account.label} [${account.setKeys.join(", ")}]`), environment.sshKeyPath && "SSH-Key"].filter(Boolean).join(", ") || "keine"}`,
                   `  Git: ${[environment.gitName, environment.gitEmail].filter(Boolean).join(" ") || "–"}`,
                   `  KI: ${{ inherit: "wie Einstellungen", subscription: "eigenes Claude-Konto", apiKey: "eigener API-Key" }[environment.claudeMode]} · Modell ${environment.model || "Standard"}`,
                   `  Variablen: ${environment.variables.map((variable) => variable.key).join(", ") || "keine"}`,
@@ -145,6 +148,76 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
           if (!targetProject) throw new Error("Projekt nicht gefunden");
           environmentStore.assignProject(targetProject.id, environmentId);
           return textResult(`${targetProject.name} → ${environmentId ? environmentStore.get(environmentId).name : "keine Umgebung"}. Gilt ab dem nächsten Durchlauf.`);
+        }),
+      ),
+      tool(
+        "environment_import_current",
+        "Übernimmt die aktuell auf diesem Rechner angemeldeten Konten (gh-Token, Vercel/Netlify/Supabase/Fly/Railway/npm/Sentry-Logins, passende Env-Variablen, git-Identität) in eine Umgebung – neu (name) oder bestehend (environmentId). Werte werden im Core gelesen und verschlüsselt gespeichert, nicht angezeigt.",
+        {
+          environmentId: z.string().optional(),
+          name: z.string().optional().describe("Name einer neuen Umgebung"),
+          providers: z.array(z.string()).optional().describe("Nur diese Anbieter-IDs; leer = alle erkennbaren"),
+          assignCurrentProject: z.boolean().optional().describe("Aktuelles Projekt zuordnen (Standard true)"),
+        },
+        safely(async ({ environmentId, name, providers, assignCurrentProject }) => {
+          if (!environmentId && !name) throw new Error("name (neue Umgebung) oder environmentId angeben");
+          const result = await environmentStore.importCurrent(environmentId, { name, providerIds: providers, addProjectIds: assignCurrentProject === false ? [] : [project.id] });
+          return textResult(
+            [
+              `Umgebung „${result.environment.name}“ (id ${result.environment.id}) gespeichert.`,
+              `Übernommen: ${result.found.join(", ") || "nichts"}.`,
+              `Nicht gefunden: ${result.notFound.join(", ") || "–"}.`,
+              `Git: ${[result.environment.gitName, result.environment.gitEmail].filter(Boolean).join(" ") || "–"}.`,
+              `Projekte: ${result.environment.projectIds.map((projectId) => projectStore.get(projectId)?.name ?? projectId).join(", ") || "keine"}. Gilt ab dem nächsten Durchlauf.`,
+            ].join("\n"),
+          );
+        }),
+      ),
+      tool(
+        "environment_save",
+        `Legt eine Umgebung an (ohne environmentId) oder ändert sie teilweise. Konten je Anbieter-ID mit ihren Feldern; Anbieter: ${providerCatalogText}. Alles andere als variables (secret true für Tokens).`,
+        {
+          environmentId: z.string().optional(),
+          name: z.string().optional(),
+          gitName: z.string().optional(),
+          gitEmail: z.string().optional(),
+          sshKeyPath: z.string().optional(),
+          accounts: z.record(z.string(), z.record(z.string(), z.string())).optional().describe('z. B. { "github": { "GH_TOKEN": "…" }, "cloudflare": { "CLOUDFLARE_API_TOKEN": "…" } }'),
+          removeAccounts: z.array(z.string()).optional(),
+          claudeMode: z.enum(["inherit", "subscription", "apiKey"]).optional().describe("inherit = Einstellungen; subscription = eigenes Claude-Login (anmelden im Screen Umgebungen)"),
+          claudeApiKey: z.string().optional(),
+          model: z.string().optional().describe('Modell-ID, "" = aus den Einstellungen'),
+          variables: z.array(z.object({ key: z.string(), value: z.string(), secret: z.boolean() })).optional(),
+          removeVariables: z.array(z.string()).optional(),
+          assignCurrentProject: z.boolean().optional(),
+          addProjectIds: z.array(z.string()).optional(),
+          removeProjectIds: z.array(z.string()).optional(),
+        },
+        safely(({ environmentId, assignCurrentProject, addProjectIds, ...patch }) => {
+          const unknownProviders = Object.keys(patch.accounts ?? {}).filter((providerId) => !environmentProviders.some((provider) => provider.id === providerId));
+          if (unknownProviders.length) throw new Error(`Unbekannte Anbieter: ${unknownProviders.join(", ")} – dafür variables nutzen`);
+          const environment = environmentStore.save(environmentId, { ...patch, addProjectIds: [...(addProjectIds ?? []), ...(assignCurrentProject ? [project.id] : [])] });
+          return textResult(`Umgebung „${environment.name}“ (id ${environment.id}) gespeichert. Konten: ${environment.accounts.map((account) => account.label).join(", ") || "keine"}. Gilt ab dem nächsten Durchlauf.`);
+        }),
+      ),
+      tool(
+        "environment_check",
+        "Prüft bei den Anbietern, wem die Tokens einer Umgebung gehören.",
+        { environmentId: z.string() },
+        safely(async ({ environmentId }) => {
+          const results = await environmentStore.checkAccounts(environmentId);
+          return textResult(Object.entries(results).map(([providerId, check]) => `${providerId}: ${check.ok ? `ok – ${check.detail}` : `Fehler – ${check.detail}`}`).join("\n") || "Keine prüfbaren Konten.");
+        }),
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "environment_delete",
+        "Löscht eine Umgebung; ihre Projekte nutzen danach die normalen Konten des Rechners.",
+        { environmentId: z.string() },
+        safely(({ environmentId }) => {
+          const environment = environmentStore.get(environmentId);
+          environmentStore.remove(environmentId);
+          return textResult(`Umgebung „${environment.name}“ gelöscht.`);
         }),
       ),
       tool(

@@ -11,12 +11,13 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPane } from "@/components/chat/chat-pane";
 import { WorkspacePane } from "@/components/workspace/workspace-pane";
 import { NewProjectDialog } from "@/components/new-project-dialog";
-import { SettingsDialog } from "@/components/settings-dialog";
 import type { SessionStatus } from "@/components/status-dot";
-import { TasksSheet } from "@/components/tasks/tasks-sheet";
-import { MemorySheet } from "@/components/memory/memory-sheet";
-import { IntegrationsSheet } from "@/components/integrations/integrations-sheet";
-import { ChannelsSheet, channelStatusDot } from "@/components/channels/channels-sheet";
+import { routePath, useHashRoute } from "@/hooks/use-hash-route";
+import { SettingsScreen, type SettingsSection } from "@/screens/settings-screen";
+import { TasksScreen } from "@/screens/tasks-screen";
+import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
+import { IntegrationsScreen, type IntegrationsTab } from "@/screens/integrations-screen";
+import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
 import { Button } from "@/components/ui/button";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
@@ -41,20 +42,17 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [tasksSheetOpen, setTasksSheetOpen] = useState(false);
-  const [channelsSheetOpen, setChannelsSheetOpen] = useState(false);
-  const [memorySheetOpen, setMemorySheetOpen] = useState(false);
   const [memoryChangeCounter, setMemoryChangeCounter] = useState(0);
-  const [integrationsSheetOpen, setIntegrationsSheetOpen] = useState(false);
   const [integrationsChangeCounter, setIntegrationsChangeCounter] = useState(0);
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const [panelsAnimating, setPanelsAnimating] = useState(false);
 
   const workspacePanelRef = usePanelRef();
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "harnold-shell", storage: safeStorage });
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "harnold-shell-v2", storage: safeStorage });
+  const { defaultLayout: mainDefaultLayout, onLayoutChanged: onMainLayoutChanged } = useDefaultLayout({ id: "harnold-main", storage: safeStorage });
+  const { route, navigate } = useHashRoute();
 
   const activeIdsRef = useRef({ activeProjectId, activeSessionId });
   activeIdsRef.current = { activeProjectId, activeSessionId };
@@ -172,6 +170,7 @@ export function App() {
                 run: () => {
                   setActiveProjectId(serverEvent.projectId);
                   setActiveSessionId(serverEvent.sessionId);
+                  navigate("/");
                   setExpandedProjectIds((previous) => new Set(previous).add(serverEvent.projectId));
                 },
               },
@@ -179,7 +178,7 @@ export function App() {
             return;
         }
       }),
-    [refreshSessions, refreshTasks, refreshChannels],
+    [refreshSessions, refreshTasks, refreshChannels, navigate],
   );
 
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
@@ -260,6 +259,88 @@ export function App() {
     }
   };
 
+  const openSessionFromScreen = (projectId: string, sessionId: string) => {
+    setActiveProjectId(projectId);
+    setActiveSessionId(sessionId);
+    setExpandedProjectIds((previous) => new Set(previous).add(projectId));
+    navigate("/");
+  };
+
+  const renderFeatureScreen = () => {
+    switch (route.screen) {
+      case "tasks":
+        return (
+          <TasksScreen
+            selectedTaskId={route.itemId}
+            onSelectTask={(taskId) => navigate(routePath("tasks", taskId))}
+            tasks={tasks}
+            projects={projects}
+            channels={channels}
+            defaultProjectId={activeProjectId}
+            onOpenSession={openSessionFromScreen}
+            onError={reportError}
+          />
+        );
+      case "channels":
+        return (
+          <ChannelsScreen
+            selectedChannelId={route.itemId}
+            onSelectChannel={(channelId) => navigate(routePath("channels", channelId))}
+            channels={channels}
+            projects={projects}
+            defaultProjectId={activeProjectId}
+            onError={reportError}
+          />
+        );
+      case "memory": {
+        const memorySelection: MemorySelection =
+          route.section === "new"
+            ? "new"
+            : (route.section === "workspace" || route.section === "project") && route.itemId
+              ? { scope: route.section, path: route.itemId }
+              : null;
+        return (
+          <MemoryScreen
+            project={activeProject}
+            selection={memorySelection}
+            onSelect={(selection) =>
+              navigate(selection === null ? routePath("memory") : selection === "new" ? routePath("memory", "new") : `${routePath("memory", selection.scope)}/${selection.path.split("/").map(encodeURIComponent).join("/")}`)
+            }
+            memoryChangeCounter={memoryChangeCounter}
+            onOpenSettings={() => navigate(routePath("settings", "memory"))}
+            onError={reportError}
+          />
+        );
+      }
+      case "integrations":
+        return (
+          <IntegrationsScreen
+            project={activeProject}
+            activeTab={route.section === "skills" ? "skills" : "mcp"}
+            selectedItemId={route.itemId}
+            onNavigate={(tab: IntegrationsTab, itemId) => navigate(routePath("integrations", tab, itemId))}
+            integrationsChangeCounter={integrationsChangeCounter}
+            onError={reportError}
+          />
+        );
+      case "settings":
+        return (
+          <SettingsScreen
+            section={(["general", "voice", "images", "memory"].includes(route.section ?? "") ? route.section : "general") as SettingsSection}
+            onSectionChange={(section) => navigate(routePath("settings", section))}
+            onSaved={(message) => setToast({ message, tone: "info" })}
+            themePreference={themePreference}
+            onThemePreferenceChange={setThemePreference}
+            voiceSettings={voiceSettings}
+            onVoiceSettingsChange={setVoiceSettings}
+            onError={reportError}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <TooltipProvider delayDuration={400}>
       <div className={cn("h-full", panelsAnimating && "panels-animating")}>
@@ -286,11 +367,16 @@ export function App() {
               onSelectSession={(projectId, sessionId) => {
                 setActiveProjectId(projectId);
                 setActiveSessionId(sessionId);
+                navigate("/");
               }}
-              onCreateSession={(projectId) => void createSession(projectId)}
+              onCreateSession={(projectId) => {
+                navigate("/");
+                void createSession(projectId);
+              }}
               onDeleteSession={deleteSession}
               onNewProject={() => setNewProjectDialogOpen(true)}
-              onOpenSettings={() => setSettingsDialogOpen(true)}
+              activeScreen={route.screen}
+              onOpenScreen={(screen) => navigate(screen === "workspace" ? "/" : routePath(screen))}
               darkMode={resolvedTheme === "dark"}
               onDarkModeChange={(darkMode) => setThemePreference(darkMode ? "dark" : "light")}
               taskCount={tasks.length}
@@ -303,14 +389,15 @@ export function App() {
                       ? "running"
                       : channelStatusDot(channels[0])
               }
-              onOpenTasks={() => setTasksSheetOpen(true)}
-              onOpenChannels={() => setChannelsSheetOpen(true)}
-              onOpenMemory={() => setMemorySheetOpen(true)}
-              onOpenIntegrations={() => setIntegrationsSheetOpen(true)}
             />
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel id="chat" defaultSize="38" minSize={360}>
+          <ResizablePanel id="main" minSize={480}>
+            <div className="relative h-full">
+              {/* Workspace stays mounted (canvas/editor state) and is hidden while a feature screen is open. */}
+              <div className={cn("h-full", route.screen !== "workspace" && "invisible")} aria-hidden={route.screen !== "workspace"}>
+                <ResizablePanelGroup id="harnold-main" orientation="horizontal" defaultLayout={mainDefaultLayout} onLayoutChanged={onMainLayoutChanged}>
+          <ResizablePanel id="chat" defaultSize="42" minSize={360}>
             <ChatPane
               project={activeProject}
               session={activeSession}
@@ -359,58 +446,15 @@ export function App() {
               <div className="h-full bg-canvas" />
             )}
           </ResizablePanel>
+                </ResizablePanelGroup>
+              </div>
+              {route.screen !== "workspace" && <div className="absolute inset-0 z-10">{renderFeatureScreen()}</div>}
+            </div>
+          </ResizablePanel>
         </ResizablePanelGroup>
       </div>
 
       <NewProjectDialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen} onCreate={createProject} />
-      <SettingsDialog
-        open={settingsDialogOpen}
-        onOpenChange={setSettingsDialogOpen}
-        themePreference={themePreference}
-        onThemePreferenceChange={setThemePreference}
-        voiceSettings={voiceSettings}
-        onVoiceSettingsChange={setVoiceSettings}
-        onError={reportError}
-      />
-
-      <TasksSheet
-        open={tasksSheetOpen}
-        onOpenChange={setTasksSheetOpen}
-        tasks={tasks}
-        projects={projects}
-        channels={channels}
-        defaultProjectId={activeProjectId}
-        onOpenSession={(projectId, sessionId) => {
-          setActiveProjectId(projectId);
-          setActiveSessionId(sessionId);
-          setExpandedProjectIds((previous) => new Set(previous).add(projectId));
-          setTasksSheetOpen(false);
-        }}
-        onError={reportError}
-      />
-      <MemorySheet
-        open={memorySheetOpen}
-        onOpenChange={setMemorySheetOpen}
-        project={activeProject}
-        memoryChangeCounter={memoryChangeCounter}
-        onError={reportError}
-      />
-      <IntegrationsSheet
-        open={integrationsSheetOpen}
-        onOpenChange={setIntegrationsSheetOpen}
-        project={activeProject}
-        integrationsChangeCounter={integrationsChangeCounter}
-        onError={reportError}
-      />
-      <ChannelsSheet
-        open={channelsSheetOpen}
-        onOpenChange={setChannelsSheetOpen}
-        channels={channels}
-        projects={projects}
-        defaultProjectId={activeProjectId}
-        onError={reportError}
-      />
-
       {toast && (
         <div
           key={toast.message}

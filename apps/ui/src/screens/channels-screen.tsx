@@ -1,15 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
-import type { Channel, ChannelInput, ChannelType, Project } from "@/types";
 import { cn } from "@/lib/utils";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import type { Channel, ChannelInput, ChannelType, Project } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { FormField, permissionModeOptions } from "@/components/form-field";
 
@@ -67,7 +66,8 @@ function ChannelEditor(props: {
   channel: Channel | null;
   projects: Project[];
   defaultProjectId: string;
-  onDone: () => void;
+  /** Saved channel id; null on cancel/removal. */
+  onDone: (savedChannelId: string | null) => void;
   onError: (unknownError: unknown) => void;
 }) {
   const [channelInput, setChannelInput] = useState<ChannelInput>(() =>
@@ -85,9 +85,8 @@ function ChannelEditor(props: {
     setSaving(true);
     const payload: ChannelInput = { ...channelInput, allowedSenders: allowedSendersText.split(/[\n,]/).map((sender) => sender.trim()).filter(Boolean) };
     try {
-      if (props.channel) await api.updateChannel(props.channel.id, payload);
-      else await api.createChannel(payload);
-      props.onDone();
+      const savedChannel = props.channel ? await api.updateChannel(props.channel.id, payload) : await api.createChannel(payload);
+      props.onDone(savedChannel.id);
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -199,7 +198,7 @@ function ChannelEditor(props: {
         <Button size="sm" disabled={saving || !channelInput.name.trim() || !channelInput.projectId || missingSecret} onClick={save}>
           {props.channel ? "Speichern & neu verbinden" : "Verbinden"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={props.onDone}>
+        <Button size="sm" variant="ghost" onClick={() => props.onDone(null)}>
           Abbrechen
         </Button>
         {props.channel && (
@@ -210,7 +209,7 @@ function ChannelEditor(props: {
             onClick={async () => {
               if (!window.confirm(`Channel „${props.channel!.name}“ entfernen?`)) return;
               await api.deleteChannel(props.channel!.id).catch(props.onError);
-              props.onDone();
+              props.onDone(null);
             }}
           >
             <Trash2 className="size-3.5" /> Entfernen
@@ -221,89 +220,98 @@ function ChannelEditor(props: {
   );
 }
 
-type ChannelsSheetProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+type ChannelsScreenProps = {
+  selectedChannelId: string | "new" | null;
+  onSelectChannel: (channelId: string | "new" | null) => void;
   channels: Channel[];
   projects: Project[];
   defaultProjectId: string | null;
   onError: (unknownError: unknown) => void;
 };
 
-export function ChannelsSheet(props: ChannelsSheetProps) {
-  const [editingChannelId, setEditingChannelId] = useState<string | "new" | null>(null);
-
-  useEffect(() => {
-    if (!props.open) setEditingChannelId(null);
-  }, [props.open]);
+export function ChannelsScreen(props: ChannelsScreenProps) {
+  const defaultProjectId = props.defaultProjectId ?? props.projects[0]?.id ?? "";
+  const selectedChannel = props.channels.find((channel) => channel.id === props.selectedChannelId) ?? null;
+  const projectNameOf = (projectId: string) => props.projects.find((project) => project.id === projectId)?.name ?? "—";
 
   const toggleEnabled = async (channel: Channel, enabled: boolean) => {
     const { id: _id, createdAt: _createdAt, secretsSet: _secretsSet, status: _status, ...channelInput } = channel;
     await api.updateChannel(channel.id, { ...channelInput, enabled, secrets: {} }).catch(props.onError);
   };
 
-  const defaultProjectId = props.defaultProjectId ?? props.projects[0]?.id ?? "";
+  const detail =
+    props.selectedChannelId === "new" ? (
+      <DetailPane detailKey="new" title="Channel hinzufügen" subtitle="Mit dem Agent über Telegram, Discord, Slack oder E-Mail sprechen.">
+        <ChannelEditor channel={null} projects={props.projects} defaultProjectId={defaultProjectId} onDone={(savedId) => props.onSelectChannel(savedId)} onError={props.onError} />
+      </DetailPane>
+    ) : selectedChannel ? (
+      <DetailPane
+        detailKey={selectedChannel.id}
+        title={selectedChannel.name}
+        subtitle={
+          <span className="inline-flex items-center gap-1.5">
+            <StatusDot status={channelStatusDot(selectedChannel)} /> {statusLabels[selectedChannel.status.state]} · {channelTypeDefinitions[selectedChannel.type].label} ·{" "}
+            {projectNameOf(selectedChannel.projectId)}
+          </span>
+        }
+      >
+        {selectedChannel.status.error && <p className="mb-3 rounded-lg border border-destructive/40 px-3 py-2 text-[12.5px] text-destructive">{selectedChannel.status.error}</p>}
+        <ChannelEditor
+          key={selectedChannel.id}
+          channel={selectedChannel}
+          projects={props.projects}
+          defaultProjectId={defaultProjectId}
+          onDone={(savedId) => props.onSelectChannel(savedId)}
+          onError={props.onError}
+        />
+      </DetailPane>
+    ) : (
+      <EmptyState
+        title={props.channels.length ? "Channel wählen" : "Noch keine Channels"}
+        description="Schreib oder sprich mit dem Agent über Telegram, Discord, Slack oder E-Mail. Keine öffentliche URL nötig."
+        action={
+          <Button size="sm" disabled={!props.projects.length} onClick={() => props.onSelectChannel("new")}>
+            <Plus className="size-3.5" /> Channel hinzufügen
+          </Button>
+        }
+      />
+    );
 
   return (
-    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-      <SheetContent className="w-full gap-0 sm:max-w-[520px]">
-        <SheetHeader className="border-b">
-          <SheetTitle>Channels</SheetTitle>
-          <SheetDescription>Mit dem Agent über Telegram, Discord, Slack oder E-Mail sprechen.</SheetDescription>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3">
-          <Collapsible open={editingChannelId === "new"}>
-            {editingChannelId !== "new" && (
-              <Button size="sm" variant="secondary" className="mb-2" disabled={!props.projects.length} onClick={() => setEditingChannelId("new")}>
-                <Plus className="size-3.5" /> Channel hinzufügen
-              </Button>
-            )}
-            <CollapsibleContent className="collapsible-animated">
-              <div className="mb-3 rounded-xl border bg-card px-4">
-                <ChannelEditor channel={null} projects={props.projects} defaultProjectId={defaultProjectId} onDone={() => setEditingChannelId(null)} onError={props.onError} />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          {props.channels.length === 0 && editingChannelId !== "new" && (
-            <p className="py-6 text-center text-[13px] text-muted-foreground">Noch keine Channels.</p>
-          )}
-
-          <ul className="grid gap-1.5">
-            {props.channels.map((channel) => {
-              const expanded = editingChannelId === channel.id;
-              const projectName = props.projects.find((project) => project.id === channel.projectId)?.name ?? "—";
-              return (
-                <li key={channel.id} className={cn("rounded-xl border transition-colors duration-200", expanded ? "bg-card" : "border-transparent hover:bg-foreground/[0.03]")}>
-                  <div className="flex items-center gap-3 px-3 py-2.5">
-                    <Switch checked={channel.enabled} onCheckedChange={(enabled) => void toggleEnabled(channel, enabled)} aria-label="Aktiv" />
-                    <button className="min-w-0 flex-1 text-left" onClick={() => setEditingChannelId(expanded ? null : channel.id)}>
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-[13.5px] font-medium">{channel.name}</span>
-                        <span className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                          <StatusDot status={channelStatusDot(channel)} /> {statusLabels[channel.status.state]}
-                        </span>
-                      </div>
-                      <div className="truncate text-[12px] text-muted-foreground">
-                        {channelTypeDefinitions[channel.type].label} · {projectName}
-                      </div>
-                      {channel.status.error && <div className="mt-0.5 text-[12px] text-destructive">{channel.status.error}</div>}
-                    </button>
-                  </div>
-                  <Collapsible open={expanded}>
-                    <CollapsibleContent className="collapsible-animated">
-                      <div className="border-t px-4">
-                        <ChannelEditor channel={channel} projects={props.projects} defaultProjectId={defaultProjectId} onDone={() => setEditingChannelId(null)} onError={props.onError} />
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      </SheetContent>
-    </Sheet>
+    <ScreenLayout
+      title="Channels"
+      description="Externe Ein- und Ausgänge"
+      actions={
+        <Button size="sm" variant="secondary" disabled={!props.projects.length} onClick={() => props.onSelectChannel("new")}>
+          <Plus className="size-3.5" /> Channel hinzufügen
+        </Button>
+      }
+    >
+      <MasterDetail
+        list={
+          props.channels.length === 0 ? (
+            <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine Channels.</p>
+          ) : (
+            props.channels.map((channel) => (
+              <ListRow
+                key={channel.id}
+                selected={channel.id === props.selectedChannelId}
+                onSelect={() => props.onSelectChannel(channel.id)}
+                leading={<Switch checked={channel.enabled} onCheckedChange={(enabled) => void toggleEnabled(channel, enabled)} aria-label="Aktiv" />}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-medium">{channel.name}</span>
+                  <StatusDot status={channelStatusDot(channel)} />
+                </div>
+                <div className="truncate text-[11.5px] text-muted-foreground">
+                  {channelTypeDefinitions[channel.type].label} · {projectNameOf(channel.projectId)}
+                </div>
+              </ListRow>
+            ))
+          )
+        }
+        detail={detail}
+      />
+    </ScreenLayout>
   );
 }

@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import type { ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api } from "@/api";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Brain, Image as ImageIcon, Mic, SlidersHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ScreenLayout } from "./screen-layout";
+import { MemorySettingsSection } from "./settings/memory-settings-section";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SegmentedControl } from "@/components/segmented-control";
 import { FormField } from "@/components/form-field";
 import { safeStorage } from "@/lib/storage";
 import type { ThemePreference } from "@/hooks/use-theme";
 
-type SettingsDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export type SettingsSection = "general" | "voice" | "images" | "memory";
+
+type SettingsScreenProps = {
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
+  onSaved: (message: string) => void;
   themePreference: ThemePreference;
   onThemePreferenceChange: (themePreference: ThemePreference) => void;
   voiceSettings: VoiceSettingsView | null;
@@ -20,7 +25,12 @@ type SettingsDialogProps = {
   onError: (unknownError: unknown) => void;
 };
 
-type SettingsTab = "general" | "voice" | "images";
+const settingsSections: { value: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: "general", label: "Allgemein", description: "Darstellung und Verbindung zum Workspace.", icon: SlidersHorizontal },
+  { value: "voice", label: "Voice", description: "Spracherkennung und Sprachausgabe für App und Channels.", icon: Mic },
+  { value: "images", label: "Bilder", description: "Bild-Generierung im Canvas und für den Agent.", icon: ImageIcon },
+  { value: "memory", label: "Memory", description: "Ablageort und semantische Suche des Gedächtnisses.", icon: Brain },
+];
 
 const imageProviderLabels: Record<ImageProvider, string> = { none: "Aus", gemini: "Google Gemini", openai: "OpenAI" };
 
@@ -82,8 +92,7 @@ const secretLabels: Record<VoiceSecretKey, string> = {
 
 const defaultVoiceSettings: VoiceSettings = { sttProvider: "none", ttsProvider: "none", language: "de", options: {} };
 
-export function SettingsDialog(props: SettingsDialogProps) {
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+export function SettingsScreen(props: SettingsScreenProps) {
   const [coreUrl, setCoreUrl] = useState(safeStorage.getItem("harnold.coreUrl") ?? "");
   const [accessToken, setAccessToken] = useState(safeStorage.getItem("harnold.token") ?? "");
   const [voiceDraft, setVoiceDraft] = useState<VoiceSettings>(defaultVoiceSettings);
@@ -95,7 +104,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const [savingImages, setSavingImages] = useState(false);
 
   useEffect(() => {
-    if (!props.open) return;
     setImageKeyDraft("");
     api
       .readImageSettings()
@@ -105,14 +113,15 @@ export function SettingsDialog(props: SettingsDialogProps) {
       })
       .catch(props.onError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.open]);
+  }, []);
 
   const saveImages = async () => {
     setSavingImages(true);
     try {
       const secretKey = imageDraft.provider === "gemini" ? "geminiApiKey" : "openaiApiKey";
       setImageSettingsView(await api.saveImageSettings(imageDraft, imageKeyDraft ? { [secretKey]: imageKeyDraft } : {}));
-      props.onOpenChange(false);
+      setImageKeyDraft("");
+      props.onSaved("Bild-Einstellungen gespeichert");
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -121,11 +130,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
   };
 
   useEffect(() => {
-    if (!props.open || !props.voiceSettings) return;
+    if (!props.voiceSettings) return;
     const { sttProvider, ttsProvider, language, options } = props.voiceSettings;
     setVoiceDraft({ sttProvider, ttsProvider, language, options: { ...options } });
     setSecretDrafts({});
-  }, [props.open, props.voiceSettings]);
+  }, [props.voiceSettings]);
 
   const saveWorkspaceConnection = () => {
     if (coreUrl.trim()) safeStorage.setItem("harnold.coreUrl", coreUrl.trim().replace(/\/+$/, ""));
@@ -139,7 +148,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
     setSavingVoice(true);
     try {
       props.onVoiceSettingsChange(await api.saveVoiceSettings(voiceDraft, secretDrafts));
-      props.onOpenChange(false);
+      props.onSaved("Voice-Einstellungen gespeichert");
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -162,31 +171,31 @@ export function SettingsDialog(props: SettingsDialogProps) {
       </FormField>
     ));
 
+  const activeSection = settingsSections.find((sectionEntry) => sectionEntry.value === props.section) ?? settingsSections[0];
+
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Einstellungen</DialogTitle>
-          <DialogDescription>
-            {settingsTab === "general"
-              ? "Darstellung und Verbindung zum Workspace."
-              : settingsTab === "voice"
-                ? "Spracherkennung und Sprachausgabe für App und Channels."
-                : "Bild-Generierung im Canvas und für den Agent."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <SegmentedControl
-          options={[
-            { value: "general", label: "Allgemein" },
-            { value: "voice", label: "Voice" },
-            { value: "images", label: "Bilder" },
-          ]}
-          value={settingsTab}
-          onValueChange={setSettingsTab}
-        />
-
-        {settingsTab === "general" ? (
+    <ScreenLayout title="Einstellungen">
+      <div className="flex h-full min-h-0">
+        <nav className="w-56 shrink-0 space-y-0.5 border-r p-2">
+          {settingsSections.map((sectionEntry) => (
+            <button
+              key={sectionEntry.value}
+              onClick={() => props.onSectionChange(sectionEntry.value)}
+              className={cn(
+                "flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] transition-colors duration-150",
+                sectionEntry.value === activeSection.value ? "bg-foreground/[0.07] font-medium" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+              )}
+            >
+              <sectionEntry.icon className="size-4" />
+              {sectionEntry.label}
+            </button>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div key={activeSection.value} className="mx-auto max-w-xl animate-in px-6 py-6 fade-in duration-200">
+            <h2 className="text-[15px] font-semibold">{activeSection.label}</h2>
+            <p className="mt-0.5 mb-5 text-[12.5px] text-muted-foreground">{activeSection.description}</p>
+            {activeSection.value === "general" ? (
           <div key="general" className="grid animate-in gap-5 fade-in duration-200">
             <div className="flex items-center justify-between gap-4">
               <span className="text-sm">Erscheinungsbild</span>
@@ -207,8 +216,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
               <Input placeholder="Core-Adresse (leer = lokal)" value={coreUrl} onChange={(event) => setCoreUrl(event.target.value)} />
               <Input type="password" placeholder="Zugriffstoken" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} />
             </div>
+            <div>
+              <Button size="sm" onClick={saveWorkspaceConnection}>Verbinden</Button>
+            </div>
           </div>
-        ) : settingsTab === "images" ? (
+            ) : activeSection.value === "images" ? (
           <div key="images" className="grid animate-in gap-4 fade-in duration-200">
             <FormField label="Anbieter">
               <Select value={imageDraft.provider} onValueChange={(value) => setImageDraft((previous) => ({ ...previous, provider: value as ImageProvider }))}>
@@ -248,9 +260,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 </FormField>
               </>
             )}
+            <div>
+              <Button size="sm" disabled={savingImages} onClick={() => void saveImages()}>Speichern</Button>
+            </div>
           </div>
-        ) : (
-          <div key="voice" className="grid max-h-[60vh] animate-in gap-4 overflow-y-auto pr-1 fade-in duration-200">
+            ) : activeSection.value === "voice" ? (
+          <div key="voice" className="grid animate-in gap-4 fade-in duration-200">
             <div className="grid grid-cols-2 gap-3">
               <FormField label="Spracherkennung">
                 <Select value={voiceDraft.sttProvider} onValueChange={(value) => setVoiceDraft((previous) => ({ ...previous, sttProvider: value as SttProvider }))}>
@@ -305,26 +320,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 <Input value={voiceDraft.options.ffmpegBinary ?? ""} placeholder="ffmpeg" onChange={(changeEvent) => updateOption("ffmpegBinary", changeEvent.target.value)} />
               </FormField>
             )}
+            <div>
+              <Button size="sm" disabled={savingVoice} onClick={() => void saveVoice()}>Speichern</Button>
+            </div>
           </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
-            Schließen
-          </Button>
-          {settingsTab === "general" ? (
-            <Button onClick={saveWorkspaceConnection}>Verbinden</Button>
-          ) : settingsTab === "images" ? (
-            <Button disabled={savingImages} onClick={() => void saveImages()}>
-              Speichern
-            </Button>
-          ) : (
-            <Button disabled={savingVoice} onClick={() => void saveVoice()}>
-              Speichern
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            ) : (
+              <MemorySettingsSection onSaved={() => props.onSaved("Memory-Einstellungen gespeichert")} onError={props.onError} />
+            )}
+          </div>
+        </div>
+      </div>
+    </ScreenLayout>
   );
 }

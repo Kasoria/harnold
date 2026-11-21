@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, Play, Plus, Trash2 } from "lucide-react";
+import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
 import type { Channel, Project, Task, TaskInput, TaskRun } from "@/types";
-import { cn } from "@/lib/utils";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { StatusDot } from "@/components/status-dot";
 import { FormField, formatRelativeTime, modelOptions, permissionModeOptions } from "@/components/form-field";
 
@@ -25,9 +23,9 @@ export function describeSchedule(schedule: string): string {
   return schedulePresets.find((preset) => preset.value === schedule)?.label ?? schedule;
 }
 
-type TasksSheetProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+type TasksScreenProps = {
+  selectedTaskId: string | "new" | null;
+  onSelectTask: (taskId: string | "new" | null) => void;
   tasks: Task[];
   projects: Project[];
   channels: Channel[];
@@ -55,7 +53,8 @@ function TaskEditor(props: {
   initialInput: TaskInput;
   projects: Project[];
   channels: Channel[];
-  onSaved: () => void;
+  /** Saved task id; null after deletion. */
+  onSaved: (savedTaskId: string | null) => void;
   onCancel: () => void;
   onOpenSession: (projectId: string, sessionId: string) => void;
   onError: (unknownError: unknown) => void;
@@ -75,9 +74,8 @@ function TaskEditor(props: {
   const save = async () => {
     setSaving(true);
     try {
-      if (props.task) await api.updateTask(props.task.id, taskInput);
-      else await api.createTask(taskInput);
-      props.onSaved();
+      const savedTask = props.task ? await api.updateTask(props.task.id, taskInput) : await api.createTask(taskInput);
+      props.onSaved(savedTask.id);
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -225,7 +223,7 @@ function TaskEditor(props: {
             onClick={async () => {
               if (!window.confirm(`Task „${props.task!.name}“ löschen?`)) return;
               await api.deleteTask(props.task!.id).catch(props.onError);
-              props.onSaved();
+              props.onSaved(null);
             }}
           >
             <Trash2 className="size-3.5" /> Löschen
@@ -236,7 +234,7 @@ function TaskEditor(props: {
       {taskRuns.length > 0 && (
         <div className="grid gap-1 border-t pt-3">
           <span className="text-[12px] font-medium">Letzte Läufe</span>
-          {taskRuns.slice(0, 6).map((taskRun) => (
+          {taskRuns.slice(0, 20).map((taskRun) => (
             <button
               key={taskRun.id}
               disabled={!taskRun.sessionId}
@@ -255,119 +253,113 @@ function TaskEditor(props: {
   );
 }
 
-export function TasksSheet(props: TasksSheetProps) {
-  const [editingTaskId, setEditingTaskId] = useState<string | "new" | null>(null);
-
-  useEffect(() => {
-    if (!props.open) setEditingTaskId(null);
-  }, [props.open]);
+export function TasksScreen(props: TasksScreenProps) {
+  const defaultProjectId = props.defaultProjectId ?? props.projects[0]?.id ?? "";
+  const selectedTask = props.tasks.find((task) => task.id === props.selectedTaskId) ?? null;
+  const creatingTask = props.selectedTaskId === "new";
 
   const toggleEnabled = async (task: Task, enabled: boolean) => {
     const { id: _id, createdAt: _createdAt, nextRunAt: _nextRunAt, lastRun: _lastRun, ...taskInput } = task;
     await api.updateTask(task.id, { ...taskInput, enabled }).catch(props.onError);
   };
 
-  const defaultProjectId = props.defaultProjectId ?? props.projects[0]?.id ?? "";
+  const projectNameOf = (projectId: string) => props.projects.find((project) => project.id === projectId)?.name ?? "—";
+
+  const detail = creatingTask ? (
+    <DetailPane detailKey="new" title="Neuer Task" subtitle="Geplanter Agent-Lauf. Jeder Lauf landet als Session im Projekt.">
+      <TaskEditor
+        task={null}
+        initialInput={emptyTaskInput(defaultProjectId)}
+        projects={props.projects}
+        channels={props.channels}
+        onSaved={(savedTaskId) => props.onSelectTask(savedTaskId ?? null)}
+        onCancel={() => props.onSelectTask(null)}
+        onOpenSession={props.onOpenSession}
+        onError={props.onError}
+      />
+    </DetailPane>
+  ) : selectedTask ? (
+    <DetailPane
+      detailKey={selectedTask.id}
+      title={selectedTask.name}
+      subtitle={`${describeSchedule(selectedTask.schedule)} · ${projectNameOf(selectedTask.projectId)}${
+        selectedTask.nextRunAt ? ` · nächster Lauf ${formatRelativeTime(selectedTask.nextRunAt)}` : selectedTask.enabled ? "" : " · pausiert"
+      }`}
+      actions={
+        <Button size="sm" variant="secondary" disabled={selectedTask.lastRun?.status === "running"} onClick={() => api.runTask(selectedTask.id).catch(props.onError)}>
+          <Play className="size-3.5" /> Jetzt ausführen
+        </Button>
+      }
+    >
+      <TaskEditor
+        key={selectedTask.id}
+        task={selectedTask}
+        initialInput={{
+          projectId: selectedTask.projectId,
+          name: selectedTask.name,
+          prompt: selectedTask.prompt,
+          schedule: selectedTask.schedule,
+          enabled: selectedTask.enabled,
+          permissionMode: selectedTask.permissionMode,
+          model: selectedTask.model,
+          notifyChannelId: selectedTask.notifyChannelId,
+          notifyChatId: selectedTask.notifyChatId,
+        }}
+        projects={props.projects}
+        channels={props.channels}
+        onSaved={(savedTaskId) => props.onSelectTask(savedTaskId === null ? null : selectedTask.id)}
+        onCancel={() => props.onSelectTask(null)}
+        onOpenSession={props.onOpenSession}
+        onError={props.onError}
+      />
+    </DetailPane>
+  ) : (
+    <EmptyState
+      title={props.tasks.length ? "Task wählen" : "Noch keine Tasks"}
+      description="Tasks lassen den Agent zeitgesteuert arbeiten – z. B. ein tägliches Briefing oder wöchentliche Reports."
+      action={
+        <Button size="sm" disabled={!props.projects.length} onClick={() => props.onSelectTask("new")}>
+          <Plus className="size-3.5" /> Neuer Task
+        </Button>
+      }
+    />
+  );
 
   return (
-    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-      <SheetContent className="w-full gap-0 sm:max-w-[520px]">
-        <SheetHeader className="border-b">
-          <SheetTitle>Tasks</SheetTitle>
-          <SheetDescription>Geplante Agent-Läufe. Jeder Lauf landet als Session im Projekt.</SheetDescription>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3">
-          <Collapsible open={editingTaskId === "new"}>
-            {editingTaskId !== "new" && (
-              <Button size="sm" variant="secondary" className="mb-2" disabled={!props.projects.length} onClick={() => setEditingTaskId("new")}>
-                <Plus className="size-3.5" /> Neuer Task
-              </Button>
-            )}
-            <CollapsibleContent className="collapsible-animated">
-              <div className="mb-3 rounded-xl border bg-card px-4">
-                  <TaskEditor
-                    task={null}
-                    initialInput={emptyTaskInput(defaultProjectId)}
-                    projects={props.projects}
-                    channels={props.channels}
-                    onSaved={() => setEditingTaskId(null)}
-                    onCancel={() => setEditingTaskId(null)}
-                    onOpenSession={props.onOpenSession}
-                    onError={props.onError}
-                  />
+    <ScreenLayout
+      title="Tasks"
+      description="Geplante Agent-Läufe"
+      actions={
+        <Button size="sm" variant="secondary" disabled={!props.projects.length} onClick={() => props.onSelectTask("new")}>
+          <Plus className="size-3.5" /> Neuer Task
+        </Button>
+      }
+    >
+      <MasterDetail
+        list={
+          props.tasks.length === 0 ? (
+            <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine Tasks.</p>
+          ) : (
+            props.tasks.map((task) => (
+              <ListRow
+                key={task.id}
+                selected={task.id === props.selectedTaskId}
+                onSelect={() => props.onSelectTask(task.id)}
+                leading={<Switch checked={task.enabled} onCheckedChange={(enabled) => void toggleEnabled(task, enabled)} aria-label="Aktiv" />}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-medium">{task.name}</span>
+                  {task.lastRun && <StatusDot status={task.lastRun.status === "running" ? "running" : task.lastRun.status === "error" ? "error" : "idle"} />}
                 </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          {props.tasks.length === 0 && editingTaskId !== "new" && (
-            <p className="py-6 text-center text-[13px] text-muted-foreground">Noch keine Tasks.</p>
-          )}
-
-          <ul className="grid gap-1.5">
-            {props.tasks.map((task) => {
-              const expanded = editingTaskId === task.id;
-              const projectName = props.projects.find((project) => project.id === task.projectId)?.name ?? "—";
-              return (
-                <li key={task.id} className={cn("rounded-xl border transition-colors duration-200", expanded ? "bg-card" : "border-transparent hover:bg-foreground/[0.03]")}>
-                  <div className="flex items-center gap-3 px-3 py-2.5">
-                    <Switch checked={task.enabled} onCheckedChange={(enabled) => void toggleEnabled(task, enabled)} aria-label="Aktiv" />
-                    <button className="min-w-0 flex-1 text-left" onClick={() => setEditingTaskId(expanded ? null : task.id)}>
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-[13.5px] font-medium">{task.name}</span>
-                        {task.lastRun && (
-                          <StatusDot status={task.lastRun.status === "running" ? "running" : task.lastRun.status === "error" ? "error" : "idle"} />
-                        )}
-                      </div>
-                      <div className="truncate text-[12px] text-muted-foreground">
-                        {describeSchedule(task.schedule)} · {projectName}
-                        {task.nextRunAt ? ` · nächster Lauf ${formatRelativeTime(task.nextRunAt)}` : task.enabled ? "" : " · pausiert"}
-                      </div>
-                    </button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-muted-foreground"
-                      aria-label="Jetzt ausführen"
-                      title="Jetzt ausführen"
-                      disabled={task.lastRun?.status === "running"}
-                      onClick={() => api.runTask(task.id).catch(props.onError)}
-                    >
-                      <Play className="size-3.5" />
-                    </Button>
-                  </div>
-                  <Collapsible open={expanded}>
-                    <CollapsibleContent className="collapsible-animated">
-                        <div className="border-t px-4">
-                          <TaskEditor
-                            task={task}
-                            initialInput={{
-                              projectId: task.projectId,
-                              name: task.name,
-                              prompt: task.prompt,
-                              schedule: task.schedule,
-                              enabled: task.enabled,
-                              permissionMode: task.permissionMode,
-                              model: task.model,
-                              notifyChannelId: task.notifyChannelId,
-                              notifyChatId: task.notifyChatId,
-                            }}
-                            projects={props.projects}
-                            channels={props.channels}
-                            onSaved={() => setEditingTaskId(null)}
-                            onCancel={() => setEditingTaskId(null)}
-                            onOpenSession={props.onOpenSession}
-                            onError={props.onError}
-                          />
-                        </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      </SheetContent>
-    </Sheet>
+                <div className="truncate text-[11.5px] text-muted-foreground">
+                  {describeSchedule(task.schedule)} · {projectNameOf(task.projectId)}
+                </div>
+              </ListRow>
+            ))
+          )
+        }
+        detail={detail}
+      />
+    </ScreenLayout>
   );
 }

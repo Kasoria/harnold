@@ -2,6 +2,7 @@ import { Blocks, Brain, CalendarClock, ChevronRight, MessagesSquare, Moon, Plus,
 import { Switch } from "@/components/ui/switch";
 import type { Project, Session } from "@/types";
 import { cn } from "@/lib/utils";
+import type { ScreenName } from "@/hooks/use-hash-route";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectAvatar } from "@/components/project-avatar";
@@ -18,16 +19,22 @@ type AppSidebarProps = {
   onCreateSession: (projectId: string) => void;
   onDeleteSession: (session: Session) => void;
   onNewProject: () => void;
-  onOpenSettings: () => void;
+  activeScreen: ScreenName;
+  onOpenScreen: (screen: ScreenName) => void;
   darkMode: boolean;
   taskCount: number;
   channelsStatus: SessionStatus | null;
-  onOpenTasks: () => void;
-  onOpenChannels: () => void;
-  onOpenMemory: () => void;
-  onOpenIntegrations: () => void;
   onDarkModeChange: (darkMode: boolean) => void;
 };
+
+const featureScreens: { screen: ScreenName; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { screen: "tasks", label: "Tasks", icon: CalendarClock },
+  { screen: "channels", label: "Channels", icon: MessagesSquare },
+  { screen: "memory", label: "Memory", icon: Brain },
+  { screen: "integrations", label: "Integrationen", icon: Blocks },
+];
+
+const activeRowClassName = "bg-foreground/[0.07] font-medium";
 
 const rowClassName =
   "group/row flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors duration-150 hover:bg-foreground/5";
@@ -66,24 +73,14 @@ export function AppSidebar(props: AppSidebarProps) {
       <div className="flex h-12 shrink-0 items-center px-4 text-[15px] font-semibold tracking-tight">Harnold</div>
 
       <nav className="space-y-0.5 px-2 pb-2">
-        <button className={rowClassName} onClick={props.onOpenTasks}>
-          <CalendarClock className="size-4 text-muted-foreground" />
-          Tasks
-          {props.taskCount > 0 && <span className="ml-auto text-[11.5px] text-muted-foreground tabular-nums">{props.taskCount}</span>}
-        </button>
-        <button className={rowClassName} onClick={props.onOpenChannels}>
-          <MessagesSquare className="size-4 text-muted-foreground" />
-          Channels
-          {props.channelsStatus && <StatusDot status={props.channelsStatus} className="mr-1 ml-auto" />}
-        </button>
-        <button className={rowClassName} onClick={props.onOpenMemory}>
-          <Brain className="size-4 text-muted-foreground" />
-          Memory
-        </button>
-        <button className={rowClassName} onClick={props.onOpenIntegrations}>
-          <Blocks className="size-4 text-muted-foreground" />
-          Integrationen
-        </button>
+        {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
+          <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>
+            <ScreenIcon className="size-4 text-muted-foreground" />
+            {label}
+            {screen === "tasks" && props.taskCount > 0 && <span className="ml-auto text-[11.5px] text-muted-foreground tabular-nums">{props.taskCount}</span>}
+            {screen === "channels" && props.channelsStatus && <StatusDot status={props.channelsStatus} className="mr-1 ml-auto" />}
+          </button>
+        ))}
       </nav>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">
@@ -134,7 +131,7 @@ export function AppSidebar(props: AppSidebarProps) {
                       {projectSessions.map((session) => (
                         <li key={session.id}>
                           <button
-                            className={cn(rowClassName, session.id === props.activeSessionId && "bg-foreground/[0.07] font-medium")}
+                            className={cn(rowClassName, props.activeScreen === "workspace" && session.id === props.activeSessionId && activeRowClassName)}
                             onClick={() => props.onSelectSession(project.id, session.id)}
                           >
                             <StatusDot status={props.sessionStatusFor(session.id)} className="mx-1" />
@@ -155,7 +152,10 @@ export function AppSidebar(props: AppSidebarProps) {
       </div>
 
       <div className="flex items-center gap-1 border-t p-2">
-        <button className={cn(rowClassName, "text-muted-foreground hover:text-foreground")} onClick={props.onOpenSettings}>
+        <button
+          className={cn(rowClassName, props.activeScreen === "settings" ? activeRowClassName : "text-muted-foreground hover:text-foreground")}
+          onClick={() => props.onOpenScreen("settings")}
+        >
           <Settings className="size-4" /> Einstellungen
         </button>
         <label className="flex shrink-0 items-center gap-1.5 px-1 text-muted-foreground" title="Hell / Dunkel">

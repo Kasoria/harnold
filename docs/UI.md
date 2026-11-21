@@ -21,8 +21,13 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Oben: Dashboard.
 - Baum: **Projekt** (farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
-- Unten: Einstellungen.
+- Feature-Navigation: Tasks, Channels, Memory, Integrationen; unten Einstellungen. Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
+
+### Feature-Screens
+- Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
+- Aufbau: Kopf (Titel, Beschreibung, Aktionen, ggf. Tabs) + Master-Detail (Liste links, Detail/Editor rechts) bzw. Abschnitts-Navigation bei Einstellungen.
+- Sheets/Modals/Inline nur für Erstellen/Bearbeiten **innerhalb** eines Screens, sparsam.
 
 ### Chat
 - Header: Session-Titel, Status-Pill („Idle“/„Läuft“), Verlauf, Menü (…).
@@ -53,6 +58,7 @@ Jeder Zustandswechsel ist animiert – dezent, nie verspielt.
 - Popover, Dropdown, Tooltip: Fade + leichter Zoom/Slide (4px) aus Richtung des Auslösers.
 - Modals: Fade Overlay + Fade/Zoom (0.97→1) Inhalt.
 - Side-Panels (Workspace, Sheets): Slide + Fade.
+- Screen-Wechsel: Fade.
 - Aufklappen (Tool-Gruppen, Baum): Höhe + Fade.
 - Neue Chat-Einträge: kurzes Fade-in.
 - Hover/Farbwechsel: 150ms.

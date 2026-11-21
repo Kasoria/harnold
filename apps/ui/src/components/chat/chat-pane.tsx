@@ -26,6 +26,7 @@ import { useSpeechPlayback } from "@/hooks/use-speech-playback";
 import { ToolGroup, summarizeToolInput, type ToolResultItem, type ToolUseItem } from "./tool-group";
 import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
+import { ProjectQuickSelect } from "./project-quick-select";
 import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
 
@@ -388,6 +389,7 @@ export function ChatPane(props: ChatPaneProps) {
             onSend={props.onSend}
             onInterrupt={props.onInterrupt}
             onError={props.onError}
+            footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}
           />
         </div>
       )}

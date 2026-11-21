@@ -46,6 +46,8 @@ type ComposerProps = {
   onSend: (text: string, permissionMode: PermissionMode, model?: string) => void;
   onInterrupt: () => void;
   onError: (unknownError: unknown) => void;
+  /** Left side of the row under the input (e.g. project quick select). */
+  footerStart?: React.ReactNode;
 };
 
 function formatDuration(totalSeconds: number) {
@@ -318,6 +320,7 @@ export function Composer(props: ComposerProps) {
         </div>
       </div>
       <div className="mt-2 flex items-center justify-end gap-2">
+        {props.footerStart && <div className="mr-auto min-w-0">{props.footerStart}</div>}
         {props.ttsReady && (
           <Tooltip>
             <TooltipTrigger asChild>

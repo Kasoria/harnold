@@ -19,7 +19,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 | Workspace | Rest | Canvas / Preview / Code / Dateien |
 
 ### Sidebar
-- Ganz oben: **Quick Chat** – Chat ohne Projekt (eingebautes Projekt „Quick Chats“, erscheint als eigene Gruppe über den Projekten; Auto-Löschen nach X Tagen in Einstellungen › Allgemein).
+- Ganz oben: **Quick Chat** (Akzent-Button) – Chat ohne Projekt. Liste „Quick Chats“ unter den Projekten; Zuweisen per „Kein Projekt ⌄“ links unterm Composer; Auto-Löschen nach X Tagen in Einstellungen › Allgemein.
 - Darunter: **Heute** – Startansicht bei frischem Öffnen. Nur: wartende Freigaben (direkt erlauben/ablehnen), laufende Sessions, Task-Ergebnisse der letzten 24 h, 3 Sessions zum Weitermachen. Leere Bereiche entfallen.
 - Baum: **Projekt** (Emoji-Icon oder farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.

@@ -55,6 +55,10 @@ Auth zu Claude: beim ersten Start Onboarding, sonst Einstellungen → Claude. Cl
 - Zusätzlich lädt der Agent wie Claude Code `.mcp.json` und `~/.claude.json`.
 - Skills im Claude-Format (`SKILL.md`) aus `~/.claude/skills` und `<projekt>/.claude/skills`, einzeln abschaltbar.
 
+## Agent-Zugriff auf Harnold
+
+Der Agent hat in jeder Session Tools (`harnold`) für alles in Harnold: Überblick, Projekte, andere Sessions lesen, Design Systems (anlegen, verknüpfen, Tokens/Dateien schreiben), Tasks (anlegen, ändern, starten, löschen), Channels und Integrationen. Lesen und Design-System-Änderungen laufen ohne Rückfrage, Tasks/Löschen/Skills über die Freigabe. API-Keys bleiben in den Einstellungen.
+
 ## Design Systems
 
 - Eigener Screen. Systeme liegen workspace-weit unter `~/.harnold/design-systems/<id>/` (`tokens.json` mit Referenzen `{color.accent}` und `$modes.dark` → `tokens.css` automatisch; `components/`).

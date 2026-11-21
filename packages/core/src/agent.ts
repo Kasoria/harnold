@@ -5,9 +5,10 @@ import { eventHub } from "./events.ts";
 import { config } from "./config.ts";
 import { memoryNotes } from "./memory.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
-import { designSystemStore } from "./design-system.ts";
+import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
 import { claudeAuth } from "./claude-auth.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
+import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string };
@@ -19,6 +20,8 @@ Du läufst in Harnold, einem Workspace, in dem Chat, Code und Design im selben P
 - Ist ein Design System verknüpft, steht es unten (Pfad, Tokens, Einbindung).
 - design/canvas.json ist der Canvas des Nutzers (Frames + Elemente mit x/y/width/height, frameId). Neue Dateien unter design/ erscheinen dort automatisch; zum Gruppieren Frames anlegen und frameId/Position setzen.
 - Referenzen wie @pfad/zur/datei beziehen sich auf Dateien im Projekt.
+
+${workspaceInstructions}
 
 ${memoryInstructions}
 
@@ -131,13 +134,13 @@ export const agentRuntime = {
 
     try {
       const integrationOptions = agentIntegrationOptions(project);
-      const linkedDesignSystem = designSystemStore.resolveFor(project.id, sessionId);
       const agentStream = query({
         prompt: text,
         options: {
           cwd: project.path,
           env: claudeAuth.agentEnvironment(),
-          additionalDirectories: linkedDesignSystem ? [linkedDesignSystem.directory] : undefined,
+          // All design systems are open to the agent (it may create/link one mid-turn).
+          additionalDirectories: [designSystemsDirectory],
           resume: session.agentSessionId ?? undefined,
           model: model ?? config.defaultModel,
           permissionMode,
@@ -145,8 +148,8 @@ export const agentRuntime = {
           includePartialMessages: true,
           settingSources: ["user", "project", "local"],
           systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project)].filter(Boolean).join("\n\n") },
-          mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project) },
-          allowedTools: [...memoryToolNames, ...integrationOptions.allowedTools],
+          mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId) },
+          allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
           skills: integrationOptions.skills,
           abortController,
           canUseTool: (toolName, input, { signal }) =>

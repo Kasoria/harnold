@@ -33,7 +33,7 @@ database.exec(`
   );
 `);
 
-const reservedServerNames = new Set(["harnold_memory", "harnold_media"]);
+const reservedServerNames = new Set(["harnold", "harnold_memory", "harnold_media"]);
 
 export const mcpServerInputSchema = z.object({
   name: z

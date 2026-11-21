@@ -18,6 +18,8 @@ function categorizeTool(toolName: string): ToolCategory {
   if (["WebSearch", "WebFetch"].includes(toolName)) return { singular: "Im Web recherchiert", plural: (count) => `${count}× im Web` };
   if (toolName === "Skill") return { singular: "Skill genutzt", plural: (count) => `${count} Skills genutzt` };
   if (["Task", "Agent"].includes(toolName)) return { singular: "Subagent gestartet", plural: (count) => `${count} Subagents gestartet` };
+  if (toolName.startsWith("mcp__harnold__")) return { singular: "Harnold genutzt", plural: (count) => `${count}× Harnold` };
+  if (toolName.startsWith("mcp__harnold_memory__")) return { singular: "Memory genutzt", plural: (count) => `${count}× Memory` };
   if (toolName.startsWith("mcp__")) return { singular: "Integration genutzt", plural: (count) => `${count}× Integrationen` };
   return { singular: toolName, plural: (count) => `${toolName} ×${count}` };
 }

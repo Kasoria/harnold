@@ -1,0 +1,35 @@
+{
+  "brand": "Harnold",
+  "tagline": "Dein Agent. Ein Workspace.",
+  "brief": "Open-Source AI Agent Harness – Design, Entwicklung und Kommunikation in einem Workspace. Der Name ist ein Wortspiel (Harness + Arnold); das Logo soll Kraft und Humor tragen, aber in eine ruhige, dichte Entwickler-UI passen.",
+  "adjectives": ["kraftvoll", "ruhig", "selbstironisch", "präzise"],
+  "criteria": "Erkennbar bei 16 px, funktioniert einfarbig und invertiert, passt zum Blau-Akzent der App, Arnold-Anspielung ohne Porträt.",
+  "industry": "software",
+  "nav": ["Docs", "GitHub", "Download"],
+  "brand_color": "#0F4BF7",
+  "greyscale": false,
+  "designer": "Harnold",
+  "round": 2,
+  "concepts": [
+    {
+      "name": "Grinsende Hantel",
+      "symbol": "logo/harnold-symbol-color.svg",
+      "lockup": "logo/harnold-horizontal-color.svg",
+      "symbol_on_tile": "logo/variants/harnold-symbol-white.svg",
+      "lockup_on_dark": "logo/variants/harnold-horizontal-white.svg",
+      "tile_color": "#0F4BF7",
+      "idea": "Von der Seite ist eine Hantel ein H – und unter dem Gewicht biegt sich die Stange zu einem Grinsen.",
+      "rationale": [
+        "Kraft (Arnold) und Initiale in einer Form, ohne Gesicht",
+        "Pillen-Formen und runde Enden wie die UI (Radien, Senden-Button)",
+        "Eigene Wortmarke aus denselben Strichen – keine Schriftlizenz nötig"
+      ]
+    }
+  ],
+  "recommendation": "Grinsende Hantel – eigenständig im AI-Tool-Umfeld, stark bei 16 px und mit genug Humor für den Namen.",
+  "next_steps": [
+    "Favicon und App-Icon in apps/ui einbinden",
+    "README-Header und Social-Preview mit dem Lockup",
+    "Markenrecherche vor öffentlichem Launch"
+  ]
+}

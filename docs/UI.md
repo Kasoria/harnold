@@ -23,6 +23,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Darunter: **Heute** – Startansicht bei frischem Öffnen. Nur: wartende Freigaben (direkt erlauben/ablehnen), laufende Sessions, Task-Ergebnisse der letzten 24 h, 3 Sessions zum Weitermachen. Leere Bereiche entfallen.
 - Baum: **Projekt** (Emoji-Icon oder farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
+- Memory: Projektauswahl oben; Liste mit Notizen und Gruppe „Dateien“. „Datei hinzufügen“ oder Drag & Drop legt Dateien unter `memory/dateien/` (Projekt bzw. Workspace je nach Filter) ab; der Agent bekommt sie als Pfadliste und liest sie bei Bedarf. Vorschau: Bilder inline, PDF/Text im Frame.
 - Feature-Navigation: Heute, Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
 
@@ -46,7 +47,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Destruktive Aktionen immer mit Bestätigungsdialog (`confirmAction`), nie `window.confirm`. Aktion links, Abbrechen rechts, Fokus auf der Aktion (Enter bestätigt, Esc bricht ab, ←/→ wechselt).
 - Gesendete Nachricht bearbeiten → neue Version der Unterhaltung ab dort; Umschalter „‹ 1/2 ›“ an der Nachricht. Sidebar zeigt je Unterhaltung eine Zeile (öffnet die zuletzt genutzte Version).
 - Composer: Anhang, Textfeld („… Datei oder Screenshot einfügen/ablegen“), Mikrofon, runder Senden-Button. Darunter: Modell, Permission-Modus, Kontext-Ring.
-- Anhänge (Bilder, PDFs, Text, Office) per Büroklammer, Einfügen oder Drag & Drop; liegen im Projekt unter attachments/. Bilder (Anhänge, generierte, in Antworten genannte) erscheinen als Vorschau im Chat, Klick öffnet groß.
+- Anhänge (Bilder, PDFs, Text, Office) per Büroklammer, Einfügen oder Drag & Drop (ganzer Chat ist Ablagefläche, gestrichelter Rahmen in Akzentfarbe); liegen im Projekt unter attachments/. Bilder (Anhänge, generierte, in Antworten genannte) erscheinen als Vorschau im Chat, Klick öffnet groß.
 
 ### Workspace
 - Header: Breadcrumb (Projekt › Session › Ansicht) + Icon-Aktionen rechts (Vollbild, Kommentare, Link, Neu laden, Extern öffnen, Schließen).

@@ -26,6 +26,7 @@ import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemo
 import { deleteExpiredQuickChats, quickChatProject, quickChatSettings, startQuickChatCleanup } from "./quick-chats.ts";
 import { pluginStore } from "./plugins.ts";
 import { saveAttachment } from "./attachments.ts";
+import { memoryFiles } from "./memory-files.ts";
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -42,6 +43,9 @@ const mimeTypesByExtension: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".gif": "image/gif",
+  ".avif": "image/avif",
+  ".pdf": "application/pdf",
+  ".csv": "text/csv; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".woff2": "font/woff2",
@@ -438,6 +442,38 @@ app.put("/api/memory/note", async (context) => {
 
 app.delete("/api/memory/note", async (context) => {
   await memoryNotes.remove(readNoteRef(context));
+  return context.json({ ok: true });
+});
+
+// Files in memory (PDF, images, documents) – the agent sees them as a path list and reads them on demand.
+const memoryFileRefSchema = z.object({ scope: z.enum(["project", "workspace"]), projectId: z.string().nullable(), path: z.string().min(1) });
+const memoryProjectOf = (projectId: string | null | undefined) => (projectId ? requireProject(projectId) : null);
+const readMemoryFileRef = (context: { req: { query: (name: string) => string | undefined } }) =>
+  memoryFileRefSchema.parse({ scope: context.req.query("scope"), projectId: context.req.query("projectId") || null, path: context.req.query("path") });
+
+app.get("/api/memory/files", (context) => context.json(memoryFiles.list(memoryProjectOf(context.req.query("projectId")))));
+
+app.post("/api/memory/files", async (context) => {
+  const scope = z.enum(["project", "workspace"]).parse(context.req.query("scope"));
+  const project = memoryProjectOf(context.req.query("projectId"));
+  const formBody = await context.req.parseBody({ all: true });
+  const uploadedFiles = [formBody.files].flat().filter((entry): entry is File => entry instanceof File);
+  if (!uploadedFiles.length) throw new Error("Keine Datei erhalten");
+  const savedFiles = [];
+  for (const uploadedFile of uploadedFiles) savedFiles.push(memoryFiles.save(scope, project, uploadedFile.name, Buffer.from(await uploadedFile.arrayBuffer())));
+  return context.json(savedFiles);
+});
+
+app.get("/api/memory/files/raw", (context) => {
+  const fileRef = readMemoryFileRef(context);
+  const absolutePath = memoryFiles.absolutePath(fileRef.scope, memoryProjectOf(fileRef.projectId), fileRef.path);
+  const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
+  return context.body(fs.readFileSync(absolutePath), 200, { "content-type": contentType, "cache-control": "no-store" });
+});
+
+app.delete("/api/memory/files", (context) => {
+  const fileRef = readMemoryFileRef(context);
+  memoryFiles.remove(fileRef.scope, memoryProjectOf(fileRef.projectId), fileRef.path);
   return context.json({ ok: true });
 });
 

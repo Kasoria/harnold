@@ -137,6 +137,7 @@ export type VoiceSettingsView = VoiceSettings & {
 export type MemoryScope = "workspace" | "project";
 export type MemoryNoteRef = { scope: MemoryScope; projectId: string | null; path: string };
 export type MemoryNoteSummary = MemoryNoteRef & { title: string; modifiedAt: number };
+export type MemoryFile = MemoryNoteRef & { name: string; size: number; mimeType: string; modifiedAt: number };
 export type MemorySearchHit = MemoryNoteSummary & { snippet: string; score: number };
 export type EmbeddingProvider = "off" | "openai" | "ollama";
 export type MemorySettings = { workspaceDirectory: string; embeddingProvider: EmbeddingProvider; embeddingModel: string; ollamaUrl: string };

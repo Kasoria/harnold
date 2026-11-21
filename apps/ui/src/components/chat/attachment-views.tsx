@@ -14,13 +14,13 @@ export function imagePathsIn(text: string): string[] {
   return [...new Set(candidates.map((candidate) => candidate.replace(/^\.\//, "")).filter((candidate) => !/^(https?:|\/)/.test(candidate) && candidate.includes("/")))];
 }
 
-function fileIconFor(mimeType: string, fileName: string) {
+export function fileIconFor(mimeType: string, fileName: string) {
   if (mimeType === "application/pdf" || /\.(pdf|docx?|txt|md|rtf)$/i.test(fileName)) return FileText;
   if (/sheet|excel|csv/.test(mimeType) || /\.(xlsx?|csv|tsv)$/i.test(fileName)) return FileSpreadsheet;
   return FileIcon;
 }
 
-function formatFileSize(byteCount: number) {
+export function formatFileSize(byteCount: number) {
   return byteCount < 1024 * 1024 ? `${Math.max(1, Math.round(byteCount / 1024))} KB` : `${(byteCount / 1024 / 1024).toFixed(1)} MB`;
 }
 

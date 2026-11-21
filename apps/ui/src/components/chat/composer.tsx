@@ -40,6 +40,8 @@ type ComposerProps = {
   onSessionCommand: (commandName: string, commandArguments: string) => boolean;
   running: boolean;
   insertion: { text: string; nonce: number } | null;
+  /** Files dropped anywhere on the chat; attached like files picked here. */
+  droppedFiles: { files: File[]; nonce: number } | null;
   sttReady: boolean;
   ttsReady: boolean;
   readAloud: boolean;
@@ -75,7 +77,6 @@ export function Composer(props: ComposerProps) {
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
-  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = (files: File[]) => {
@@ -146,6 +147,11 @@ export function Composer(props: ComposerProps) {
     if (props.insertion) insertText(props.insertion.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.insertion]);
+
+  useEffect(() => {
+    if (props.droppedFiles) addFiles(props.droppedFiles.files);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.droppedFiles]);
 
   // Auto-height via CSS `field-sizing: content`; JS only where unsupported (older WebKit).
   useEffect(() => {
@@ -239,22 +245,7 @@ export function Composer(props: ComposerProps) {
       <div
         className={cn(
           "relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40",
-          dragActive && "ring-2 ring-primary/60",
         )}
-        onDragOver={(dragEvent) => {
-          if (!dragEvent.dataTransfer.types.includes("Files")) return;
-          dragEvent.preventDefault();
-          setDragActive(true);
-        }}
-        onDragLeave={(dragEvent) => {
-          if (!dragEvent.currentTarget.contains(dragEvent.relatedTarget as Node | null)) setDragActive(false);
-        }}
-        onDrop={(dragEvent) => {
-          if (!dragEvent.dataTransfer.files.length) return;
-          dragEvent.preventDefault();
-          setDragActive(false);
-          addFiles([...dragEvent.dataTransfer.files]);
-        }}
       >
         {pendingAttachments.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">

@@ -1,4 +1,4 @@
-import type { Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -143,6 +143,22 @@ export const api = {
     request<{ content: string }>("GET", `/api/memory/note?${memoryNoteQuery(noteRef)}`).then((responseBody) => responseBody.content),
   saveMemoryNote: (noteRef: MemoryNoteRef, content: string) =>
     request<{ path: string }>("PUT", "/api/memory/note", { ...noteRef, content }).then((responseBody) => responseBody.path),
+  listMemoryFiles: (projectId: string | null) => request<MemoryFile[]>("GET", `/api/memory/files?projectId=${encodeURIComponent(projectId ?? "")}`),
+  /** Uploads files into memory (`dateien/` of the project or workspace memory folder). */
+  uploadMemoryFiles: async (scope: MemoryScope, projectId: string | null, files: File[]): Promise<MemoryFile[]> => {
+    const formData = new FormData();
+    for (const file of files) formData.append("files", file, file.name);
+    const response = await fetch(`${coreBaseUrl}/api/memory/files?${new URLSearchParams({ scope, projectId: projectId ?? "" })}`, {
+      method: "POST",
+      headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+      body: formData,
+    });
+    const responseBody = await response.json();
+    if (!response.ok) throw new Error(responseBody.error ?? response.statusText);
+    return responseBody as MemoryFile[];
+  },
+  memoryFileUrl: (fileRef: MemoryNoteRef) => `${coreBaseUrl}/api/memory/files/raw?${memoryNoteQuery(fileRef)}${accessToken ? `&token=${encodeURIComponent(accessToken)}` : ""}`,
+  deleteMemoryFile: (fileRef: MemoryNoteRef) => request<{ ok: true }>("DELETE", `/api/memory/files?${memoryNoteQuery(fileRef)}`),
   deleteMemoryNote: (noteRef: MemoryNoteRef) => request<{ ok: true }>("DELETE", `/api/memory/note?${memoryNoteQuery(noteRef)}`),
   readVoiceSettings: () => request<VoiceSettingsView>("GET", "/api/settings/voice"),
   saveVoiceSettings: (settings: VoiceSettings, secrets: Partial<Record<VoiceSecretKey, string>>) =>

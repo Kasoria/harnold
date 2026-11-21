@@ -3,7 +3,8 @@ import { query, type PermissionMode, type PermissionResult, type SDKMessage, typ
 import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload } from "./db.ts";
 import { contentBlocksFor } from "./attachments.ts";
 import { eventHub } from "./events.ts";
-import { memoryNotes } from "./memory.ts";
+import { memoryConfig, memoryNotes } from "./memory.ts";
+import { memoryFiles } from "./memory-files.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
 import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
 import { environmentStore } from "./environments.ts";
@@ -182,7 +183,7 @@ export const agentRuntime = {
           // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
           env: agentSetup.env,
           // All design systems are open to the agent (it may create/link one mid-turn).
-          additionalDirectories: [designSystemsDirectory],
+          additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory()],
           ...(pendingFork?.mode === "resume"
             ? { resume: pendingFork.agentSessionId, resumeSessionAt: pendingFork.resumeAt, forkSession: true }
             : { resume: session.agentSessionId ?? undefined }),
@@ -192,7 +193,7 @@ export const agentRuntime = {
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
           settingSources: ["user", "project", "local"],
-          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project)].filter(Boolean).join("\n\n") },
+          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)].filter(Boolean).join("\n\n") },
           mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId) },
           allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
           skills: integrationOptions.skills,

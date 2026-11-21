@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Pencil, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
+import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
 import type { Attachment, ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,8 @@ export function ChatPane(props: ChatPaneProps) {
   const speechPlayback = useSpeechPlayback(props.onError);
   const previousRunningRef = useRef(running);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<{ files: File[]; nonce: number } | null>(null);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const projectEnvironment = props.environments.find((environment) => props.project && environment.projectIds.includes(props.project.id)) ?? null;
 
@@ -195,7 +197,31 @@ export function ChatPane(props: ChatPaneProps) {
   }, [props.session?.id]);
 
   return (
-    <section className="flex h-full min-w-0 flex-col bg-background">
+    <section
+      className="relative flex h-full min-w-0 flex-col bg-background"
+      onDragOver={(dragEvent) => {
+        if (!props.project || !dragEvent.dataTransfer.types.includes("Files")) return;
+        dragEvent.preventDefault();
+        dragEvent.dataTransfer.dropEffect = "copy";
+        setDragActive(true);
+      }}
+      onDragLeave={(dragEvent) => {
+        if (!dragEvent.currentTarget.contains(dragEvent.relatedTarget as Node | null)) setDragActive(false);
+      }}
+      onDrop={(dragEvent) => {
+        setDragActive(false);
+        if (!props.project || !dragEvent.dataTransfer.files.length) return;
+        dragEvent.preventDefault();
+        setDroppedFiles({ files: [...dragEvent.dataTransfer.files], nonce: Date.now() });
+      }}
+    >
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-2 z-30 flex animate-in flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary bg-primary/10 text-[13px] font-medium text-foreground backdrop-blur-[2px] fade-in duration-150">
+          <Paperclip className="size-5 text-primary" />
+          Dateien hier ablegen
+          <span className="text-[12px] font-normal text-muted-foreground">Bilder, PDFs, Text- und Office-Dateien</span>
+        </div>
+      )}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
         {titleDraft !== null ? (
           <input
@@ -409,6 +435,7 @@ export function ChatPane(props: ChatPaneProps) {
             running={running}
             inheritedModel={props.inheritedModel}
             insertion={props.composerInsertion}
+            droppedFiles={droppedFiles}
             sttReady={props.sttReady}
             ttsReady={props.ttsReady}
             readAloud={readAloud}

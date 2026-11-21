@@ -6,3 +6,7 @@ dist
 *.log
 .env.*
 *.tsbuildinfo
+
+# Nur Harnold-Code ins Repo: Test-Projekte und Nutzerdaten (Anhänge, Memory, Canvas) bleiben lokal
+packages/core/Teestordner/
+**/attachments/

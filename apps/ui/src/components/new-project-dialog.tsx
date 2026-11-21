@@ -7,9 +7,11 @@ type NewProjectDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreate: (name: string, projectPath?: string) => void;
+  /** Active environment the new project joins. */
+  environmentName?: string;
 };
 
-export function NewProjectDialog({ open, onOpenChange, onCreate }: NewProjectDialogProps) {
+export function NewProjectDialog({ open, onOpenChange, onCreate, environmentName }: NewProjectDialogProps) {
   const [projectName, setProjectName] = useState("");
   const [projectPath, setProjectPath] = useState("");
 
@@ -28,7 +30,9 @@ export function NewProjectDialog({ open, onOpenChange, onCreate }: NewProjectDia
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Neues Projekt</DialogTitle>
-            <DialogDescription>Ohne Ordner wird einer im Harnold-Projektverzeichnis angelegt.</DialogDescription>
+            <DialogDescription>
+              Ohne Ordner wird einer im Harnold-Projektverzeichnis angelegt.{environmentName && ` Gehört zur Umgebung ${environmentName}.`}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             <Input autoFocus placeholder="Name" value={projectName} onChange={(event) => setProjectName(event.target.value)} />

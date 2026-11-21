@@ -12,6 +12,7 @@ import { claudeAuth } from "./claude-auth.ts";
 import { voiceConfig } from "./voice.ts";
 import { imageConfig } from "./image-generation.ts";
 import { memoryConfig } from "./memory.ts";
+import { environmentStore } from "./environments.ts";
 
 /**
  * In-process MCP server giving the agent access to everything in Harnold (projects, sessions, design systems,
@@ -19,13 +20,13 @@ import { memoryConfig } from "./memory.ts";
  */
 export const workspaceServerName = "harnold";
 
-const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list"];
+const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
 const autoAllowedWriteToolNames = ["design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
 export const workspaceToolNames = [...readOnlyToolNames, ...autoAllowedWriteToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
 
 export const workspaceInstructions = `
-Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen.
+Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
 - Wenn der Nutzer etwas aus Harnold anspricht ("erstelle ein Design System und nutze es", "plane einen Task", "was lief in der anderen Session"), erledige es direkt mit diesen Tools – der Nutzer muss nichts manuell in den Screens verknüpfen.
 - Überblick: overview. Design Systems: design_system_create (verknüpft standardmäßig mit diesem Projekt), design_system_link, design_system_write_tokens, design_system_write_file. Ein neu verknüpftes System gilt sofort; binde dessen tokens.css wie im Tool-Ergebnis beschrieben ein.
 `.trim();
@@ -93,6 +94,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
             [
               `Aktuelles Projekt: ${project.name} (id ${project.id}, ${project.path})`,
               `Aktuelle Session: ${sessionStore.get(sessionId)?.title ?? "–"} (id ${sessionId})`,
+              `Umgebung hier: ${environmentStore.forProject(project.id)?.name ?? "keine (Standard-Konten des Rechners)"}`,
               `Design System hier: ${linkedSystem ? `${linkedSystem.name} (id ${linkedSystem.id})` : "keins verknüpft"}`,
               `Projekte: ${projectStore.list().length} · Design Systems: ${designSystemStore.list().length} · Tasks: ${taskStore.list().length} · Channels: ${channelStore.list().length} · MCP-Server: ${mcpServerStore.list().length}`,
               `Eingerichtet: Claude ${claudeStatus.ready ? "ja" : "nein"} · Spracherkennung ${voiceStatus.sttReady ? "ja" : "nein"} · Sprachausgabe ${voiceStatus.ttsReady ? "ja" : "nein"} · Bilder ${imageConfig.present().ready ? "ja" : "nein"} · Semantische Memory-Suche ${memoryStatus.embeddingProvider !== "off" ? "ja" : "nein"}`,
@@ -110,6 +112,39 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
         {},
         safely(() => textResult(projectStore.list().map((listedProject) => `${listedProject.name} – id ${listedProject.id} – ${listedProject.path}`).join("\n") || "Keine Projekte.")),
         { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "environment_list",
+        "Listet Umgebungen (Konten GitHub/Vercel, Git-Identität, Variablennamen – nie Werte) und ihre Projekte.",
+        {},
+        safely(() =>
+          textResult(
+            environmentStore
+              .list()
+              .map((environment) =>
+                [
+                  `${environment.name} – id ${environment.id}`,
+                  `  Konten: ${[environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH-Key"].filter(Boolean).join(", ") || "keine"}`,
+                  `  Git: ${[environment.gitName, environment.gitEmail].filter(Boolean).join(" ") || "–"}`,
+                  `  Variablen: ${environment.variables.map((variable) => variable.key).join(", ") || "keine"}`,
+                  `  Projekte: ${environment.projectIds.map((projectId) => projectStore.get(projectId)?.name ?? projectId).join(", ") || "keine"}`,
+                ].join("\n"),
+              )
+              .join("\n") || "Keine Umgebungen. Anlegen und Tokens eintragen macht der Nutzer im Screen Umgebungen.",
+          ),
+        ),
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "project_set_environment",
+        "Ordnet ein Projekt (Standard: aktuelles) einer Umgebung zu (environmentId null = keine). Gilt ab dem nächsten Durchlauf.",
+        { environmentId: z.string().nullable(), projectId: z.string().optional() },
+        safely(({ environmentId, projectId }) => {
+          const targetProject = projectStore.get(projectId ?? project.id);
+          if (!targetProject) throw new Error("Projekt nicht gefunden");
+          environmentStore.assignProject(targetProject.id, environmentId);
+          return textResult(`${targetProject.name} → ${environmentId ? environmentStore.get(environmentId).name : "keine Umgebung"}. Gilt ab dem nächsten Durchlauf.`);
+        }),
       ),
       tool(
         "session_list",

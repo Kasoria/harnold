@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 /** Top-level screens. "workspace" = chat + workspace of the active project. */
-export type ScreenName = "workspace" | "tasks" | "channels" | "memory" | "integrations" | "design" | "settings";
+export type ScreenName = "workspace" | "tasks" | "channels" | "memory" | "integrations" | "design" | "environments" | "settings";
 export type HashRoute = { screen: ScreenName; section: string | null; itemId: string | null };
 
-const screenNames: ScreenName[] = ["workspace", "tasks", "channels", "memory", "integrations", "design", "settings"];
+const screenNames: ScreenName[] = ["workspace", "tasks", "channels", "memory", "integrations", "design", "environments", "settings"];
 
 function parseHash(hash: string): HashRoute {
   const [screenSegment, ...restSegments] = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);

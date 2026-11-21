@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -15,6 +15,7 @@ import type { SessionStatus } from "@/components/status-dot";
 import { routePath, useHashRoute } from "@/hooks/use-hash-route";
 import { SettingsScreen, settingsSectionNames, type SettingsSection } from "@/screens/settings-screen";
 import { DesignSystemsScreen } from "@/screens/design-systems-screen";
+import { EnvironmentsScreen } from "@/screens/environments-screen";
 import { ClaudeOnboarding } from "@/components/claude-connection";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
 const panelAnimationMs = 260;
+const activeEnvironmentStorageKey = "harnold.activeEnvironment";
 
 export function App() {
   const { themePreference, setThemePreference, resolvedTheme } = useTheme();
@@ -49,6 +51,8 @@ export function App() {
   const [designSystemsChangeCounter, setDesignSystemsChangeCounter] = useState(0);
   const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => safeStorage.getItem(activeEnvironmentStorageKey));
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
@@ -74,10 +78,27 @@ export function App() {
 
   const refreshTasks = useCallback(() => api.listTasks().then(setTasks).catch(reportError), [reportError]);
   const refreshChannels = useCallback(() => api.listChannels().then(setChannels).catch(reportError), [reportError]);
+  const refreshEnvironments = useCallback(
+    () =>
+      api
+        .listEnvironments()
+        .then((loadedEnvironments) => {
+          setEnvironments(loadedEnvironments);
+          setActiveEnvironmentId((previous) => (previous && loadedEnvironments.some((environment) => environment.id === previous) ? previous : null));
+        })
+        .catch(reportError),
+    [reportError],
+  );
+
+  useEffect(() => {
+    if (activeEnvironmentId) safeStorage.setItem(activeEnvironmentStorageKey, activeEnvironmentId);
+    else safeStorage.removeItem(activeEnvironmentStorageKey);
+  }, [activeEnvironmentId]);
 
   useEffect(() => {
     void refreshTasks();
     void refreshChannels();
+    void refreshEnvironments();
     api.readVoiceSettings().then(setVoiceSettings).catch(reportError);
     api
       .readClaudeStatus()
@@ -86,7 +107,7 @@ export function App() {
         if (!loadedStatus.ready && !loadedStatus.cliError) setOnboardingVisible(true);
       })
       .catch(reportError);
-  }, [refreshTasks, refreshChannels]);
+  }, [refreshTasks, refreshChannels, refreshEnvironments]);
 
   const refreshSessions = useCallback(
     (projectId: string) =>
@@ -176,6 +197,9 @@ export function App() {
           case "design_systems_changed":
             setDesignSystemsChangeCounter((previous) => previous + 1);
             return;
+          case "environments_changed":
+            void refreshEnvironments();
+            return;
           case "claude_auth_changed":
             api.readClaudeStatus().then(setClaudeStatus).catch(() => undefined);
             return;
@@ -196,7 +220,7 @@ export function App() {
             return;
         }
       }),
-    [refreshSessions, refreshTasks, refreshChannels, navigate],
+    [refreshSessions, refreshTasks, refreshChannels, refreshEnvironments, navigate],
   );
 
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
@@ -228,7 +252,7 @@ export function App() {
 
   const createProject = async (name: string, projectPath?: string) => {
     try {
-      const project = await api.createProject(name, projectPath);
+      const project = await api.createProject(name, projectPath, activeEnvironmentId);
       setProjects((previous) => [project, ...previous]);
       setSessionsByProjectId((previous) => ({ ...previous, [project.id]: [] }));
       setExpandedProjectIds((previous) => new Set(previous).add(project.id));
@@ -237,6 +261,17 @@ export function App() {
     } catch (creationError) {
       reportError(creationError);
     }
+  };
+
+  /** Switches the sidebar to an environment and moves the active project into it. */
+  const switchEnvironment = (environmentId: string | null) => {
+    setActiveEnvironmentId(environmentId);
+    const environment = environments.find((candidate) => candidate.id === environmentId);
+    if (!environment || (activeProjectId && environment.projectIds.includes(activeProjectId))) return;
+    const firstProject = projects.find((project) => environment.projectIds.includes(project.id));
+    setActiveProjectId(firstProject?.id ?? null);
+    setActiveSessionId(null);
+    if (firstProject) setExpandedProjectIds((previous) => new Set(previous).add(firstProject.id));
   };
 
   const createSession = async (projectId: string): Promise<Session | null> => {
@@ -370,6 +405,18 @@ export function App() {
             onError={reportError}
           />
         );
+      case "environments":
+        return (
+          <EnvironmentsScreen
+            selection={route.itemId}
+            onSelect={(selection) => navigate(routePath("environments", selection))}
+            environments={environments}
+            projects={projects}
+            onEnvironmentsChange={() => void refreshEnvironments()}
+            onSaved={(message) => setToast({ message, tone: "info" })}
+            onError={reportError}
+          />
+        );
       case "settings":
         return (
           <SettingsScreen
@@ -428,6 +475,9 @@ export function App() {
               onOpenScreen={(screen) => navigate(screen === "workspace" ? "/" : routePath(screen))}
               darkMode={resolvedTheme === "dark"}
               onDarkModeChange={(darkMode) => setThemePreference(darkMode ? "dark" : "light")}
+              environments={environments}
+              activeEnvironmentId={activeEnvironmentId}
+              onActiveEnvironmentChange={switchEnvironment}
               taskCount={tasks.length}
               channelsStatus={
                 channels.length === 0
@@ -505,7 +555,12 @@ export function App() {
       {onboardingVisible && (
         <ClaudeOnboarding status={claudeStatus} onStatusChange={setClaudeStatus} onError={reportError} onDismiss={() => setOnboardingVisible(false)} />
       )}
-      <NewProjectDialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen} onCreate={createProject} />
+      <NewProjectDialog
+        open={newProjectDialogOpen}
+        onOpenChange={setNewProjectDialogOpen}
+        onCreate={createProject}
+        environmentName={environments.find((environment) => environment.id === activeEnvironmentId)?.name}
+      />
       {toast && (
         <div
           key={toast.message}

@@ -1,4 +1,4 @@
-import type { ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { Environment, EnvironmentAccountChecks, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -31,7 +31,13 @@ const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
 
 export const api = {
   listProjects: () => request<Project[]>("GET", "/api/projects"),
-  createProject: (name: string, path?: string) => request<Project>("POST", "/api/projects", { name, path }),
+  createProject: (name: string, path?: string, environmentId?: string | null) => request<Project>("POST", "/api/projects", { name, path, environmentId }),
+  setProjectEnvironment: (projectId: string, environmentId: string | null) => request<{ ok: true }>("PUT", `/api/projects/${projectId}/environment`, { environmentId }),
+  listEnvironments: () => request<Environment[]>("GET", "/api/environments"),
+  createEnvironment: (input: EnvironmentInput) => request<Environment>("POST", "/api/environments", input),
+  updateEnvironment: (environmentId: string, input: EnvironmentInput) => request<Environment>("PUT", `/api/environments/${environmentId}`, input),
+  deleteEnvironment: (environmentId: string) => request<{ ok: true }>("DELETE", `/api/environments/${environmentId}`),
+  checkEnvironmentAccounts: (environmentId: string) => request<EnvironmentAccountChecks>("POST", `/api/environments/${environmentId}/check`),
   listSessions: (projectId: string) => request<Session[]>("GET", `/api/projects/${projectId}/sessions`),
   createSession: (projectId: string) => request<Session>("POST", `/api/projects/${projectId}/sessions`),
   deleteSession: (sessionId: string) => request("DELETE", `/api/sessions/${sessionId}`),

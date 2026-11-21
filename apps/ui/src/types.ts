@@ -28,7 +28,8 @@ export type ServerEvent =
   | { type: "memory_changed"; projectId: string | null }
   | { type: "integrations_changed" }
   | { type: "design_systems_changed" }
-  | { type: "claude_auth_changed" };
+  | { type: "claude_auth_changed" }
+  | { type: "environments_changed" };
 
 export type CanvasElementType = "frame" | "artifact" | "note" | "text" | "rect" | "drawing";
 
@@ -195,3 +196,31 @@ export type ImageRequest = {
   count: number;
   anchor: { x: number; y: number } | null;
 };
+
+export type EnvironmentVariable = { key: string; value: string; secret: boolean };
+export type Environment = {
+  id: string;
+  name: string;
+  gitName: string;
+  gitEmail: string;
+  sshKeyPath: string;
+  githubTokenSet: boolean;
+  vercelTokenSet: boolean;
+  /** Secret values come back empty. */
+  variables: EnvironmentVariable[];
+  projectIds: string[];
+  createdAt: number;
+};
+export type EnvironmentInput = {
+  name: string;
+  gitName: string;
+  gitEmail: string;
+  sshKeyPath: string;
+  /** undefined keeps the stored token, "" removes it. */
+  githubToken?: string;
+  vercelToken?: string;
+  variables: EnvironmentVariable[];
+  projectIds: string[];
+};
+export type AccountCheck = { ok: boolean; detail: string };
+export type EnvironmentAccountChecks = { github?: AccountCheck; vercel?: AccountCheck };

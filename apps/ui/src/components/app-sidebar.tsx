@@ -1,6 +1,7 @@
-import { Blocks, Brain, CalendarClock, ChevronRight, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Trash2 } from "lucide-react";
+import { Blocks, Brain, CalendarClock, Check, ChevronRight, ChevronsUpDown, Layers, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import type { Project, Session } from "@/types";
+import type { Environment, Project, Session } from "@/types";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { ScreenName } from "@/hooks/use-hash-route";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -25,6 +26,10 @@ type AppSidebarProps = {
   taskCount: number;
   channelsStatus: SessionStatus | null;
   onDarkModeChange: (darkMode: boolean) => void;
+  environments: Environment[];
+  /** Environment id whose projects are shown, or null for all. */
+  activeEnvironmentId: string | null;
+  onActiveEnvironmentChange: (environmentId: string | null) => void;
 };
 
 const featureScreens: { screen: ScreenName; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -33,6 +38,7 @@ const featureScreens: { screen: ScreenName; label: string; icon: React.Component
   { screen: "memory", label: "Memory", icon: Brain },
   { screen: "integrations", label: "Integrationen", icon: Blocks },
   { screen: "design", label: "Design Systems", icon: Palette },
+  { screen: "environments", label: "Umgebungen", icon: Layers },
 ];
 
 const activeRowClassName = "bg-foreground/[0.07] font-medium";
@@ -68,7 +74,36 @@ function HoverAction(props: { label: string; onClick: () => void; children: Reac
   );
 }
 
+/** One click into another environment: shows its projects; their agent turns use its accounts. */
+function EnvironmentSwitcher(props: Pick<AppSidebarProps, "environments" | "activeEnvironmentId" | "onActiveEnvironmentChange" | "onOpenScreen">) {
+  const activeEnvironment = props.environments.find((environment) => environment.id === props.activeEnvironmentId) ?? null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className={cn(rowClassName, "mb-1 h-8 border bg-background font-medium hover:bg-foreground/[0.04]")}>
+        {activeEnvironment ? <ProjectAvatar name={activeEnvironment.name} /> : <Layers className="size-4 text-muted-foreground" />}
+        <span className="truncate">{activeEnvironment?.name ?? "Alle Umgebungen"}</span>
+        <ChevronsUpDown className="ml-auto size-3.5 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
+        {[null, ...props.environments].map((environment) => (
+          <DropdownMenuItem key={environment?.id ?? "all"} className="text-[13px]" onSelect={() => props.onActiveEnvironmentChange(environment?.id ?? null)}>
+            {environment ? <ProjectAvatar name={environment.name} /> : <Layers className="size-4" />}
+            <span className="truncate">{environment?.name ?? "Alle Umgebungen"}</span>
+            {(environment?.id ?? null) === props.activeEnvironmentId && <Check className="ml-auto size-3.5" />}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="text-[13px] text-muted-foreground" onSelect={() => props.onOpenScreen("environments")}>
+          <Settings className="size-4" /> Umgebungen verwalten
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function AppSidebar(props: AppSidebarProps) {
+  const activeEnvironment = props.environments.find((environment) => environment.id === props.activeEnvironmentId) ?? null;
+  const visibleProjects = activeEnvironment ? props.projects.filter((project) => activeEnvironment.projectIds.includes(project.id)) : props.projects;
   return (
     <aside className="flex h-full flex-col bg-sidebar">
       <div className="flex h-12 shrink-0 items-center px-4 text-[15px] font-semibold tracking-tight">Harnold</div>
@@ -85,6 +120,14 @@ export function AppSidebar(props: AppSidebarProps) {
       </nav>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">
+        {props.environments.length > 0 && (
+          <EnvironmentSwitcher
+            environments={props.environments}
+            activeEnvironmentId={props.activeEnvironmentId}
+            onActiveEnvironmentChange={props.onActiveEnvironmentChange}
+            onOpenScreen={props.onOpenScreen}
+          />
+        )}
         <div className="flex items-center justify-between px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Projekte
           <Tooltip>
@@ -101,10 +144,12 @@ export function AppSidebar(props: AppSidebarProps) {
           </Tooltip>
         </div>
 
-        {props.projects.length === 0 && <p className="px-2 py-1 text-[13px] text-muted-foreground">Noch keine Projekte.</p>}
+        {visibleProjects.length === 0 && (
+          <p className="px-2 py-1 text-[13px] text-muted-foreground">{activeEnvironment ? `Noch keine Projekte in ${activeEnvironment.name}.` : "Noch keine Projekte."}</p>
+        )}
 
         <ul className="space-y-0.5">
-          {props.projects.map((project) => {
+          {visibleProjects.map((project) => {
             const expanded = props.expandedProjectIds.has(project.id);
             const projectSessions = props.sessionsByProjectId[project.id] ?? [];
             return (

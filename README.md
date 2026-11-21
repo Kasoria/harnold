@@ -66,6 +66,12 @@ Der Agent hat in jeder Session Tools (`harnold`) für alles in Harnold: Überbli
 - Der Agent bekommt das verknüpfte System (Pfad, Tokens) und Zugriff auf den Ordner; Entwürfe binden es über `_harnold/design-systems/<id>/tokens.css` ein (virtuell in der Preview).
 - Alte projektlokale `design-system/`-Ordner werden einmalig importiert und verknüpft.
 
+## Umgebungen
+
+- Eigener Screen. Eine Umgebung bündelt GitHub-Token, Vercel-Token, Git-Identität, optionalen SSH-Key und Variablen (verschlüsselt). Jedes Projekt gehört zu höchstens einer.
+- Jeder Agent-Durchlauf im Projekt (auch Tasks, Channels) läuft mit diesen Werten: `GH_TOKEN`, git über HTTPS per Token (Keychain/gh-Helper werden übergangen), `VERCEL_TOKEN`, `GIT_AUTHOR_*`, `GIT_SSH_COMMAND`. Kein Umloggen in der CLI.
+- Sidebar-Umschalter zeigt nur die Projekte einer Umgebung; neue Projekte landen darin. „Konten prüfen“ zeigt, wem die Tokens gehören.
+
 ## Bild-Generierung
 
 - Einstellungen → Bilder: Google Gemini (Standard `gemini-nano-banana-2.1`, Key oder `GEMINI_API_KEY`) oder OpenAI (`gpt-image-1`).

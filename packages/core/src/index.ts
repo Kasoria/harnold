@@ -15,6 +15,7 @@ import { channelStore, toPublicChannel } from "./channels/store.ts";
 import { channelManager } from "./channels/manager.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
 import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
+import { environmentInputSchema, environmentStore } from "./environments.ts";
 import { claudeAuth, claudeSettingsSchema } from "./claude-auth.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
@@ -62,12 +63,13 @@ app.get("/api/projects", (context) => context.json(projectStore.list()));
 
 app.post("/api/projects", async (context) => {
   const body = z
-    .object({ name: z.string().min(1), path: z.string().optional() })
+    .object({ name: z.string().min(1), path: z.string().optional(), environmentId: z.string().nullable().optional() })
     .parse(await context.req.json());
   const folderName = body.name.trim().replace(/[^\w.-]+/g, "-").toLowerCase();
   const projectPath = path.resolve(body.path?.trim() || path.join(config.projectsDirectory, folderName));
   fs.mkdirSync(projectPath, { recursive: true });
   const project = projectStore.create(body.name.trim(), projectPath);
+  if (body.environmentId) environmentStore.assignProject(project.id, body.environmentId);
   watchProject(project);
   void memoryIndex.reindex("project", project);
   return context.json(project);
@@ -76,6 +78,7 @@ app.post("/api/projects", async (context) => {
 app.delete("/api/projects/:projectId", (context) => {
   // Removes only Harnold's record; the folder on disk stays untouched.
   unwatchProject(context.req.param("projectId"));
+  environmentStore.assignProject(context.req.param("projectId"), null);
   projectStore.remove(context.req.param("projectId"));
   return context.json({ ok: true });
 });
@@ -369,6 +372,23 @@ app.get("/design-systems/:designSystemId/*", (context) => {
   if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) return context.text("Nicht gefunden", 404);
   const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
   return context.body(fs.readFileSync(absolutePath), 200, { "content-type": contentType, "cache-control": "no-store" });
+});
+
+// --- Environments ---
+app.get("/api/environments", (context) => context.json(environmentStore.list()));
+app.post("/api/environments", async (context) => context.json(environmentStore.create(environmentInputSchema.parse(await context.req.json()))));
+app.put("/api/environments/:environmentId", async (context) =>
+  context.json(environmentStore.update(context.req.param("environmentId"), environmentInputSchema.parse(await context.req.json()))),
+);
+app.delete("/api/environments/:environmentId", (context) => {
+  environmentStore.remove(context.req.param("environmentId"));
+  return context.json({ ok: true });
+});
+app.post("/api/environments/:environmentId/check", async (context) => context.json(await environmentStore.checkAccounts(context.req.param("environmentId"))));
+app.put("/api/projects/:projectId/environment", async (context) => {
+  const body = z.object({ environmentId: z.string().nullable() }).parse(await context.req.json());
+  environmentStore.assignProject(requireProject(context.req.param("projectId")).id, body.environmentId);
+  return context.json({ ok: true });
 });
 
 // --- Claude connection ---

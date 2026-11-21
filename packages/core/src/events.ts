@@ -21,7 +21,8 @@ export type ServerEvent =
   | { type: "memory_changed"; projectId: string | null }
   | { type: "integrations_changed" }
   | { type: "design_systems_changed" }
-  | { type: "claude_auth_changed" };
+  | { type: "claude_auth_changed" }
+  | { type: "environments_changed" };
 
 type Listener = (serverEvent: ServerEvent) => void;
 const listeners = new Set<Listener>();

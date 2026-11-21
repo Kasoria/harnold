@@ -7,6 +7,7 @@ import { memoryNotes } from "./memory.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
 import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
 import { claudeAuth } from "./claude-auth.ts";
+import { environmentStore } from "./environments.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
 import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
@@ -138,7 +139,8 @@ export const agentRuntime = {
         prompt: text,
         options: {
           cwd: project.path,
-          env: claudeAuth.agentEnvironment(),
+          // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
+          env: { ...claudeAuth.agentEnvironment(), ...environmentStore.variablesForProject(project.id) },
           // All design systems are open to the agent (it may create/link one mid-turn).
           additionalDirectories: [designSystemsDirectory],
           resume: session.agentSessionId ?? undefined,
@@ -147,7 +149,7 @@ export const agentRuntime = {
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
           settingSources: ["user", "project", "local"],
-          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project)].filter(Boolean).join("\n\n") },
+          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project)].filter(Boolean).join("\n\n") },
           mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId) },
           allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
           skills: integrationOptions.skills,

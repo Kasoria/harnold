@@ -21,11 +21,11 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Oben: Dashboard.
 - Baum: **Projekt** (farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
-- Feature-Navigation: Tasks, Channels, Memory, Integrationen, Design Systems; unten Einstellungen. Aktiver Screen hervorgehoben.
+- Feature-Navigation: Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
 
 ### Feature-Screens
-- Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Design Systems, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
+- Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
 - Aufbau: Kopf (Titel, Beschreibung, Aktionen, ggf. Tabs) + Master-Detail (Liste links, Detail/Editor rechts) bzw. Abschnitts-Navigation bei Einstellungen.
 - Sheets/Modals/Inline nur für Erstellen/Bearbeiten **innerhalb** eines Screens, sparsam.
 

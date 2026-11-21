@@ -14,6 +14,7 @@ import { imageConfig } from "./image-generation.ts";
 import { memoryConfig } from "./memory.ts";
 import { environmentStore } from "./environments.ts";
 import { environmentProviders } from "./environment-providers.ts";
+import { sessionActions } from "./session-actions.ts";
 
 /**
  * In-process MCP server giving the agent access to everything in Harnold (projects, sessions, design systems,
@@ -23,13 +24,14 @@ export const workspaceServerName = "harnold";
 
 const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list", "environment_check"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
-const autoAllowedWriteToolNames = ["design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
+const autoAllowedWriteToolNames = ["session_rename", "design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
 export const workspaceToolNames = [...readOnlyToolNames, ...autoAllowedWriteToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
 
 export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
 - Wenn der Nutzer etwas aus Harnold anspricht ("erstelle ein Design System und nutze es", "plane einen Task", "was lief in der anderen Session"), erledige es direkt mit diesen Tools – der Nutzer muss nichts manuell in den Screens verknüpfen.
 - Umgebungen (Konten/Tokens je Kontext): environment_import_current übernimmt die auf dem Rechner angemeldeten Konten (gh, vercel, netlify, supabase, npm, git-Identität …) direkt im Core – Tokens laufen dabei nicht durch den Chat. environment_save legt an/ändert (auch Tokens, die der Nutzer nennt), environment_check prüft die Konten.
+- Sessions: session_move verschiebt eine Session in ein anderes Projekt/eine andere Umgebung (Projekte via project_list), session_rename benennt um.
 - Überblick: overview. Design Systems: design_system_create (verknüpft standardmäßig mit diesem Projekt), design_system_link, design_system_write_tokens, design_system_write_file. Ein neu verknüpftes System gilt sofort; binde dessen tokens.css wie im Tool-Ergebnis beschrieben ein.
 `.trim();
 
@@ -243,6 +245,27 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
           return textResult(`Session „${session.title}“ (Projekt ${projectStore.get(session.projectId)?.name ?? "?"})\n\n${textItems.slice(-(limit ?? 40)).join("\n\n") || "Leer."}`);
         }),
         { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "session_rename",
+        "Benennt eine Session um (Standard: aktuelle).",
+        { title: z.string().min(1), sessionId: z.string().optional() },
+        safely(({ title, sessionId: targetSessionId }) => {
+          sessionActions.rename(targetSessionId ?? sessionId, title);
+          return textResult(`Umbenannt in „${title}“.`);
+        }),
+      ),
+      tool(
+        "session_move",
+        "Verschiebt eine Session (Standard: aktuelle) samt Agent-Kontext in ein anderes Projekt – damit auch in dessen Umgebung. Die aktuelle Session wird nach diesem Durchlauf verschoben.",
+        { projectId: z.string(), sessionId: z.string().optional() },
+        safely(({ projectId, sessionId: targetSessionId }) => {
+          const targetProject = projectStore.get(projectId);
+          if (!targetProject) throw new Error("Projekt nicht gefunden");
+          const { deferred } = sessionActions.move(targetSessionId ?? sessionId, targetProject.id);
+          const environment = environmentStore.forProject(targetProject.id);
+          return textResult(`${deferred ? "Wird nach diesem Durchlauf verschoben" : "Verschoben"} nach ${targetProject.name}${environment ? ` (Umgebung ${environment.name})` : ""}.`);
+        }),
       ),
 
       // ------------------------------------------------------------ Design systems

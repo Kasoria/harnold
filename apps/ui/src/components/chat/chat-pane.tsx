@@ -1,10 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import { Loader2, MoreHorizontal, PanelRight, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
-import type { ChatItem, PermissionMode, PermissionRequest, Project, Session } from "@/types";
+import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Pencil, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
+import type { ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { confirmAction } from "@/components/confirm-dialog";
+import { ChatMarkdown, CopyButton } from "./chat-markdown";
+import { ActivityIndicator, ThinkingBlock } from "./activity";
+import { MoveSessionDialog } from "./move-session-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { safeStorage } from "@/lib/storage";
@@ -19,6 +33,15 @@ type ChatPaneProps = {
   status: SessionStatus;
   chatItems: ChatItem[];
   streamingDraft: string;
+  streamingThinking: string;
+  projects: Project[];
+  environments: Environment[];
+  onNewSession: () => void;
+  onRenameSession: (title: string) => void;
+  onMoveSession: (projectId: string) => void;
+  onSetProjectEnvironment: (environmentId: string | null) => void;
+  /** Clears timeline and agent context (/clear). */
+  onClearSession: () => void;
   permissionRequests: PermissionRequest[];
   composerInsertion: { text: string; nonce: number } | null;
   workspaceOpen: boolean;
@@ -61,6 +84,45 @@ export function ChatPane(props: ChatPaneProps) {
   const [readAloud, setReadAloud] = useState(safeStorage.getItem("harnold.readAloud") === "1");
   const speechPlayback = useSpeechPlayback(props.onError);
   const previousRunningRef = useRef(running);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const projectEnvironment = props.environments.find((environment) => props.project && environment.projectIds.includes(props.project.id)) ?? null;
+
+  const commitTitle = () => {
+    if (titleDraft?.trim() && titleDraft.trim() !== props.session?.title) props.onRenameSession(titleDraft.trim());
+    setTitleDraft(null);
+  };
+
+  const clearSession = async () => {
+    if (await confirmAction({ title: "Kontext leeren?", description: "Verlauf und Agent-Kontext dieser Session werden zurückgesetzt.", confirmLabel: "Leeren" })) props.onClearSession();
+  };
+
+  /** Slash commands Harnold handles itself; false = send to the agent. */
+  const runSessionCommand = (commandName: string, commandArguments: string): boolean => {
+    switch (commandName) {
+      case "clear":
+        if (props.session) void clearSession();
+        return true;
+      case "new":
+        props.onNewSession();
+        return true;
+      case "rename":
+        if (!props.session) return true;
+        if (commandArguments) props.onRenameSession(commandArguments);
+        else setTitleDraft(props.session.title);
+        return true;
+      case "move":
+        if (props.session) setMoveDialogOpen(true);
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const lastUserItem = props.chatItems.findLast((chatItem) => chatItem.kind === "user_text");
+  const lastItem = props.chatItems.at(-1);
+  const toolPending = lastItem?.kind === "tool_use";
+  const showActivity = running && !props.streamingDraft && !props.streamingThinking && props.permissionRequests.length === 0;
 
   useEffect(() => safeStorage.setItem("harnold.readAloud", readAloud ? "1" : "0"), [readAloud]);
 
@@ -90,7 +152,7 @@ export function ChatPane(props: ChatPaneProps) {
     if (!scrollContainer) return;
     const nearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 160;
     if (nearBottom) scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: "smooth" });
-  }, [props.chatItems.length, props.streamingDraft, props.permissionRequests.length]);
+  }, [props.chatItems.length, props.streamingDraft, props.streamingThinking, props.permissionRequests.length]);
 
   useEffect(() => {
     scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight });
@@ -99,7 +161,24 @@ export function ChatPane(props: ChatPaneProps) {
   return (
     <section className="flex h-full min-w-0 flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <h1 className="truncate text-[14px] font-semibold">{props.session?.title ?? props.project?.name ?? "Harnold"}</h1>
+        {titleDraft !== null ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={(changeEvent) => setTitleDraft(changeEvent.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(keyboardEvent) => {
+              if (keyboardEvent.key === "Enter") commitTitle();
+              if (keyboardEvent.key === "Escape") setTitleDraft(null);
+            }}
+            className="min-w-0 flex-1 rounded-md bg-muted px-2 py-0.5 text-[14px] font-semibold outline-none"
+            aria-label="Session-Titel"
+          />
+        ) : (
+          <h1 className="truncate text-[14px] font-semibold" onDoubleClick={() => props.session && setTitleDraft(props.session.title)}>
+            {props.session?.title ?? props.project?.name ?? "Harnold"}
+          </h1>
+        )}
         {props.session && (
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
             <StatusDot status={props.status} />
@@ -114,9 +193,37 @@ export function ChatPane(props: ChatPaneProps) {
                   <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="min-w-52">
+                <DropdownMenuItem onSelect={() => setTitleDraft(props.session!.title)}>
+                  <Pencil /> Umbenennen
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setMoveDialogOpen(true)}>
+                  <ArrowRightLeft /> Verschieben …
+                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Layers /> Umgebung: {projectEnvironment?.name ?? "keine"}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuRadioGroup
+                      value={projectEnvironment?.id ?? "none"}
+                      onValueChange={(environmentId) => props.onSetProjectEnvironment(environmentId === "none" ? null : environmentId)}
+                    >
+                      {props.environments.map((environment) => (
+                        <DropdownMenuRadioItem key={environment.id} value={environment.id}>
+                          {environment.name}
+                        </DropdownMenuRadioItem>
+                      ))}
+                      <DropdownMenuRadioItem value="none">Keine</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem disabled={running} onSelect={() => void clearSession()}>
+                  <Eraser /> Kontext leeren
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={props.onDeleteSession}>
-                  <Trash2 /> Session löschen
+                  <Trash2 /> Löschen
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -160,9 +267,13 @@ export function ChatPane(props: ChatPaneProps) {
               case "assistant_text":
                 return (
                   <div key={chatItem.id} className="group/answer relative animate-in fade-in duration-200">
-                    <div className="chat-markdown">
-                      <ReactMarkdown>{chatItem.text}</ReactMarkdown>
-                    </div>
+                    <ChatMarkdown text={chatItem.text} />
+                    <div className="mt-0.5 flex items-center gap-1">
+                    <CopyButton
+                      readText={() => chatItem.text}
+                      label="Kopieren"
+                      className="h-6 px-1 text-[11.5px] opacity-0 transition-opacity duration-150 group-hover/answer:opacity-100 focus-visible:opacity-100"
+                    />
                     {props.ttsReady && (
                       <Button
                         variant="ghost"
@@ -185,6 +296,17 @@ export function ChatPane(props: ChatPaneProps) {
                         {speechPlayback.speakingKey === chatItem.id ? "Stopp" : "Vorlesen"}
                       </Button>
                     )}
+                    </div>
+                  </div>
+                );
+              case "thinking":
+                return <ThinkingBlock key={chatItem.id} text={chatItem.text} />;
+              case "notice":
+                return (
+                  <div key={chatItem.id} className="flex animate-in items-center gap-3 py-1 text-[11.5px] text-muted-foreground fade-in duration-200">
+                    <span className="h-px flex-1 bg-border" />
+                    {chatItem.text}
+                    <span className="h-px flex-1 bg-border" />
                   </div>
                 );
               case "turn_result":
@@ -202,11 +324,9 @@ export function ChatPane(props: ChatPaneProps) {
             }
           })}
 
-          {props.streamingDraft && (
-            <div className="chat-markdown">
-              <ReactMarkdown>{props.streamingDraft}</ReactMarkdown>
-            </div>
-          )}
+          {props.streamingThinking && <ThinkingBlock text={props.streamingThinking} live />}
+          {props.streamingDraft && <ChatMarkdown text={props.streamingDraft} />}
+          {showActivity && <ActivityIndicator label={toolPending ? "Führt aus" : "Arbeitet"} startedAt={lastUserItem?.createdAt ?? Date.now()} />}
 
           {props.permissionRequests.map((permissionRequest) => (
             <div
@@ -249,12 +369,22 @@ export function ChatPane(props: ChatPaneProps) {
               setReadAloud(nextReadAloud);
               if (!nextReadAloud) speechPlayback.stopSpeaking();
             }}
+            projectId={props.project.id}
+            onSessionCommand={runSessionCommand}
             onSend={props.onSend}
             onInterrupt={props.onInterrupt}
             onError={props.onError}
           />
         </div>
       )}
+      <MoveSessionDialog
+        open={moveDialogOpen}
+        onOpenChange={setMoveDialogOpen}
+        projects={props.projects}
+        environments={props.environments}
+        currentProjectId={props.project?.id ?? null}
+        onMove={props.onMoveSession}
+      />
     </section>
   );
 }

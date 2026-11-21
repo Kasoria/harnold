@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Loader2, Mic, Square, Volume2, VolumeX, X } from "lucide-react";
-import type { PermissionMode } from "@/types";
+import type { AgentCommand, PermissionMode } from "@/types";
 import { api } from "@/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,32 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { permissionModeOptions } from "@/components/form-field";
-import { ModelSelect, type InheritedModel } from "@/components/model-select";
+import { agentModels, ModelSelect, type InheritedModel } from "@/components/model-select";
+
+type ComposerCommand = AgentCommand & { source: "harnold" | "agent" };
+
+/** Harnold's own commands; /compact etc. go to the agent. */
+const harnoldCommands: ComposerCommand[] = [
+  { name: "clear", description: "Verlauf und Kontext leeren", argumentHint: "", source: "harnold" },
+  { name: "new", description: "Neue Session", argumentHint: "", source: "harnold" },
+  { name: "rename", description: "Session umbenennen", argumentHint: "<Titel>", source: "harnold" },
+  { name: "move", description: "In anderes Projekt / andere Umgebung verschieben", argumentHint: "", source: "harnold" },
+  { name: "model", description: "Modell wechseln", argumentHint: agentModels.map((agentModel) => agentModel.label.split(" ")[0].toLowerCase()).join(" | "), source: "harnold" },
+  { name: "plan", description: "Plan-Modus an/aus", argumentHint: "", source: "harnold" },
+];
+
+function parseCommand(text: string): { name: string; commandArguments: string } | null {
+  const commandMatch = /^\/([\w:.-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  return commandMatch ? { name: commandMatch[1], commandArguments: (commandMatch[2] ?? "").trim() } : null;
+}
 
 type ComposerProps = {
   /** Model used when none is picked here (environment or settings). */
   inheritedModel: InheritedModel;
   placeholder: string;
+  projectId: string;
+  /** Session-level commands (/clear, /new, /rename, /move); returns false when it is not one. */
+  onSessionCommand: (commandName: string, commandArguments: string) => boolean;
   running: boolean;
   insertion: { text: string; nonce: number } | null;
   sttReady: boolean;
@@ -43,6 +63,33 @@ export function Composer(props: ComposerProps) {
   const [transcribing, setTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorder = useVoiceRecorder();
+  const [agentCommandList, setAgentCommandList] = useState<AgentCommand[]>([]);
+  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
+
+  const commandQuery = /^\/[\w:.-]*$/.test(composerText) ? composerText.slice(1).toLowerCase() : null;
+  const commandMenuOpen = commandQuery !== null && !commandMenuDismissed;
+
+  useEffect(() => {
+    if (commandMenuOpen) api.listAgentCommands(props.projectId).then(setAgentCommandList).catch(() => setAgentCommandList([]));
+  }, [commandMenuOpen, props.projectId]);
+
+  const matchingCommands = useMemo(() => {
+    if (commandQuery === null) return [];
+    const allCommands: ComposerCommand[] = [
+      ...harnoldCommands,
+      ...agentCommandList.filter((command) => !harnoldCommands.some((harnoldCommand) => harnoldCommand.name === command.name)).map((command) => ({ ...command, source: "agent" as const })),
+    ];
+    return allCommands
+      .filter((command) => command.name.toLowerCase().includes(commandQuery))
+      .sort((first, second) => Number(!first.name.toLowerCase().startsWith(commandQuery)) - Number(!second.name.toLowerCase().startsWith(commandQuery)))
+      .slice(0, 50);
+  }, [commandQuery, agentCommandList]);
+
+  useEffect(() => setHighlightedCommandIndex(0), [commandQuery]);
+  useEffect(() => {
+    if (commandQuery === null) setCommandMenuDismissed(false);
+  }, [commandQuery]);
 
   useEffect(() => safeStorage.setItem("harnold.permissionMode", permissionMode), [permissionMode]);
   useEffect(() => safeStorage.setItem("harnold.model", model), [model]);
@@ -66,10 +113,52 @@ export function Composer(props: ComposerProps) {
 
   const canSend = composerText.trim().length > 0 && !props.running && !voiceRecorder.recording && !transcribing;
 
+  /** Runs commands Harnold handles itself; true when handled. */
+  const runLocalCommand = (text: string): boolean => {
+    const parsedCommand = parseCommand(text);
+    if (!parsedCommand) return false;
+    const { name, commandArguments } = parsedCommand;
+    if (name === "plan") {
+      setPermissionMode((previous) => (previous === "plan" ? "default" : "plan"));
+      return true;
+    }
+    if (name === "model") {
+      const wantedModel = commandArguments.toLowerCase();
+      const matchedModel = agentModels.find((agentModel) => agentModel.value.includes(wantedModel) || agentModel.label.toLowerCase().includes(wantedModel));
+      if (!wantedModel || !matchedModel) {
+        props.onError(new Error(`Modell: ${agentModels.map((agentModel) => agentModel.label).join(", ")}`));
+        return true;
+      }
+      setModel(matchedModel.value);
+      return true;
+    }
+    return props.onSessionCommand(name, commandArguments);
+  };
+
   const submit = () => {
+    if (!canSend && !(composerText.trim().startsWith("/") && !voiceRecorder.recording)) return;
+    const text = composerText.trim();
+    if (runLocalCommand(text)) {
+      setComposerText("");
+      return;
+    }
     if (!canSend) return;
-    props.onSend(composerText.trim(), permissionMode, model || undefined);
+    props.onSend(text, permissionMode, model || undefined);
     setComposerText("");
+  };
+
+  const chooseCommand = (command: ComposerCommand) => {
+    if (command.argumentHint) {
+      setComposerText(`/${command.name} `);
+      textareaRef.current?.focus();
+      return;
+    }
+    const text = `/${command.name}`;
+    if (runLocalCommand(text)) setComposerText("");
+    else if (!props.running) {
+      props.onSend(text, permissionMode, model || undefined);
+      setComposerText("");
+    } else setComposerText(text);
   };
 
   const startRecording = async () => {
@@ -102,6 +191,30 @@ export function Composer(props: ComposerProps) {
   return (
     <div className="shrink-0 px-4 pt-2 pb-3">
       <div className="relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40">
+        {commandMenuOpen && matchingCommands.length > 0 && (
+          <div
+            role="listbox"
+            className="absolute right-0 bottom-full left-0 z-20 mb-2 max-h-72 animate-in overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg fade-in slide-in-from-bottom-1 duration-150"
+          >
+            {matchingCommands.map((command, commandIndex) => (
+              <button
+                key={`${command.source}-${command.name}`}
+                role="option"
+                aria-selected={commandIndex === highlightedCommandIndex}
+                className={cn("flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px]", commandIndex === highlightedCommandIndex && "bg-accent")}
+                onMouseEnter={() => setHighlightedCommandIndex(commandIndex)}
+                onMouseDown={(mouseEvent) => {
+                  mouseEvent.preventDefault();
+                  chooseCommand(command);
+                }}
+              >
+                <span className="shrink-0 font-mono font-medium">/{command.name}</span>
+                {command.argumentHint && <span className="shrink-0 font-mono text-[12px] text-muted-foreground">{command.argumentHint}</span>}
+                <span className="truncate text-[12px] text-muted-foreground">{command.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-1.5 p-2 pl-3">
           {voiceRecorder.recording ? (
             <div className="flex min-h-8 flex-1 animate-in items-center gap-3 py-1.5 fade-in duration-200">
@@ -129,6 +242,24 @@ export function Composer(props: ComposerProps) {
               disabled={transcribing}
               onChange={(changeEvent) => setComposerText(changeEvent.target.value)}
               onKeyDown={(keyboardEvent) => {
+                if (commandMenuOpen && matchingCommands.length > 0) {
+                  if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
+                    keyboardEvent.preventDefault();
+                    const step = keyboardEvent.key === "ArrowDown" ? 1 : -1;
+                    setHighlightedCommandIndex((previous) => (previous + step + matchingCommands.length) % matchingCommands.length);
+                    return;
+                  }
+                  if ((keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
+                    keyboardEvent.preventDefault();
+                    chooseCommand(matchingCommands[highlightedCommandIndex] ?? matchingCommands[0]);
+                    return;
+                  }
+                  if (keyboardEvent.key === "Escape") {
+                    keyboardEvent.preventDefault();
+                    setCommandMenuDismissed(true);
+                    return;
+                  }
+                }
                 if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey && !keyboardEvent.nativeEvent.isComposing) {
                   keyboardEvent.preventDefault();
                   submit();

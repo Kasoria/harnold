@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { FormField, formatRelativeTime } from "@/components/form-field";
 import { DesignTokensEditor } from "@/components/design-system/design-tokens-editor";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
+import { confirmAction } from "@/components/confirm-dialog";
 
 type DesignSystemsScreenProps = {
   /** Selected system id, "new" for the create form, null for none. */
@@ -254,9 +255,9 @@ function DesignSystemDetailView(props: {
 
   const saveLinks = (links: DesignSystemLinkTarget[]) => api.setDesignSystemLinks(designSystem.id, links).then(applyChange).catch(onError);
 
-  const remove = () => {
-    const linkHint = designSystem.links.length ? ` Es ist mit ${designSystem.links.length} Projekten/Sessions verknüpft.` : "";
-    if (!window.confirm(`Design System „${designSystem.name}“ mit allen Dateien löschen?${linkHint}`)) return;
+  const remove = async () => {
+    const linkHint = designSystem.links.length ? ` Verknüpft mit ${designSystem.links.length} Projekten/Sessions.` : "";
+    if (!(await confirmAction({ title: `Design System „${designSystem.name}“ löschen?`, description: `Alle Dateien werden entfernt.${linkHint}` }))) return;
     api.deleteDesignSystem(designSystem.id).then(props.onDeleted).catch(onError);
   };
 

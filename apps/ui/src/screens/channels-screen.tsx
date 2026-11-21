@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { FormField, permissionModeOptions } from "@/components/form-field";
+import { confirmAction } from "@/components/confirm-dialog";
 
 type FieldDefinition = { key: string; label: string; placeholder?: string; secret?: boolean };
 
@@ -207,7 +208,7 @@ function ChannelEditor(props: {
             variant="ghost"
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={async () => {
-              if (!window.confirm(`Channel „${props.channel!.name}“ entfernen?`)) return;
+              if (!(await confirmAction({ title: `Channel „${props.channel!.name}“ entfernen?`, confirmLabel: "Entfernen" }))) return;
               await api.deleteChannel(props.channel!.id).catch(props.onError);
               props.onDone(null);
             }}

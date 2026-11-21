@@ -8,6 +8,8 @@ import { config } from "./config.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { agentRuntime } from "./agent.ts";
+import { sessionActions } from "./session-actions.ts";
+import { agentCommands } from "./slash-commands.ts";
 import { readFileTree, resolveInsideProject, unwatchProject, watchProject } from "./files.ts";
 import { canvasDocumentSchema, readCanvas, writeCanvas } from "./canvas.ts";
 import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unscheduleTask } from "./tasks.ts";
@@ -154,6 +156,21 @@ app.delete("/api/sessions/:sessionId", (context) => {
   }
   return context.json({ ok: true });
 });
+
+app.patch("/api/sessions/:sessionId", async (context) => {
+  const body = z.object({ title: z.string().min(1).optional(), projectId: z.string().optional() }).parse(await context.req.json());
+  const sessionId = context.req.param("sessionId");
+  if (body.title) sessionActions.rename(sessionId, body.title);
+  const moveResult = body.projectId ? sessionActions.move(sessionId, body.projectId) : { deferred: false };
+  return context.json({ ok: true, ...moveResult });
+});
+
+app.post("/api/sessions/:sessionId/clear", (context) => {
+  sessionActions.clear(context.req.param("sessionId"));
+  return context.json({ ok: true });
+});
+
+app.get("/api/projects/:projectId/commands", (context) => context.json(agentCommands.list(requireProject(context.req.param("projectId")))));
 
 app.get("/api/sessions/:sessionId/items", (context) => context.json(chatItemStore.list(context.req.param("sessionId"))));
 

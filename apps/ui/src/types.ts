@@ -5,6 +5,8 @@ export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "
 export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
   | { kind: "user_text"; text: string }
   | { kind: "assistant_text"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "notice"; text: string }
   | { kind: "tool_use"; toolUseId: string; toolName: string; input: unknown }
   | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean }
   | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string }
@@ -17,6 +19,9 @@ export type PermissionRequest = { requestId: string; sessionId: string; toolName
 export type ServerEvent =
   | { type: "chat_item"; sessionId: string; chatItem: ChatItem }
   | { type: "text_delta"; sessionId: string; text: string }
+  | { type: "thinking_delta"; sessionId: string; text: string }
+  | { type: "session_cleared"; sessionId: string }
+  | { type: "session_moved"; sessionId: string; fromProjectId: string; toProjectId: string }
   | { type: "turn_state"; sessionId: string; running: boolean }
   | ({ type: "permission_request" } & PermissionRequest)
   | { type: "permission_resolved"; sessionId: string; requestId: string }
@@ -243,3 +248,5 @@ export type TodayOverview = {
   taskResults: (TaskRun & { taskName: string; session: SessionReference | null })[];
   recentSessions: (SessionReference & { updatedAt: number })[];
 };
+
+export type AgentCommand = { name: string; description: string; argumentHint: string };

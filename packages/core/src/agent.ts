@@ -10,6 +10,7 @@ import { agentModelSettings } from "./claude-auth.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
 import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
+import { agentCommands } from "./slash-commands.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
@@ -32,6 +33,8 @@ type PendingPermission = { sessionId: string; toolName: string; input: unknown; 
 
 const runningTurns = new Map<string, AbortController>();
 const pendingPermissions = new Map<string, PendingPermission>();
+/** Actions that must wait until a session's turn is over (e.g. moving it to another project). */
+const afterTurnActions = new Map<string, (() => void)[]>();
 
 function persistAndPublish(sessionId: string, payload: ChatItemPayload): void {
   const chatItem = chatItemStore.append(sessionId, payload);
@@ -49,23 +52,32 @@ function stringifyToolResultContent(content: unknown): string {
 }
 
 /** Maps one SDK message onto Harnold chat items / live events. */
-function handleAgentMessage(sessionId: string, agentMessage: SDKMessage): void {
+function handleAgentMessage(sessionId: string, projectId: string, agentMessage: SDKMessage): void {
   switch (agentMessage.type) {
     case "system":
       if (agentMessage.subtype === "init") sessionStore.update(sessionId, { agentSessionId: agentMessage.session_id });
+      else if (agentMessage.subtype === "compact_boundary") {
+        const { pre_tokens: tokensBefore, post_tokens: tokensAfter } = agentMessage.compact_metadata;
+        const tokenText = (tokenCount: number) => `${Math.round(tokenCount / 1000)}k`;
+        persistAndPublish(sessionId, { kind: "notice", text: `Kontext komprimiert${tokensAfter ? ` · ${tokenText(tokensBefore)} → ${tokenText(tokensAfter)} Tokens` : ` · vorher ${tokenText(tokensBefore)} Tokens`}` });
+      } else if (agentMessage.subtype === "commands_changed") agentCommands.remember(projectId, agentMessage.commands);
       return;
     case "stream_event": {
       if (agentMessage.parent_tool_use_id) return;
       const streamEvent = agentMessage.event;
       if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "text_delta") {
         eventHub.publish({ type: "text_delta", sessionId, text: streamEvent.delta.text });
+      } else if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "thinking_delta") {
+        eventHub.publish({ type: "thinking_delta", sessionId, text: streamEvent.delta.thinking });
       }
       return;
     }
     case "assistant": {
       if (agentMessage.parent_tool_use_id) return;
       for (const contentBlock of agentMessage.message.content) {
-        if (contentBlock.type === "text" && contentBlock.text.trim()) {
+        if (contentBlock.type === "thinking" && contentBlock.thinking.trim()) {
+          persistAndPublish(sessionId, { kind: "thinking", text: contentBlock.thinking });
+        } else if (contentBlock.type === "text" && contentBlock.text.trim()) {
           persistAndPublish(sessionId, { kind: "assistant_text", text: contentBlock.text });
         } else if (contentBlock.type === "tool_use") {
           persistAndPublish(sessionId, {
@@ -144,6 +156,7 @@ export const agentRuntime = {
           additionalDirectories: [designSystemsDirectory],
           resume: session.agentSessionId ?? undefined,
           model: model ?? agentSetup.model ?? agentModelSettings.read(),
+          thinking: { type: "adaptive", display: "summarized" },
           permissionMode,
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
@@ -166,7 +179,14 @@ export const agentRuntime = {
         },
       });
       for await (const agentMessage of agentStream) {
-        handleAgentMessage(sessionId, agentMessage);
+        handleAgentMessage(sessionId, project.id, agentMessage);
+        if (agentMessage.type === "system" && agentMessage.subtype === "init") {
+          const terminalOnlyNames = agentMessage.terminal_slash_commands ?? [];
+          agentStream
+            .supportedCommands()
+            .then((reportedCommands) => agentCommands.remember(project.id, reportedCommands, terminalOnlyNames))
+            .catch(() => undefined);
+        }
         if (agentMessage.type === "assistant" && !agentMessage.parent_tool_use_id) {
           const turnText = agentMessage.message.content
             .flatMap((contentBlock) => (contentBlock.type === "text" && contentBlock.text.trim() ? [contentBlock.text] : []))
@@ -198,6 +218,15 @@ export const agentRuntime = {
       }
       sessionStore.update(sessionId, {});
       eventHub.publish({ type: "turn_state", sessionId, running: false });
+      const deferredActions = afterTurnActions.get(sessionId) ?? [];
+      afterTurnActions.delete(sessionId);
+      for (const deferredAction of deferredActions) {
+        try {
+          deferredAction();
+        } catch (deferredError) {
+          console.error("[agent] after turn", deferredError);
+        }
+      }
     }
     return outcome;
   },
@@ -210,6 +239,11 @@ export const agentRuntime = {
   /** Ids of sessions with a running turn. */
   listRunningSessionIds(): string[] {
     return [...runningTurns.keys()];
+  },
+
+  /** Runs once the current turn of this session has finished. */
+  afterTurn(sessionId: string, action: () => void): void {
+    afterTurnActions.set(sessionId, [...(afterTurnActions.get(sessionId) ?? []), action]);
   },
 
   interrupt(sessionId: string): void {

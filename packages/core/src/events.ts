@@ -4,6 +4,9 @@ import type { ChatItem } from "./db.ts";
 export type ServerEvent =
   | { type: "chat_item"; sessionId: string; chatItem: ChatItem }
   | { type: "text_delta"; sessionId: string; text: string }
+  | { type: "thinking_delta"; sessionId: string; text: string }
+  | { type: "session_cleared"; sessionId: string }
+  | { type: "session_moved"; sessionId: string; fromProjectId: string; toProjectId: string }
   | { type: "turn_state"; sessionId: string; running: boolean }
   | {
       type: "permission_request";

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusDot } from "@/components/status-dot";
 import { FormField, formatRelativeTime, permissionModeOptions } from "@/components/form-field";
 import { ModelSelect, type InheritedModel } from "@/components/model-select";
+import { confirmAction } from "@/components/confirm-dialog";
 
 const schedulePresets = [
   { value: "0 * * * *", label: "Stündlich" },
@@ -213,7 +214,7 @@ function TaskEditor(props: {
             variant="ghost"
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={async () => {
-              if (!window.confirm(`Task „${props.task!.name}“ löschen?`)) return;
+              if (!(await confirmAction({ title: `Task „${props.task!.name}“ löschen?`, description: "Die bisherigen Läufe bleiben als Sessions erhalten." }))) return;
               await api.deleteTask(props.task!.id).catch(props.onError);
               props.onSaved(null);
             }}

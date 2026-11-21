@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SegmentedControl } from "@/components/segmented-control";
 import { StatusDot } from "@/components/status-dot";
 import { FormField } from "@/components/form-field";
+import { confirmAction } from "@/components/confirm-dialog";
 
 
 type KeyValueRow = { key: string; value: string; stored: boolean };
@@ -137,7 +138,7 @@ function McpServerEditor(props: {
   };
 
   const remove = async () => {
-    if (!existingServer || !window.confirm(`MCP-Server „${existingServer.name}“ entfernen?`)) return;
+    if (!existingServer || !(await confirmAction({ title: `MCP-Server „${existingServer.name}“ entfernen?`, confirmLabel: "Entfernen" }))) return;
     await api.deleteMcpServer(existingServer.id).then(() => props.onDone(null)).catch(props.onError);
   };
 

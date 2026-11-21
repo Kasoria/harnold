@@ -11,6 +11,7 @@ import { FormField } from "@/components/form-field";
 import { ModelSelect, modelLabel } from "@/components/model-select";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
+import { confirmAction } from "@/components/confirm-dialog";
 
 type EnvironmentsScreenProps = {
   workspaceDefaultModel: string;
@@ -210,8 +211,8 @@ function EnvironmentEditor(props: {
     }
   };
 
-  const remove = () => {
-    if (!existing || !window.confirm(`Umgebung „${existing.name}“ löschen? Ihre Projekte nutzen danach wieder die normalen Konten des Rechners.`)) return;
+  const remove = async () => {
+    if (!existing || !(await confirmAction({ title: `Umgebung „${existing.name}“ löschen?`, description: "Ihre Projekte nutzen danach die Konten des Rechners. Gespeicherte Tokens gehen verloren." }))) return;
     api.deleteEnvironment(existing.id).then(props.onDeleted).catch(props.onError);
   };
 

@@ -127,3 +127,20 @@
 .chat-markdown pre { background: var(--muted); padding: 10px 12px; border-radius: var(--radius-md); overflow-x: auto; font-size: 12px; }
 .chat-markdown a { text-decoration: underline; text-underline-offset: 2px; }
 .chat-markdown h1, .chat-markdown h2, .chat-markdown h3 { font-weight: 600; margin: 0.8em 0 0.4em; }
+
+/* Live activity text in the chat (working, thinking). */
+.text-shimmer {
+  background: linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 40%, var(--foreground) 50%, var(--muted-foreground) 60%, var(--muted-foreground) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: text-shimmer 2.2s linear infinite;
+}
+@keyframes text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer { animation: none; color: var(--muted-foreground); background: none; }
+}

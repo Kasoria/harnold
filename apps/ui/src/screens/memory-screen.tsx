@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SegmentedControl } from "@/components/segmented-control";
 import { formatRelativeTime } from "@/components/form-field";
 import { EmptyState, ScreenLayout } from "./screen-layout";
+import { confirmAction } from "@/components/confirm-dialog";
 
 /** `{ scope, path }` of the open note, "new" for a draft, null for none. */
 export type MemorySelection = { scope: MemoryScope; path: string } | "new" | null;
@@ -122,8 +123,8 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const updateEditor = (changes: Partial<EditorState>) => setEditor((previous) => (previous ? { ...previous, ...changes } : previous));
   const dirty = editor ? editor.content !== editor.savedContent : false;
 
-  const selectNote = (selection: MemorySelection) => {
-    if (dirty && !window.confirm("Ungespeicherte Änderungen verwerfen?")) return;
+  const selectNote = async (selection: MemorySelection) => {
+    if (dirty && !(await confirmAction({ title: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen" }))) return;
     props.onSelect(selection);
   };
 
@@ -148,7 +149,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   };
 
   const deleteNote = async (noteRef: MemoryNoteRef) => {
-    if (!window.confirm(`„${noteRef.path}“ löschen? Die Datei wird entfernt.`)) return;
+    if (!(await confirmAction({ title: `„${noteRef.path}“ löschen?`, description: "Die Datei wird entfernt." }))) return;
     try {
       await api.deleteMemoryNote(noteRef);
       props.onSelect(null);

@@ -24,6 +24,7 @@ import { IntegrationsScreen, type IntegrationsTab } from "@/screens/integrations
 import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
 import { Button } from "@/components/ui/button";
 import type { InheritedModel } from "@/components/model-select";
+import { ConfirmDialogHost, confirmAction } from "@/components/confirm-dialog";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
@@ -40,6 +41,7 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [chatItems, setChatItems] = useState<ChatItem[]>([]);
   const [streamingDraft, setStreamingDraft] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(new Set());
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
   const [fileChangeCounter, setFileChangeCounter] = useState(0);
@@ -69,6 +71,8 @@ export function App() {
 
   const activeIdsRef = useRef({ activeProjectId, activeSessionId });
   activeIdsRef.current = { activeProjectId, activeSessionId };
+  const environmentsRef = useRef(environments);
+  environmentsRef.current = environments;
 
   const reportError = useCallback((unknownError: unknown) => {
     setToast({ message: unknownError instanceof Error ? unknownError.message : String(unknownError), tone: "error" });
@@ -160,6 +164,7 @@ export function App() {
   useEffect(() => {
     setChatItems([]);
     setStreamingDraft("");
+    setStreamingThinking("");
     if (activeSessionId) api.listChatItems(activeSessionId).then(setChatItems).catch(reportError);
   }, [activeSessionId, reportError]);
 
@@ -171,10 +176,31 @@ export function App() {
           case "chat_item":
             if (serverEvent.sessionId !== currentSessionId) return;
             if (serverEvent.chatItem.kind === "assistant_text") setStreamingDraft("");
+            if (serverEvent.chatItem.kind === "assistant_text" || serverEvent.chatItem.kind === "thinking" || serverEvent.chatItem.kind === "tool_use") setStreamingThinking("");
             setChatItems((previous) => [...previous, serverEvent.chatItem]);
             return;
           case "text_delta":
             if (serverEvent.sessionId === currentSessionId) setStreamingDraft((previous) => previous + serverEvent.text);
+            return;
+          case "thinking_delta":
+            if (serverEvent.sessionId === currentSessionId) setStreamingThinking((previous) => previous + serverEvent.text);
+            return;
+          case "session_cleared":
+            if (serverEvent.sessionId === currentSessionId) {
+              setChatItems([]);
+              setStreamingDraft("");
+              setStreamingThinking("");
+            }
+            return;
+          case "session_moved":
+            if (serverEvent.sessionId !== currentSessionId) return;
+            setActiveProjectId(serverEvent.toProjectId);
+            setExpandedProjectIds((previous) => new Set(previous).add(serverEvent.toProjectId));
+            setActiveEnvironmentId((previous) => {
+              if (!previous) return previous;
+              const targetEnvironment = environmentsRef.current.find((environment) => environment.projectIds.includes(serverEvent.toProjectId));
+              return targetEnvironment?.id ?? null;
+            });
             return;
           case "turn_state":
             setRunningSessionIds((previous) => {
@@ -183,7 +209,10 @@ export function App() {
               else next.delete(serverEvent.sessionId);
               return next;
             });
-            if (!serverEvent.running && serverEvent.sessionId === currentSessionId) setStreamingDraft("");
+            if (!serverEvent.running && serverEvent.sessionId === currentSessionId) {
+              setStreamingDraft("");
+              setStreamingThinking("");
+            }
             if (!serverEvent.running) setTodayReloadCounter((previous) => previous + 1);
             return;
           case "permission_request":
@@ -322,6 +351,7 @@ export function App() {
   };
 
   const deleteSession = async (session: Session) => {
+    if (!(await confirmAction({ title: `Session „${session.title}“ löschen?`, description: "Der Verlauf geht verloren." }))) return;
     try {
       await api.deleteSession(session.id);
       setSessionsByProjectId((previous) => ({
@@ -553,6 +583,22 @@ export function App() {
               status={activeSessionId ? sessionStatusFor(activeSessionId) : "idle"}
               chatItems={chatItems}
               streamingDraft={streamingDraft}
+              streamingThinking={streamingThinking}
+              projects={projects}
+              environments={environments}
+              onNewSession={() => activeProjectId && void createSession(activeProjectId)}
+              onRenameSession={(title) => activeSessionId && api.updateSession(activeSessionId, { title }).catch(reportError)}
+              onMoveSession={(projectId) =>
+                activeSessionId &&
+                api
+                  .updateSession(activeSessionId, { projectId })
+                  .then((moveResult) => moveResult.deferred && setToast({ message: "Wird nach diesem Durchlauf verschoben", tone: "info" }))
+                  .catch(reportError)
+              }
+              onSetProjectEnvironment={(environmentId) =>
+                activeProjectId && api.setProjectEnvironment(activeProjectId, environmentId).then(() => refreshEnvironments()).catch(reportError)
+              }
+              onClearSession={() => activeSessionId && api.clearSession(activeSessionId).catch(reportError)}
               permissionRequests={permissionRequests.filter((request) => request.sessionId === activeSessionId)}
               composerInsertion={composerInsertion}
               workspaceOpen={workspaceOpen}
@@ -606,6 +652,7 @@ export function App() {
       {onboardingVisible && (
         <ClaudeOnboarding status={claudeStatus} onStatusChange={setClaudeStatus} onError={reportError} onDismiss={() => setOnboardingVisible(false)} />
       )}
+      <ConfirmDialogHost />
       <NewProjectDialog
         open={newProjectDialogOpen}
         onOpenChange={setNewProjectDialogOpen}

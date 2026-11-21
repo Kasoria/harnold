@@ -1,0 +1,63 @@
+import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+
+export type ConfirmOptions = {
+  title: string;
+  /** What exactly is lost – only when the title does not say it. */
+  description?: string;
+  confirmLabel?: string;
+  /** Defaults to true: red confirm button. */
+  destructive?: boolean;
+};
+
+type PendingConfirmation = ConfirmOptions & { resolve: (confirmed: boolean) => void };
+
+let showConfirmation: ((pendingConfirmation: PendingConfirmation) => void) | null = null;
+
+/** Asks before a destructive action; resolves true on confirm. Needs <ConfirmDialogHost /> mounted once. */
+export function confirmAction(options: ConfirmOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!showConfirmation) return resolve(window.confirm(options.title));
+    showConfirmation({ ...options, resolve });
+  });
+}
+
+export function ConfirmDialogHost() {
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+
+  useEffect(() => {
+    showConfirmation = (nextConfirmation) =>
+      setPendingConfirmation((previous) => {
+        previous?.resolve(false);
+        return nextConfirmation;
+      });
+    return () => {
+      showConfirmation = null;
+    };
+  }, []);
+
+  const answer = (confirmed: boolean) => {
+    pendingConfirmation?.resolve(confirmed);
+    setPendingConfirmation(null);
+  };
+
+  return (
+    <Dialog open={Boolean(pendingConfirmation)} onOpenChange={(open) => !open && answer(false)}>
+      <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">{pendingConfirmation?.title}</DialogTitle>
+          {pendingConfirmation?.description && <DialogDescription>{pendingConfirmation.description}</DialogDescription>}
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => answer(false)}>
+            Abbrechen
+          </Button>
+          <Button autoFocus variant={pendingConfirmation?.destructive === false ? "default" : "destructive"} onClick={() => answer(true)}>
+            {pendingConfirmation?.confirmLabel ?? "Löschen"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

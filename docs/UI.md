@@ -36,6 +36,12 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Nachrichten ohne Bubbles (Assistent), Nutzer dezent abgesetzt.
 - Tool-Aufrufe als einzeilige, graue, aufklappbare Zusammenfassung („3 Befehle ausgeführt ›“, „Skill genutzt ›“). Aufeinanderfolgende gleichartige gruppiert.
 - Freigaben inline als Karte.
+- Gedanken (Thinking) als eingeklappte Zeile „Gedanken ›“, live „Denkt nach“.
+- Läuft ein Durchlauf ohne sichtbaren Stream: Aktivitätszeile („Arbeitet · 12 s“).
+- Codeblöcke und Antworten mit Kopieren-Button (bei Hover).
+- Systemereignisse (verschoben, komprimiert) als schmale Trennlinie mit Text.
+- Slash-Commands: Popup beim Tippen von „/“ (Harnold-Commands + die des Agents).
+- Destruktive Aktionen immer mit Bestätigungsdialog (`confirmAction`), nie `window.confirm`.
 - Composer: Anhang, Textfeld („… Datei oder Screenshot einfügen/ablegen“), Mikrofon, runder Senden-Button. Darunter: Modell, Permission-Modus, Kontext-Ring.
 
 ### Workspace

@@ -42,6 +42,9 @@ export type Session = {
 export type ChatItemPayload =
   | { kind: "user_text"; text: string }
   | { kind: "assistant_text"; text: string }
+  | { kind: "thinking"; text: string }
+  /** Harnold's own markers in the timeline (context cleared/compacted, session moved). */
+  | { kind: "notice"; text: string }
   | { kind: "tool_use"; toolUseId: string; toolName: string; input: unknown }
   | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean }
   | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string };
@@ -107,12 +110,19 @@ export const sessionStore = {
       .run(session.id, projectId, title, now, now);
     return session;
   },
-  update(sessionId: string, changes: { title?: string; agentSessionId?: string }): void {
+  /** `agentSessionId: null` starts a fresh agent context on the next turn. */
+  update(sessionId: string, changes: { title?: string; agentSessionId?: string | null; projectId?: string }): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, updated_at = ? WHERE id = ?")
-      .run(changes.title ?? current.title, changes.agentSessionId ?? current.agentSessionId, Date.now(), sessionId);
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, updated_at = ? WHERE id = ?")
+      .run(
+        changes.title ?? current.title,
+        changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
+        changes.projectId ?? current.projectId,
+        Date.now(),
+        sessionId,
+      );
   },
   remove(sessionId: string): void {
     database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
@@ -131,6 +141,9 @@ export const chatItemStore = {
         sessionId: String(row.session_id),
         createdAt: Number(row.created_at),
       }));
+  },
+  clear(sessionId: string): void {
+    database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
   },
   append(sessionId: string, payload: ChatItemPayload): ChatItem {
     const chatItem: ChatItem = { ...payload, id: randomUUID(), sessionId, createdAt: Date.now() };

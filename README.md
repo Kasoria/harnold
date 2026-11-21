@@ -66,6 +66,12 @@ Der Agent hat in jeder Session Tools (`harnold`) für alles in Harnold: Überbli
 - Der Agent bekommt das verknüpfte System (Pfad, Tokens) und Zugriff auf den Ordner; Entwürfe binden es über `_harnold/design-systems/<id>/tokens.css` ein (virtuell in der Preview).
 - Alte projektlokale `design-system/`-Ordner werden einmalig importiert und verknüpft.
 
+## Chat
+
+- Menü (…): umbenennen (auch Doppelklick auf den Titel), in ein anderes Projekt/eine andere Umgebung verschieben (Agent-Kontext kommt mit), Umgebung des Projekts, Kontext leeren, löschen.
+- Slash-Commands: `/clear`, `/new`, `/rename`, `/move`, `/model`, `/plan` (Harnold) plus die des Agents (`/compact`, `/context`, `/init`, `/review`, eigene Commands und Skills).
+- Agent-Tools: `session_move`, `session_rename`.
+
 ## Heute
 
 Startansicht: wartende Freigaben, laufende Sessions, Task-Ergebnisse (24 h), zuletzt genutzte Sessions.

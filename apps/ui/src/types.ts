@@ -197,6 +197,8 @@ export type ImageRequest = {
   anchor: { x: number; y: number } | null;
 };
 
+/** "inherit" = Einstellungen → Claude. */
+export type EnvironmentClaudeMode = "inherit" | "subscription" | "apiKey";
 export type EnvironmentVariable = { key: string; value: string; secret: boolean };
 export type Environment = {
   id: string;
@@ -206,6 +208,10 @@ export type Environment = {
   sshKeyPath: string;
   githubTokenSet: boolean;
   vercelTokenSet: boolean;
+  claudeMode: EnvironmentClaudeMode;
+  claudeApiKeySet: boolean;
+  /** "" = Harnold default. */
+  model: string;
   /** Secret values come back empty. */
   variables: EnvironmentVariable[];
   projectIds: string[];
@@ -219,6 +225,9 @@ export type EnvironmentInput = {
   /** undefined keeps the stored token, "" removes it. */
   githubToken?: string;
   vercelToken?: string;
+  claudeMode: EnvironmentClaudeMode;
+  claudeApiKey?: string;
+  model: string;
   variables: EnvironmentVariable[];
   projectIds: string[];
 };

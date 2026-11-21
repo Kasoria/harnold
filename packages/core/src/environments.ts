@@ -3,6 +3,7 @@ import { z } from "zod";
 import { database, projectStore } from "./db.ts";
 import { decryptSecret, encryptSecret } from "./secrets.ts";
 import { eventHub } from "./events.ts";
+import { claudeAuth, claudeProfileForEnvironment, removeClaudeProfile, subscriptionEnvironment } from "./claude-auth.ts";
 
 /**
  * Environments bundle accounts (GitHub, Vercel), git identity and variables. A project belongs to at most one
@@ -24,6 +25,18 @@ database.exec(`
   );
 `);
 
+// Added later: AI per environment.
+for (const columnDefinition of ["claude_mode TEXT NOT NULL DEFAULT 'inherit'", "model TEXT NOT NULL DEFAULT ''"]) {
+  try {
+    database.exec(`ALTER TABLE environments ADD COLUMN ${columnDefinition}`);
+  } catch {
+    /* column exists */
+  }
+}
+
+/** "inherit" = Einstellungen → Claude; "subscription" = own Claude login of this environment; "apiKey" = own key. */
+export type EnvironmentClaudeMode = "inherit" | "subscription" | "apiKey";
+
 const variableKeyPattern = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 export const environmentInputSchema = z.object({
@@ -34,13 +47,17 @@ export const environmentInputSchema = z.object({
   /** undefined keeps the stored token, "" removes it. */
   githubToken: z.string().optional(),
   vercelToken: z.string().optional(),
+  claudeMode: z.enum(["inherit", "subscription", "apiKey"]).default("inherit"),
+  claudeApiKey: z.string().optional(),
+  /** Default model for turns in this environment; "" = Harnold default. The composer's explicit choice wins. */
+  model: z.string().trim().default(""),
   /** Secret variables with an empty value keep their stored value. */
   variables: z.array(z.object({ key: z.string().regex(variableKeyPattern, "Variablenname: Buchstaben, Ziffern, _"), value: z.string(), secret: z.boolean() })),
   projectIds: z.array(z.string()),
 });
 export type EnvironmentInput = z.infer<typeof environmentInputSchema>;
 
-type StoredSecrets = { githubToken?: string; vercelToken?: string; variables: { key: string; value: string; secret: boolean }[] };
+type StoredSecrets = { githubToken?: string; vercelToken?: string; claudeApiKey?: string; variables: { key: string; value: string; secret: boolean }[] };
 
 export type Environment = {
   id: string;
@@ -50,6 +67,9 @@ export type Environment = {
   sshKeyPath: string;
   githubTokenSet: boolean;
   vercelTokenSet: boolean;
+  claudeMode: EnvironmentClaudeMode;
+  claudeApiKeySet: boolean;
+  model: string;
   /** Secret values are never sent out (value ""). */
   variables: { key: string; value: string; secret: boolean }[];
   projectIds: string[];
@@ -72,6 +92,9 @@ function present(row: Row): Environment {
     sshKeyPath: String(row.ssh_key_path),
     githubTokenSet: Boolean(secrets.githubToken),
     vercelTokenSet: Boolean(secrets.vercelToken),
+    claudeMode: (String(row.claude_mode || "inherit") as EnvironmentClaudeMode),
+    claudeApiKeySet: Boolean(secrets.claudeApiKey),
+    model: String(row.model ?? ""),
     variables: secrets.variables.map((variable) => ({ ...variable, value: variable.secret ? "" : variable.value })),
     projectIds: projectIdsOf(String(row.id)),
     createdAt: Number(row.created_at),
@@ -99,6 +122,7 @@ function mergeSecrets(previous: StoredSecrets, input: EnvironmentInput): StoredS
   return {
     githubToken: keepOrReplace(previous.githubToken, input.githubToken),
     vercelToken: keepOrReplace(previous.vercelToken, input.vercelToken),
+    claudeApiKey: keepOrReplace(previous.claudeApiKey, input.claudeApiKey),
     variables,
   };
 }
@@ -128,8 +152,8 @@ export const environmentStore = {
   create(input: EnvironmentInput): Environment {
     const environmentId = randomUUID();
     database
-      .prepare("INSERT INTO environments (id, name, git_name, git_email, ssh_key_path, secrets, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(environmentId, input.name, input.gitName, input.gitEmail, input.sshKeyPath, encryptSecret(JSON.stringify(mergeSecrets({ variables: [] }, input))), Date.now());
+      .prepare("INSERT INTO environments (id, name, git_name, git_email, ssh_key_path, secrets, claude_mode, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(environmentId, input.name, input.gitName, input.gitEmail, input.sshKeyPath, encryptSecret(JSON.stringify(mergeSecrets({ variables: [] }, input))), input.claudeMode, input.model, Date.now());
     writeProjects(environmentId, input.projectIds);
     publishChange();
     return environmentStore.get(environmentId);
@@ -138,8 +162,8 @@ export const environmentStore = {
   update(environmentId: string, input: EnvironmentInput): Environment {
     const row = requireRow(environmentId);
     database
-      .prepare("UPDATE environments SET name = ?, git_name = ?, git_email = ?, ssh_key_path = ?, secrets = ? WHERE id = ?")
-      .run(input.name, input.gitName, input.gitEmail, input.sshKeyPath, encryptSecret(JSON.stringify(mergeSecrets(readSecrets(row), input))), environmentId);
+      .prepare("UPDATE environments SET name = ?, git_name = ?, git_email = ?, ssh_key_path = ?, secrets = ?, claude_mode = ?, model = ? WHERE id = ?")
+      .run(input.name, input.gitName, input.gitEmail, input.sshKeyPath, encryptSecret(JSON.stringify(mergeSecrets(readSecrets(row), input))), input.claudeMode, input.model, environmentId);
     writeProjects(environmentId, input.projectIds);
     publishChange();
     return environmentStore.get(environmentId);
@@ -148,6 +172,7 @@ export const environmentStore = {
   remove(environmentId: string): void {
     database.prepare("DELETE FROM environment_projects WHERE environment_id = ?").run(environmentId);
     database.prepare("DELETE FROM environments WHERE id = ?").run(environmentId);
+    removeClaudeProfile(environmentId);
     publishChange();
   },
 
@@ -195,6 +220,36 @@ export const environmentStore = {
     if (sshKeyPath) variables.GIT_SSH_COMMAND = `ssh -i '${sshKeyPath.replace(/'/g, "'\\''")}' -o IdentitiesOnly=yes`;
     for (const variable of secrets.variables) variables[variable.key] = variable.value;
     return variables;
+  },
+
+  /**
+   * Everything an agent turn in this project needs from its environment: process env (Claude credentials +
+   * accounts + variables) and the default model. Throws a friendly error when the chosen Claude access is missing.
+   */
+  async agentSetupFor(projectId: string): Promise<{ env: NodeJS.ProcessEnv; model?: string }> {
+    const environment = environmentStore.forProject(projectId);
+    const variables = environmentStore.variablesForProject(projectId);
+    const model = environment?.model || undefined;
+    if (!environment || environment.claudeMode === "inherit") {
+      await claudeAuth.assertReady();
+      const env: NodeJS.ProcessEnv = { ...claudeAuth.agentEnvironment(), ...variables };
+      // The workspace setting decides the credential; variables must not sneak in another one.
+      const workspaceEnv = claudeAuth.agentEnvironment();
+      if (workspaceEnv.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = workspaceEnv.ANTHROPIC_API_KEY;
+      else delete env.ANTHROPIC_API_KEY;
+      return { env, model };
+    }
+    if (environment.claudeMode === "apiKey") {
+      const claudeApiKey = readSecrets(requireRow(environment.id)).claudeApiKey;
+      if (!claudeApiKey) throw new Error(`Umgebung „${environment.name}“: kein Claude-API-Key hinterlegt – Umgebungen → ${environment.name}`);
+      return { env: { ...process.env, ...variables, ANTHROPIC_API_KEY: claudeApiKey }, model };
+    }
+    const profile = claudeProfileForEnvironment(environment.id);
+    const accountStatus = await claudeAuth.status(false, profile);
+    if (!accountStatus.ready && !accountStatus.cliError) throw new Error(`Umgebung „${environment.name}“: Claude-Konto nicht angemeldet – Umgebungen → ${environment.name}`);
+    const env: NodeJS.ProcessEnv = { ...subscriptionEnvironment(profile), ...variables, CLAUDE_CONFIG_DIR: profile.configDirectory };
+    delete env.ANTHROPIC_API_KEY;
+    return { env, model };
   },
 
   /** Short note for the system prompt: which accounts are active (never values). */

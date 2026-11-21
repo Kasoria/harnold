@@ -6,7 +6,6 @@ import { config } from "./config.ts";
 import { memoryNotes } from "./memory.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
 import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
-import { claudeAuth } from "./claude-auth.ts";
 import { environmentStore } from "./environments.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
 import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
@@ -120,7 +119,7 @@ export const agentRuntime = {
     const project = projectStore.get(session.projectId);
     if (!project) throw new Error("Projekt nicht gefunden");
     if (runningTurns.has(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
-    await claudeAuth.assertReady();
+    const agentSetup = await environmentStore.agentSetupFor(project.id);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
       sessionStore.update(sessionId, { title: text.slice(0, 60) });
@@ -140,11 +139,11 @@ export const agentRuntime = {
         options: {
           cwd: project.path,
           // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
-          env: { ...claudeAuth.agentEnvironment(), ...environmentStore.variablesForProject(project.id) },
+          env: agentSetup.env,
           // All design systems are open to the agent (it may create/link one mid-turn).
           additionalDirectories: [designSystemsDirectory],
           resume: session.agentSessionId ?? undefined,
-          model: model ?? config.defaultModel,
+          model: model ?? agentSetup.model ?? config.defaultModel,
           permissionMode,
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,

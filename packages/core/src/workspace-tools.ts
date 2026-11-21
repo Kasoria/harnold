@@ -126,6 +126,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
                   `${environment.name} – id ${environment.id}`,
                   `  Konten: ${[environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH-Key"].filter(Boolean).join(", ") || "keine"}`,
                   `  Git: ${[environment.gitName, environment.gitEmail].filter(Boolean).join(" ") || "–"}`,
+                  `  KI: ${{ inherit: "wie Einstellungen", subscription: "eigenes Claude-Konto", apiKey: "eigener API-Key" }[environment.claudeMode]} · Modell ${environment.model || "Standard"}`,
                   `  Variablen: ${environment.variables.map((variable) => variable.key).join(", ") || "keine"}`,
                   `  Projekte: ${environment.projectIds.map((projectId) => projectStore.get(projectId)?.name ?? projectId).join(", ") || "keine"}`,
                 ].join("\n"),

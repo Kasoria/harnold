@@ -1,6 +1,9 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { config } from "./config.ts";
 import { z } from "zod";
 import { settingsStore } from "./settings.ts";
 import { eventHub } from "./events.ts";
@@ -35,6 +38,36 @@ export const claudeSettingsSchema = z.object({
   apiKey: z.string().optional(),
 });
 
+/**
+ * Which Claude Code login to use. "default" = the machine's normal login (~/.claude). Environments with their own
+ * Claude account get a separate config directory, so their login never touches the default one.
+ */
+export type ClaudeProfile = { key: string; configDirectory?: string };
+export const defaultClaudeProfile: ClaudeProfile = { key: "default" };
+
+/** Files shared from ~/.claude into an environment's config dir, so skills, CLAUDE.md and settings keep working. */
+const sharedUserEntries = ["CLAUDE.md", "settings.json", "skills", "agents", "commands", "plugins"];
+
+export function claudeProfileForEnvironment(environmentId: string): ClaudeProfile {
+  const configDirectory = path.join(config.dataDirectory, "claude-accounts", environmentId);
+  fs.mkdirSync(configDirectory, { recursive: true });
+  const userConfigDirectory = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  for (const entryName of sharedUserEntries) {
+    const sourcePath = path.join(userConfigDirectory, entryName);
+    const linkPath = path.join(configDirectory, entryName);
+    try {
+      if (fs.existsSync(sourcePath) && !fs.lstatSync(linkPath, { throwIfNoEntry: false })) fs.symlinkSync(sourcePath, linkPath);
+    } catch {
+      /* sharing is best effort */
+    }
+  }
+  return { key: environmentId, configDirectory };
+}
+
+export function removeClaudeProfile(environmentId: string): void {
+  fs.rmSync(path.join(config.dataDirectory, "claude-accounts", environmentId), { recursive: true, force: true });
+}
+
 const modeKey = "claude.authMode";
 const secretsKey = "claude.secrets";
 
@@ -49,10 +82,16 @@ function claudeExecutable(): string {
   }
 }
 
-const runClaude = (args: string[], timeoutMs = 15_000) =>
+/** Env for Claude Code with this profile's login (never an API key). */
+export function subscriptionEnvironment(profile: ClaudeProfile): NodeJS.ProcessEnv {
+  return profile.configDirectory ? { ...environmentWithoutApiKey(), CLAUDE_CONFIG_DIR: profile.configDirectory } : environmentWithoutApiKey();
+}
+
+const runClaude = (args: string[], profile: ClaudeProfile, timeoutMs = 15_000) =>
   new Promise<string>((resolve, reject) => {
-    execFile(claudeExecutable(), args, { timeout: timeoutMs, env: environmentWithoutApiKey() }, (runError, standardOutput, standardError) => {
-      if (runError) reject(new Error(standardError.trim() || runError.message));
+    execFile(claudeExecutable(), args, { timeout: timeoutMs, env: subscriptionEnvironment(profile) }, (runError, standardOutput, standardError) => {
+      // `auth status --json` exits non-zero when logged out but still prints the status.
+      if (runError && !standardOutput.trim().startsWith("{")) reject(new Error(standardError.trim() || runError.message));
       else resolve(standardOutput);
     });
   });
@@ -62,12 +101,15 @@ function environmentWithoutApiKey(): NodeJS.ProcessEnv {
   return environment;
 }
 
-let cachedAccount: { account: ClaudeAccount | null; cliError?: string; readAt: number } | null = null;
+type CachedAccount = { account: ClaudeAccount | null; cliError?: string; readAt: number };
+const cachedAccounts = new Map<string, CachedAccount>();
 
-async function readAccount(forceRefresh = false): Promise<{ account: ClaudeAccount | null; cliError?: string }> {
+async function readAccount(profile: ClaudeProfile, forceRefresh = false): Promise<{ account: ClaudeAccount | null; cliError?: string }> {
+  const cachedAccount = cachedAccounts.get(profile.key);
   if (!forceRefresh && cachedAccount && Date.now() - cachedAccount.readAt < 30_000) return cachedAccount;
+  let freshAccount: CachedAccount;
   try {
-    const statusJson = JSON.parse(await runClaude(["auth", "status", "--json"])) as Record<string, unknown>;
+    const statusJson = JSON.parse(await runClaude(["auth", "status", "--json"], profile)) as Record<string, unknown>;
     const pickString = (key: string) => (typeof statusJson[key] === "string" ? (statusJson[key] as string) : undefined);
     const account: ClaudeAccount = {
       loggedIn: statusJson.loggedIn === true,
@@ -77,11 +119,12 @@ async function readAccount(forceRefresh = false): Promise<{ account: ClaudeAccou
       subscriptionType: pickString("subscriptionType"),
       apiProvider: pickString("apiProvider"),
     };
-    cachedAccount = { account, readAt: Date.now() };
+    freshAccount = { account, readAt: Date.now() };
   } catch (statusError) {
-    cachedAccount = { account: null, cliError: statusError instanceof Error ? statusError.message : String(statusError), readAt: Date.now() };
+    freshAccount = { account: null, cliError: statusError instanceof Error ? statusError.message : String(statusError), readAt: Date.now() };
   }
-  return cachedAccount;
+  cachedAccounts.set(profile.key, freshAccount);
+  return freshAccount;
 }
 
 const readMode = () => settingsStore.read<ClaudeAuthMode>(modeKey, "subscription");
@@ -89,22 +132,25 @@ const readApiKey = () => settingsStore.readSecrets(secretsKey).apiKey || "";
 
 // ---------------------------------------------------------------- Login flow
 
-let pendingLogin: { child: ChildProcessWithoutNullStreams; output: string } | null = null;
+type PendingLogin = { child: ChildProcessWithoutNullStreams; output: string };
+const pendingLogins = new Map<string, PendingLogin>();
 
-function finishLogin(): void {
-  pendingLogin = null;
-  cachedAccount = null;
+function finishLogin(profile: ClaudeProfile): void {
+  pendingLogins.delete(profile.key);
+  cachedAccounts.delete(profile.key);
   eventHub.publish({ type: "claude_auth_changed" });
 }
 
 export const claudeAuth = {
-  async status(forceRefresh = false): Promise<ClaudeAuthStatus> {
-    const mode = readMode();
-    const apiKeySet = Boolean(readApiKey());
-    const environmentApiKey = Boolean(process.env.ANTHROPIC_API_KEY);
-    const { account, cliError } = await readAccount(forceRefresh);
+  /** Default profile: the workspace setting (Claude account or API key). Other profiles: their Claude login only. */
+  async status(forceRefresh = false, profile: ClaudeProfile = defaultClaudeProfile): Promise<ClaudeAuthStatus> {
+    const isDefault = profile.key === defaultClaudeProfile.key;
+    const mode = isDefault ? readMode() : "subscription";
+    const apiKeySet = isDefault && Boolean(readApiKey());
+    const environmentApiKey = isDefault && Boolean(process.env.ANTHROPIC_API_KEY);
+    const { account, cliError } = await readAccount(profile, forceRefresh);
     const ready = mode === "apiKey" ? apiKeySet || environmentApiKey : Boolean(account?.loggedIn);
-    return { mode, apiKeySet, environmentApiKey, account, cliError, loginPending: Boolean(pendingLogin), ready };
+    return { mode, apiKeySet, environmentApiKey, account, cliError, loginPending: pendingLogins.has(profile.key), ready };
   },
 
   async save(input: z.infer<typeof claudeSettingsSchema>): Promise<ClaudeAuthStatus> {
@@ -122,15 +168,15 @@ export const claudeAuth = {
   },
 
   /** Starts `claude auth login` and returns the sign-in URL. The page then shows a code for `submitLoginCode`. */
-  startLogin(method: "claudeai" | "console"): Promise<{ url: string }> {
-    pendingLogin?.child.kill();
+  startLogin(method: "claudeai" | "console", profile: ClaudeProfile = defaultClaudeProfile): Promise<{ url: string }> {
+    pendingLogins.get(profile.key)?.child.kill();
     const child = spawn(claudeExecutable(), ["auth", "login", method === "console" ? "--console" : "--claudeai"], {
-      env: { ...environmentWithoutApiKey(), BROWSER: "true" },
+      env: { ...subscriptionEnvironment(profile), BROWSER: "true" },
     });
-    const loginState = { child, output: "" };
-    pendingLogin = loginState;
+    const loginState: PendingLogin = { child, output: "" };
+    pendingLogins.set(profile.key, loginState);
     child.on("exit", () => {
-      if (pendingLogin === loginState) finishLogin();
+      if (pendingLogins.get(profile.key) === loginState) finishLogin(profile);
     });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("Keine Anmelde-URL von Claude Code erhalten")), 20_000);
@@ -151,8 +197,8 @@ export const claudeAuth = {
     });
   },
 
-  submitLoginCode(code: string): Promise<ClaudeAuthStatus> {
-    const loginState = pendingLogin;
+  submitLoginCode(code: string, profile: ClaudeProfile = defaultClaudeProfile): Promise<ClaudeAuthStatus> {
+    const loginState = pendingLogins.get(profile.key);
     if (!loginState) throw new Error("Keine Anmeldung aktiv – bitte neu starten");
     return new Promise((resolve, reject) => {
       const outputBefore = loginState.output.length;
@@ -162,22 +208,22 @@ export const claudeAuth = {
       }, 60_000);
       loginState.child.once("exit", (exitCode) => {
         clearTimeout(timeout);
-        if (exitCode === 0) claudeAuth.status(true).then(resolve, reject);
+        if (exitCode === 0) claudeAuth.status(true, profile).then(resolve, reject);
         else reject(new Error(loginState.output.slice(outputBefore).trim().split("\n").pop() || "Anmeldung fehlgeschlagen"));
       });
       loginState.child.stdin.write(`${code.trim()}\n`);
     });
   },
 
-  cancelLogin(): void {
-    pendingLogin?.child.kill();
+  cancelLogin(profile: ClaudeProfile = defaultClaudeProfile): void {
+    pendingLogins.get(profile.key)?.child.kill();
   },
 
-  async logout(): Promise<ClaudeAuthStatus> {
-    await runClaude(["auth", "logout"]);
-    cachedAccount = null;
+  async logout(profile: ClaudeProfile = defaultClaudeProfile): Promise<ClaudeAuthStatus> {
+    await runClaude(["auth", "logout"], profile);
+    cachedAccounts.delete(profile.key);
     eventHub.publish({ type: "claude_auth_changed" });
-    return claudeAuth.status(true);
+    return claudeAuth.status(true, profile);
   },
 
   /** Friendly error before a turn when nothing is connected. */

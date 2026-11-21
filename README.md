@@ -70,6 +70,7 @@ Der Agent hat in jeder Session Tools (`harnold`) für alles in Harnold: Überbli
 
 - Eigener Screen. Eine Umgebung bündelt GitHub-Token, Vercel-Token, Git-Identität, optionalen SSH-Key und Variablen (verschlüsselt). Jedes Projekt gehört zu höchstens einer.
 - Jeder Agent-Durchlauf im Projekt (auch Tasks, Channels) läuft mit diesen Werten: `GH_TOKEN`, git über HTTPS per Token (Keychain/gh-Helper werden übergangen), `VERCEL_TOKEN`, `GIT_AUTHOR_*`, `GIT_SSH_COMMAND`. Kein Umloggen in der CLI.
+- KI je Umgebung: Claude-Zugang „Wie Einstellungen“, eigenes Claude-Konto (eigener Config-Ordner unter `~/.harnold/claude-accounts/<id>`, Skills/CLAUDE.md/Settings aus `~/.claude` verlinkt) oder eigener API-Key; dazu Standardmodell (Auswahl im Chat geht vor).
 - Sidebar-Umschalter zeigt nur die Projekte einer Umgebung; neue Projekte landen darin. „Konten prüfen“ zeigt, wem die Tokens gehören.
 
 ## Bild-Generierung

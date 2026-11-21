@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, CircleAlert, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "@/api";
-import type { Environment, EnvironmentAccountChecks, EnvironmentInput, EnvironmentVariable, Project } from "@/types";
+import type { ClaudeAuthStatus, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentVariable, Project } from "@/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/segmented-control";
+import { ClaudeAccountSection } from "@/components/claude-connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FormField } from "@/components/form-field";
+import { FormField, modelOptions } from "@/components/form-field";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 
@@ -20,8 +23,10 @@ type EnvironmentsScreenProps = {
   onError: (unknownError: unknown) => void;
 };
 
+const modelLabel = (model: string) => modelOptions.find((modelOption) => modelOption.value === model)?.label ?? model;
+
 const accountSummary = (environment: Environment) =>
-  [environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH", environment.variables.length && `${environment.variables.length} Variablen`].filter(Boolean).join(" · ") ||
+  [environment.claudeMode !== "inherit" && "eigenes Claude", environment.model && modelLabel(environment.model), environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH", environment.variables.length && `${environment.variables.length} Variablen`].filter(Boolean).join(" · ") ||
   "noch keine Konten";
 
 export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
@@ -140,6 +145,9 @@ function EnvironmentEditor(props: {
     sshKeyPath: existing?.sshKeyPath ?? "",
     githubToken: undefined,
     vercelToken: undefined,
+    claudeMode: existing?.claudeMode ?? "inherit",
+    claudeApiKey: undefined,
+    model: existing?.model ?? "",
     variables: existing?.variables ?? [],
     projectIds: existing?.projectIds ?? [],
   }));
@@ -159,7 +167,7 @@ function EnvironmentEditor(props: {
       const input: EnvironmentInput = { ...draft, variables: draft.variables.filter((variable) => variable.key.trim()).map((variable) => ({ ...variable, key: variable.key.trim() })) };
       const savedEnvironment = existing ? await api.updateEnvironment(existing.id, input) : await api.createEnvironment(input);
       setAccountChecks({});
-      update({ githubToken: undefined, vercelToken: undefined });
+      update({ githubToken: undefined, vercelToken: undefined, claudeApiKey: undefined });
       props.onSaved(savedEnvironment);
     } catch (saveError) {
       props.onError(saveError);
@@ -217,6 +225,15 @@ function EnvironmentEditor(props: {
         <FormField label="Name" htmlFor="environment-name">
           <Input id="environment-name" autoFocus={!existing} value={draft.name} placeholder="z. B. Kasoria" onChange={(changeEvent) => update({ name: changeEvent.target.value })} />
         </FormField>
+
+        <AiSection
+          environment={existing}
+          claudeMode={draft.claudeMode}
+          claudeApiKey={draft.claudeApiKey}
+          model={draft.model}
+          onChange={update}
+          onError={props.onError}
+        />
 
         <section className="grid gap-4">
           <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Konten</h3>
@@ -347,5 +364,89 @@ function EnvironmentEditor(props: {
         </div>
       </form>
     </DetailPane>
+  );
+}
+
+/** KI per environment: which Claude access (workspace setting, own Claude login, own API key) and the default model. */
+function AiSection(props: {
+  environment: Environment | null;
+  claudeMode: EnvironmentClaudeMode;
+  claudeApiKey: string | undefined;
+  model: string;
+  onChange: (changes: Partial<EnvironmentInput>) => void;
+  onError: (unknownError: unknown) => void;
+}) {
+  const [accountStatus, setAccountStatus] = useState<ClaudeAuthStatus | null>(null);
+  const environmentId = props.environment?.id;
+  const { onError } = props;
+
+  useEffect(() => {
+    if (props.claudeMode !== "subscription" || !environmentId) return;
+    api.readClaudeStatus(false, environmentId).then(setAccountStatus).catch(onError);
+  }, [props.claudeMode, environmentId, onError]);
+
+  return (
+    <section className="grid gap-4">
+      <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">KI</h3>
+      <FormField
+        label="Claude-Zugang"
+        hint={
+          props.claudeMode === "inherit"
+            ? "Wie unter Einstellungen → Claude."
+            : props.claudeMode === "subscription"
+              ? "Eigenes Claude-Konto (Pro/Max/Team) nur für diese Umgebung."
+              : "Eigener Anthropic API-Key – Kosten laufen über dieses Konto."
+        }
+      >
+        <SegmentedControl
+          className="w-96"
+          options={[
+            { value: "inherit", label: "Wie Einstellungen" },
+            { value: "subscription", label: "Claude-Konto" },
+            { value: "apiKey", label: "API-Key" },
+          ]}
+          value={props.claudeMode}
+          onValueChange={(claudeMode) => props.onChange({ claudeMode })}
+        />
+      </FormField>
+
+      {props.claudeMode === "subscription" &&
+        (environmentId ? (
+          accountStatus ? (
+            <ClaudeAccountSection environmentId={environmentId} status={accountStatus} onStatusChange={setAccountStatus} onError={onError} />
+          ) : (
+            <div className="h-16" />
+          )
+        ) : (
+          <p className="text-[12px] text-muted-foreground">Nach dem Anlegen hier mit dem Claude-Konto anmelden.</p>
+        ))}
+
+      {props.claudeMode === "apiKey" && (
+        <TokenField
+          label="Anthropic API-Key"
+          id="environment-claude-key"
+          hint="console.anthropic.com → API Keys. Verschlüsselt gespeichert."
+          stored={props.environment?.claudeApiKeySet ?? false}
+          value={props.claudeApiKey}
+          placeholder="sk-ant-…"
+          onChange={(claudeApiKey) => props.onChange({ claudeApiKey })}
+        />
+      )}
+
+      <FormField label="Modell" hint="Standard für alle Durchläufe in dieser Umgebung. Eine Auswahl im Chat-Eingabefeld geht vor.">
+        <Select value={props.model || "default"} onValueChange={(model) => props.onChange({ model: model === "default" ? "" : model })}>
+          <SelectTrigger className="w-60">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {modelOptions.map((modelOption) => (
+              <SelectItem key={modelOption.value} value={modelOption.value}>
+                {modelOption.value === "default" ? "Harnold-Standard" : modelOption.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FormField>
+    </section>
   );
 }

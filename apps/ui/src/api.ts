@@ -76,12 +76,14 @@ export const api = {
     request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}/tokens`, { tokens }),
   setDesignSystemLinks: (designSystemId: string, links: DesignSystemLinkTarget[]) =>
     request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}/links`, { links }),
-  readClaudeStatus: (refresh = false) => request<ClaudeAuthStatus>("GET", `/api/claude/status${refresh ? "?refresh=1" : ""}`),
+  /** environmentId: the own Claude login of that environment instead of the workspace one. */
+  readClaudeStatus: (refresh = false, environmentId?: string) =>
+    request<ClaudeAuthStatus>("GET", `/api/claude/status?${new URLSearchParams({ ...(refresh ? { refresh: "1" } : {}), ...(environmentId ? { environmentId } : {}) })}`),
   saveClaudeSettings: (mode: ClaudeAuthMode, apiKey?: string) => request<ClaudeAuthStatus>("PUT", "/api/claude/settings", { mode, apiKey }),
-  startClaudeLogin: (method: "claudeai" | "console") => request<{ url: string }>("POST", "/api/claude/login", { method }),
-  submitClaudeLoginCode: (code: string) => request<ClaudeAuthStatus>("POST", "/api/claude/login/code", { code }),
-  cancelClaudeLogin: () => request<{ ok: true }>("POST", "/api/claude/login/cancel"),
-  logoutClaude: () => request<ClaudeAuthStatus>("POST", "/api/claude/logout"),
+  startClaudeLogin: (method: "claudeai" | "console", environmentId?: string) => request<{ url: string }>("POST", "/api/claude/login", { method, environmentId }),
+  submitClaudeLoginCode: (code: string, environmentId?: string) => request<ClaudeAuthStatus>("POST", "/api/claude/login/code", { code, environmentId }),
+  cancelClaudeLogin: (environmentId?: string) => request<{ ok: true }>("POST", "/api/claude/login/cancel", { environmentId }),
+  logoutClaude: (environmentId?: string) => request<ClaudeAuthStatus>("POST", "/api/claude/logout", { environmentId }),
   listMcpServers: () => request<McpServer[]>("GET", "/api/mcp-servers"),
   createMcpServer: (serverInput: McpServerInput) => request<McpServer>("POST", "/api/mcp-servers", serverInput),
   updateMcpServer: (serverId: string, serverInput: McpServerInput) => request<McpServer>("PUT", `/api/mcp-servers/${serverId}`, serverInput),

@@ -16,7 +16,7 @@ import { channelManager } from "./channels/manager.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
 import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
 import { environmentInputSchema, environmentStore } from "./environments.ts";
-import { claudeAuth, claudeSettingsSchema } from "./claude-auth.ts";
+import { claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
@@ -164,7 +164,9 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   if (agentRuntime.isRunning(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
-  await claudeAuth.assertReady();
+  const session = sessionStore.get(sessionId);
+  if (!session) throw new Error("Session nicht gefunden");
+  await environmentStore.agentSetupFor(session.projectId); // friendly error when Claude access is missing
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
   return context.json({ ok: true });
 });
@@ -392,26 +394,39 @@ app.put("/api/projects/:projectId/environment", async (context) => {
 });
 
 // --- Claude connection ---
-app.get("/api/claude/status", async (context) => context.json(await claudeAuth.status(context.req.query("refresh") === "1")));
+/** Claude login of the workspace (default) or of an environment with its own Claude account (?environmentId= / body). */
+const claudeProfileOf = (environmentId: string | undefined | null) => {
+  if (!environmentId) return defaultClaudeProfile;
+  environmentStore.get(environmentId); // throws when unknown
+  return claudeProfileForEnvironment(environmentId);
+};
+const readEnvironmentId = async (context: { req: { json: () => Promise<unknown> } }) =>
+  z.object({ environmentId: z.string().nullish() }).passthrough().parse(await context.req.json().catch(() => ({}))).environmentId;
+
+app.get("/api/claude/status", async (context) =>
+  context.json(await claudeAuth.status(context.req.query("refresh") === "1", claudeProfileOf(context.req.query("environmentId")))),
+);
 
 app.put("/api/claude/settings", async (context) => context.json(await claudeAuth.save(claudeSettingsSchema.parse(await context.req.json()))));
 
 app.post("/api/claude/login", async (context) => {
-  const body = z.object({ method: z.enum(["claudeai", "console"]).default("claudeai") }).parse(await context.req.json().catch(() => ({})));
-  return context.json(await claudeAuth.startLogin(body.method));
+  const body = z
+    .object({ method: z.enum(["claudeai", "console"]).default("claudeai"), environmentId: z.string().nullish() })
+    .parse(await context.req.json().catch(() => ({})));
+  return context.json(await claudeAuth.startLogin(body.method, claudeProfileOf(body.environmentId)));
 });
 
 app.post("/api/claude/login/code", async (context) => {
-  const body = z.object({ code: z.string().trim().min(1) }).parse(await context.req.json());
-  return context.json(await claudeAuth.submitLoginCode(body.code));
+  const body = z.object({ code: z.string().trim().min(1), environmentId: z.string().nullish() }).parse(await context.req.json());
+  return context.json(await claudeAuth.submitLoginCode(body.code, claudeProfileOf(body.environmentId)));
 });
 
-app.post("/api/claude/login/cancel", (context) => {
-  claudeAuth.cancelLogin();
+app.post("/api/claude/login/cancel", async (context) => {
+  claudeAuth.cancelLogin(claudeProfileOf(await readEnvironmentId(context)));
   return context.json({ ok: true });
 });
 
-app.post("/api/claude/logout", async (context) => context.json(await claudeAuth.logout()));
+app.post("/api/claude/logout", async (context) => context.json(await claudeAuth.logout(claudeProfileOf(await readEnvironmentId(context)))));
 
 // --- Image generation ---
 app.get("/api/settings/images", (context) => context.json(imageConfig.present()));

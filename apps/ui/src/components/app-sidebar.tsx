@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
+import { HarnoldLogo } from "@/components/harnold-logo";
 
 type AppSidebarProps = {
   projects: Project[];
@@ -199,7 +200,9 @@ export function AppSidebar(props: AppSidebarProps) {
   const hasQuickChats = Boolean(quickChatProject && (props.sessionsByProjectId[quickChatProject.id] ?? []).length > 0);
   return (
     <aside className="flex h-full flex-col bg-sidebar">
-      <div className="flex h-12 shrink-0 items-center px-4 text-[15px] font-semibold tracking-tight">Harnold</div>
+      <div className="flex h-12 shrink-0 items-center px-4">
+        <HarnoldLogo className="h-[18px]" />
+      </div>
 
       <nav className="space-y-0.5 px-2 pb-2">
         <button

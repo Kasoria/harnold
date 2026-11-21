@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/segmented-control";
 import { FormField } from "@/components/form-field";
 import { isActionEnter } from "@/lib/utils";
+import { HarnoldSymbol } from "@/components/harnold-logo";
 
 type ClaudeConnectionPanelProps = {
   status: ClaudeAuthStatus | null;
@@ -204,6 +205,7 @@ export function ClaudeOnboarding(props: ClaudeConnectionPanelProps & { onDismiss
   return (
     <div className="fixed inset-0 z-40 flex animate-in items-center justify-center bg-background/95 p-6 backdrop-blur-sm fade-in duration-200">
       <div className="w-full max-w-md">
+        <HarnoldSymbol className="mb-4 size-12" />
         <h1 className="text-[20px] font-semibold">Willkommen bei Harnold</h1>
         <p className="mt-1 mb-6 text-[13px] text-muted-foreground">Verbinde Claude – damit arbeitet der Agent in deinen Projekten.</p>
         <ClaudeConnectionPanel status={props.status} onStatusChange={props.onStatusChange} onError={props.onError} />

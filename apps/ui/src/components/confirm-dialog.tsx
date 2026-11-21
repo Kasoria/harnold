@@ -60,7 +60,6 @@ export function ConfirmDialogHost() {
           {pendingConfirmation?.description && <DialogDescription>{pendingConfirmation.description}</DialogDescription>}
         </DialogHeader>
         <DialogFooter
-          className="grid grid-cols-2 sm:grid sm:justify-stretch"
           onKeyDown={(keyboardEvent) => {
             if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") return;
             const footerButtons = [...keyboardEvent.currentTarget.querySelectorAll("button")];
@@ -72,7 +71,7 @@ export function ConfirmDialogHost() {
           <Button ref={confirmButtonRef} variant={pendingConfirmation?.destructive === false ? "default" : "destructive"} onClick={() => answer(true)}>
             {pendingConfirmation?.confirmLabel ?? "Löschen"}
           </Button>
-          <Button variant="outline" onClick={() => answer(false)}>
+          <Button variant="ghost" onClick={() => answer(false)}>
             Abbrechen
           </Button>
         </DialogFooter>

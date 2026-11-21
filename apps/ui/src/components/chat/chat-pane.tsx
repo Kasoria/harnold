@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Pencil, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
 import type { ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -168,7 +168,7 @@ export function ChatPane(props: ChatPaneProps) {
             onChange={(changeEvent) => setTitleDraft(changeEvent.target.value)}
             onBlur={commitTitle}
             onKeyDown={(keyboardEvent) => {
-              if (keyboardEvent.key === "Enter") commitTitle();
+              if (isActionEnter(keyboardEvent)) commitTitle();
               if (keyboardEvent.key === "Escape") setTitleDraft(null);
             }}
             className="min-w-0 flex-1 rounded-md bg-muted px-2 py-0.5 text-[14px] font-semibold outline-none"

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { api } from "@/api";
 import type { CanvasElement } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, isActionEnter } from "@/lib/utils";
 
 type CanvasElementViewProps = {
   element: CanvasElement;
@@ -143,7 +143,7 @@ export function CanvasElementView(props: CanvasElementViewProps) {
               onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
               onKeyDown={(keyboardEvent) => {
                 keyboardEvent.stopPropagation();
-                if (keyboardEvent.key === "Enter" || keyboardEvent.key === "Escape") keyboardEvent.currentTarget.blur();
+                if (isActionEnter(keyboardEvent) || keyboardEvent.key === "Escape") keyboardEvent.currentTarget.blur();
               }}
               onBlur={(blurEvent) => {
                 props.onTextChange(element, blurEvent.currentTarget.value.trim() || "Frame");

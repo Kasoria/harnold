@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 /** Top-level screens. "workspace" = chat + workspace of the active project. */
 export type ScreenName = "today" | "workspace" | "tasks" | "channels" | "memory" | "integrations" | "design" | "environments" | "settings";
@@ -24,11 +25,20 @@ export function useHashRoute() {
     return parseHash(window.location.hash);
   });
 
+  /** Screen changes cross-fade via the View Transitions API; changes within a screen apply instantly. */
+  const currentScreenRef = useRef(route.screen);
+  const applyRoute = useCallback((nextRoute: HashRoute) => {
+    const screenChanges = currentScreenRef.current !== nextRoute.screen;
+    currentScreenRef.current = nextRoute.screen;
+    if (screenChanges && document.startViewTransition) document.startViewTransition(() => flushSync(() => setRoute(nextRoute)));
+    else setRoute(nextRoute);
+  }, []);
+
   useEffect(() => {
-    const handleHashChange = () => setRoute(parseHash(window.location.hash));
+    const handleHashChange = () => applyRoute(parseHash(window.location.hash));
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
+  }, [applyRoute]);
 
   const navigate = useCallback((path: string) => {
     const nextHash = path === "/" || path === "" ? "" : `#${path.startsWith("/") ? path : `/${path}`}`;
@@ -36,9 +46,9 @@ export function useHashRoute() {
     if (nextHash) window.location.hash = nextHash;
     else {
       history.pushState(null, "", window.location.pathname + window.location.search);
-      setRoute(parseHash(""));
+      applyRoute(parseHash(""));
     }
-  }, []);
+  }, [applyRoute]);
 
   return { route, navigate };
 }

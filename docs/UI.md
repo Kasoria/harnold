@@ -5,7 +5,8 @@ Ziel: ruhig, dicht, Fokus auf Inhalt. Wenig Farbe, wenig Chrome.
 ## Stack
 
 - shadcn/ui (Radix) + Tailwind v4, Icons: lucide-react.
-- Theme über CSS-Variablen (shadcn-Tokens), Light + Dark.
+- Theme über CSS-Variablen (shadcn-Tokens), Light + Dark; `color-scheme` folgt dem Theme.
+- Ziel-Engines: WebKit (Tauri/macOS) + Chromium. Moderne Web-Standards vor JS-Nachbau, mit Feature-Detection/Fallback.
 
 ## Layout
 

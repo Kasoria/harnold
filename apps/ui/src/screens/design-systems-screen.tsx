@@ -11,6 +11,7 @@ import { FormField, formatRelativeTime } from "@/components/form-field";
 import { DesignTokensEditor } from "@/components/design-system/design-tokens-editor";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
+import { isActionEnter } from "@/lib/utils";
 
 type DesignSystemsScreenProps = {
   /** Selected system id, "new" for the create form, null for none. */
@@ -272,7 +273,7 @@ function DesignSystemDetailView(props: {
           onChange={(changeEvent) => setNameDraft(changeEvent.target.value)}
           onBlur={rename}
           onKeyDown={(keyboardEvent) => {
-            if (keyboardEvent.key === "Enter") (keyboardEvent.target as HTMLInputElement).blur();
+            if (isActionEnter(keyboardEvent)) (keyboardEvent.target as HTMLInputElement).blur();
             if (keyboardEvent.key === "Escape") setNameDraft(designSystem.name);
           }}
           className="-ml-1.5 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[15px] font-semibold transition-colors duration-150 outline-none hover:border-border focus:border-ring"

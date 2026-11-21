@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/segmented-control";
 import { FormField } from "@/components/form-field";
+import { isActionEnter } from "@/lib/utils";
 
 type ClaudeConnectionPanelProps = {
   status: ClaudeAuthStatus | null;
@@ -97,7 +98,7 @@ export function ClaudeAccountSection(props: ClaudeAccountSectionProps) {
               className="font-mono"
               onChange={(changeEvent) => setLoginCode(changeEvent.target.value)}
               onKeyDown={(keyboardEvent) => {
-                if (keyboardEvent.key === "Enter") {
+                if (isActionEnter(keyboardEvent)) {
                   keyboardEvent.preventDefault();
                   if (loginCode.trim()) submitCode();
                 }

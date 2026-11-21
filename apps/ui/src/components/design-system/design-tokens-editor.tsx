@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api";
 import type { DesignSystemDetail, FlatToken, TokenTree } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, isActionEnter } from "@/lib/utils";
 
 type DesignTokensEditorProps = {
   designSystem: DesignSystemDetail;
@@ -74,7 +74,7 @@ function TokenValueInput(props: { value: string; muted?: boolean; onCommit: (val
       onChange={(changeEvent) => setDraftValue(changeEvent.target.value)}
       onBlur={commit}
       onKeyDown={(keyboardEvent) => {
-        if (keyboardEvent.key === "Enter") (keyboardEvent.target as HTMLInputElement).blur();
+        if (isActionEnter(keyboardEvent)) (keyboardEvent.target as HTMLInputElement).blur();
         if (keyboardEvent.key === "Escape") setDraftValue(props.value);
       }}
       className={cn(

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Loader2, Mic, Square, Volume2, VolumeX, X } from "lucide-react";
 import type { AgentCommand, PermissionMode } from "@/types";
 import { api } from "@/api";
-import { cn } from "@/lib/utils";
+import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -10,6 +10,8 @@ import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { permissionModeOptions } from "@/components/form-field";
 import { agentModels, ModelSelect, type InheritedModel } from "@/components/model-select";
+
+const fieldSizingSupported = CSS.supports("field-sizing", "content");
 
 type ComposerCommand = AgentCommand & { source: "harnold" | "agent" };
 
@@ -104,9 +106,10 @@ export function Composer(props: ComposerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.insertion]);
 
+  // Auto-height via CSS `field-sizing: content`; JS only where unsupported (older WebKit).
   useEffect(() => {
     const textarea = textareaRef.current;
-    if (!textarea) return;
+    if (!textarea || fieldSizingSupported) return;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
   }, [composerText]);
@@ -249,7 +252,7 @@ export function Composer(props: ComposerProps) {
                     setHighlightedCommandIndex((previous) => (previous + step + matchingCommands.length) % matchingCommands.length);
                     return;
                   }
-                  if ((keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
+                  if ((isActionEnter(keyboardEvent) && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
                     keyboardEvent.preventDefault();
                     chooseCommand(matchingCommands[highlightedCommandIndex] ?? matchingCommands[0]);
                     return;
@@ -260,12 +263,12 @@ export function Composer(props: ComposerProps) {
                     return;
                   }
                 }
-                if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey && !keyboardEvent.nativeEvent.isComposing) {
+                if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
                   keyboardEvent.preventDefault();
-                  submit();
+                  if (isActionEnter(keyboardEvent)) submit();
                 }
               }}
-              className="max-h-60 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[14px] outline-none placeholder:text-muted-foreground"
+              className="max-h-60 min-h-8 flex-1 resize-none bg-transparent [field-sizing:content] py-1.5 text-[14px] outline-none placeholder:text-muted-foreground"
             />
           )}
 

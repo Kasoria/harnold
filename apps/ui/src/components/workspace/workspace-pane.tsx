@@ -179,7 +179,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             {fileTree.length ? (
               <FileTree nodes={fileTree} selectedPath={selectedPath} onSelect={selectFile} onReference={props.onReferenceFile} />
             ) : (
-              <p className="p-2 text-[12.5px] text-muted-foreground">Noch leer. Bitte den Agent z. B. um einen Entwurf unter design/.</p>
+              <p className="p-2 text-[12.5px] text-muted-foreground">Noch keine Entwürfe.</p>
             )}
           </div>
         </nav>

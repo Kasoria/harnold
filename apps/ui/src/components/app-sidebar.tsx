@@ -1,4 +1,4 @@
-import { Blocks, Brain, CalendarClock, Check, ChevronRight, ChevronsUpDown, Layers, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Trash2 } from "lucide-react";
+import { Blocks, Brain, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session } from "@/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -24,6 +24,7 @@ type AppSidebarProps = {
   onOpenScreen: (screen: ScreenName) => void;
   darkMode: boolean;
   taskCount: number;
+  waitingCount: number;
   channelsStatus: SessionStatus | null;
   onDarkModeChange: (darkMode: boolean) => void;
   environments: Environment[];
@@ -33,6 +34,7 @@ type AppSidebarProps = {
 };
 
 const featureScreens: { screen: ScreenName; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { screen: "today", label: "Heute", icon: Inbox },
   { screen: "tasks", label: "Tasks", icon: CalendarClock },
   { screen: "channels", label: "Channels", icon: MessagesSquare },
   { screen: "memory", label: "Memory", icon: Brain },
@@ -113,6 +115,9 @@ export function AppSidebar(props: AppSidebarProps) {
           <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>
             <ScreenIcon className="size-4 text-muted-foreground" />
             {label}
+            {screen === "today" && props.waitingCount > 0 && (
+              <span className="ml-auto rounded-full bg-status-waiting px-1.5 text-[11px] leading-4 font-medium text-white tabular-nums">{props.waitingCount}</span>
+            )}
             {screen === "tasks" && props.taskCount > 0 && <span className="ml-auto text-[11.5px] text-muted-foreground tabular-nums">{props.taskCount}</span>}
             {screen === "channels" && props.channelsStatus && <StatusDot status={props.channelsStatus} className="mr-1 ml-auto" />}
           </button>

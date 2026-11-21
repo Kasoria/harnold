@@ -11,6 +11,7 @@ import { safeStorage } from "@/lib/storage";
 import { useSpeechPlayback } from "@/hooks/use-speech-playback";
 import { ToolGroup, summarizeToolInput, type ToolResultItem, type ToolUseItem } from "./tool-group";
 import { Composer } from "./composer";
+import type { InheritedModel } from "@/components/model-select";
 
 type ChatPaneProps = {
   project: Project | null;
@@ -23,6 +24,7 @@ type ChatPaneProps = {
   workspaceOpen: boolean;
   onOpenWorkspace: () => void;
   onSend: (text: string, permissionMode: PermissionMode, model?: string) => void;
+  inheritedModel: InheritedModel;
   onInterrupt: () => void;
   onAnswerPermission: (requestId: string, allow: boolean) => void;
   onDeleteSession: () => void;
@@ -135,9 +137,6 @@ export function ChatPane(props: ChatPaneProps) {
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed">
           {!props.project && <p className="text-muted-foreground">Lege links ein Projekt an, um zu starten.</p>}
-          {props.project && renderBlocks.length === 0 && !props.streamingDraft && (
-            <p className="text-muted-foreground">Schreib einfach los – eine Session wird automatisch angelegt.</p>
-          )}
 
           {renderBlocks.map((renderBlock) => {
             if (renderBlock.type === "tools") {
@@ -241,6 +240,7 @@ export function ChatPane(props: ChatPaneProps) {
           <Composer
             placeholder={`Nachricht an ${props.project.name} …`}
             running={running}
+            inheritedModel={props.inheritedModel}
             insertion={props.composerInsertion}
             sttReady={props.sttReady}
             ttsReady={props.ttsReady}

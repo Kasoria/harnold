@@ -19,13 +19,6 @@ export const permissionModeOptions = [
   { value: "bypassPermissions", label: "Alles erlauben" },
 ] as const;
 
-export const modelOptions = [
-  { value: "default", label: "Standard" },
-  { value: "claude-opus-5-5", label: "Opus 5.5" },
-  { value: "claude-sonnet-5-5", label: "Sonnet 5.5" },
-  { value: "claude-haiku-5-5", label: "Haiku 5.5" },
-] as const;
-
 export function formatRelativeTime(timestamp: number): string {
   const differenceMs = timestamp - Date.now();
   const formatter = new Intl.RelativeTimeFormat("de", { numeric: "auto" });

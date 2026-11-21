@@ -12,6 +12,8 @@ const embeddingProviderLabels: Record<EmbeddingProvider, string> = {
   ollama: "Ollama (lokal)",
 };
 
+const defaultEmbeddingModels: Partial<Record<EmbeddingProvider, string>> = { openai: "text-embedding-3-small", ollama: "nomic-embed-text" };
+
 export function MemorySettingsSection(props: { onSaved: () => void; onError: (unknownError: unknown) => void }) {
   const [settingsView, setSettingsView] = useState<MemorySettingsView | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<MemorySettings | null>(null);
@@ -24,7 +26,8 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
       .then((loadedSettings) => {
         setSettingsView(loadedSettings);
         const { workspaceDirectory, embeddingProvider, embeddingModel, ollamaUrl } = loadedSettings;
-        setSettingsDraft({ workspaceDirectory, embeddingProvider, embeddingModel, ollamaUrl });
+        // Show the model actually used, never an empty "default".
+        setSettingsDraft({ workspaceDirectory, embeddingProvider, embeddingModel: embeddingModel || (defaultEmbeddingModels[embeddingProvider] ?? ""), ollamaUrl });
       })
       .catch(props.onError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -49,12 +52,12 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
 
   return (
     <div className="grid gap-4">
-      <FormField label="Workspace-Memory-Ordner" hint={`Leer = Standard. Kann ein Obsidian-Vault sein. Aktuell: ${settingsView.resolvedWorkspaceDirectory}`}>
-        <Input value={settingsDraft.workspaceDirectory} placeholder="~/Vaults/MeinVault" onChange={(changeEvent) => updateDraft({ workspaceDirectory: changeEvent.target.value })} />
+      <FormField label="Workspace-Memory-Ordner">
+        <Input value={settingsDraft.workspaceDirectory || settingsView.resolvedWorkspaceDirectory} onChange={(changeEvent) => updateDraft({ workspaceDirectory: changeEvent.target.value })} />
       </FormField>
 
-      <FormField label="Semantische Suche" hint="Ergänzt die Volltextsuche um Vektoren. Der Index wird automatisch neu aufgebaut.">
-        <Select value={settingsDraft.embeddingProvider} onValueChange={(value) => updateDraft({ embeddingProvider: value as EmbeddingProvider, embeddingModel: "" })}>
+      <FormField label="Semantische Suche">
+        <Select value={settingsDraft.embeddingProvider} onValueChange={(value) => updateDraft({ embeddingProvider: value as EmbeddingProvider, embeddingModel: defaultEmbeddingModels[value as EmbeddingProvider] ?? "" })}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
@@ -72,13 +75,12 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
         <FormField label="Modell">
           <Input
             value={settingsDraft.embeddingModel}
-            placeholder={settingsDraft.embeddingProvider === "openai" ? "text-embedding-3-small" : "nomic-embed-text"}
             onChange={(changeEvent) => updateDraft({ embeddingModel: changeEvent.target.value })}
           />
         </FormField>
       )}
       {settingsDraft.embeddingProvider === "openai" && (
-        <FormField label="OpenAI API-Key" hint="Leer = Key aus den Voice-Einstellungen.">
+        <FormField label="OpenAI API-Key" hint={settingsView.openaiKeySet ? undefined : "Leer = OpenAI-Key aus Voice"}>
           <Input
             type="password"
             value={openaiApiKey}

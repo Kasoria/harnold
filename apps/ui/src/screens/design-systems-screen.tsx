@@ -56,7 +56,6 @@ export function DesignSystemsScreen(props: DesignSystemsScreenProps) {
   return (
     <ScreenLayout
       title="Design Systems"
-      description="Tokens und Komponenten – mit beliebig vielen Projekten und Sessions verknüpfbar."
       actions={
         <Button size="sm" className="gap-1.5" onClick={() => props.onSelect("new")}>
           <Plus className="size-3.5" /> Neues Design System
@@ -123,7 +122,7 @@ export function DesignSystemsScreen(props: DesignSystemsScreenProps) {
           ) : (
             <EmptyState
               title={designSystems.length ? "Design System auswählen" : "Noch kein Design System"}
-              description="Ein Design System hält Tokens (Farben, Schrift, Abstände …) und Referenz-Komponenten. Verknüpfte Projekte und Sessions nutzen es automatisch für Entwürfe und Code."
+              description="Tokens und Komponenten für Entwürfe und Code."
               action={
                 <Button size="sm" onClick={() => props.onSelect("new")}>
                   <Plus className="size-3.5" /> Neues Design System
@@ -175,19 +174,10 @@ function CreateDesignSystemForm(props: {
         <FormField label="Name" htmlFor="design-system-name">
           <Input id="design-system-name" autoFocus value={name} placeholder="z. B. Kasoria Marke" onChange={(changeEvent) => setName(changeEvent.target.value)} />
         </FormField>
-        <FormField
-          label="Start"
-          hint={
-            template === "starter"
-              ? "Neutrale Tokens (hell/dunkel) plus Button und Karte als Referenz."
-              : template === "derive"
-                ? "Der Agent liest das Projekt und füllt Tokens und Komponenten (neue Session)."
-                : "Leeres tokens.json zum Selbst-Befüllen."
-          }
-        >
+        <FormField label="Start">
           <SegmentedControl
             options={[
-              { value: "starter", label: "Standard" },
+              { value: "starter", label: "Vorlage" },
               { value: "derive", label: "Aus Projekt" },
               { value: "empty", label: "Leer" },
             ]}
@@ -195,13 +185,13 @@ function CreateDesignSystemForm(props: {
             onValueChange={setTemplate}
           />
         </FormField>
-        <FormField label={projectRequired ? "Projekt" : "Verknüpfen mit (optional)"} hint="Weitere Projekte und Sessions danach unter „Verknüpft mit“.">
+        <FormField label={projectRequired ? "Projekt" : "Verknüpfen mit"}>
           <Select value={projectId} onValueChange={setProjectId}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">{projectRequired ? "Projekt wählen …" : "Keins"}</SelectItem>
+              <SelectItem value="none">{projectRequired ? "Projekt wählen …" : "Nichts"}</SelectItem>
               {props.projects.map((project) => (
                 <SelectItem key={project.id} value={project.id}>
                   {project.name}
@@ -332,7 +322,7 @@ function DesignSystemDetailView(props: {
       {designSystem.flatTokens.length === 0 && designSystem.components.length === 0 ? (
         <EmptyState
           title="Noch leer"
-          description="Tokens in tokens.json eintragen oder den Agent ein verknüpftes Projekt analysieren lassen."
+          description="tokens.json füllen oder aus einem Projekt ableiten."
           action={
             agentTarget && (
               <Button size="sm" variant="secondary" onClick={() => props.onWorkWithAgent(agentTarget, derivePrompt(designSystem), true)}>

@@ -8,9 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { modelOptions, permissionModeOptions } from "@/components/form-field";
+import { permissionModeOptions } from "@/components/form-field";
+import { ModelSelect, type InheritedModel } from "@/components/model-select";
 
 type ComposerProps = {
+  /** Model used when none is picked here (environment or settings). */
+  inheritedModel: InheritedModel;
   placeholder: string;
   running: boolean;
   insertion: { text: string; nonce: number } | null;
@@ -32,7 +35,11 @@ export function Composer(props: ComposerProps) {
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     (safeStorage.getItem("harnold.permissionMode") as PermissionMode | null) ?? "default",
   );
-  const [model, setModel] = useState(safeStorage.getItem("harnold.model") ?? "default");
+  // "" = inherited model (older builds stored "default").
+  const [model, setModel] = useState(() => {
+    const storedModel = safeStorage.getItem("harnold.model") ?? "";
+    return storedModel === "default" ? "" : storedModel;
+  });
   const [transcribing, setTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorder = useVoiceRecorder();
@@ -61,7 +68,7 @@ export function Composer(props: ComposerProps) {
 
   const submit = () => {
     if (!canSend) return;
-    props.onSend(composerText.trim(), permissionMode, model === "default" ? undefined : model);
+    props.onSend(composerText.trim(), permissionMode, model || undefined);
     setComposerText("");
   };
 
@@ -194,18 +201,7 @@ export function Composer(props: ComposerProps) {
             <TooltipContent>Antworten automatisch vorlesen</TooltipContent>
           </Tooltip>
         )}
-        <Select value={model} onValueChange={setModel}>
-          <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="end">
-            {modelOptions.map((modelOption) => (
-              <SelectItem key={modelOption.value} value={modelOption.value}>
-                {modelOption.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <ModelSelect compact value={model} onChange={setModel} inherited={props.inheritedModel} />
         <Select value={permissionMode} onValueChange={(value) => setPermissionMode(value as PermissionMode)}>
           <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5">
             <SelectValue />

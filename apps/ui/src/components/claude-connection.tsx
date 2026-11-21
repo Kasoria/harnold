@@ -118,21 +118,11 @@ export function ClaudeAccountSection(props: ClaudeAccountSectionProps) {
               {busyAction === "login" ? <Loader2 className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />} Mit Claude anmelden
             </Button>
             <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" disabled={busyAction !== null} onClick={() => startLogin("console")}>
-              Console-Konto
+              Console-Konto (API-Abrechnung)
             </Button>
           </div>
-          <p className="text-[12px] text-muted-foreground">Pro, Max, Team oder Enterprise. „Console-Konto“ rechnet über die API ab.</p>
         </div>
       )}
-      <p className="text-[11.5px] leading-snug text-muted-foreground">
-        {environmentId ? (
-          "Eigene Anmeldung nur für diese Umgebung – die normale Claude-Code-Anmeldung des Rechners bleibt unberührt."
-        ) : (
-          <>
-            Nutzt die Claude-Code-Anmeldung dieses Rechners – ist <code className="font-mono">claude</code> hier schon angemeldet, ist Harnold es auch.
-          </>
-        )}
-      </p>
       {status.cliError && <p className="text-[12px] text-destructive">Status nicht lesbar: {status.cliError}</p>}
     </div>
   );
@@ -178,13 +168,7 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
           <FormField
             label="Anthropic API-Key"
             htmlFor="claude-api-key"
-            hint={
-              status.apiKeySet
-                ? "Gespeichert (verschlüsselt). Leer lassen, um ihn zu behalten."
-                : status.environmentApiKey
-                  ? "ANTHROPIC_API_KEY aus der Umgebung wird genutzt, solange hier keiner gespeichert ist."
-                  : "Aus der Claude Console (console.anthropic.com → API Keys). Wird verschlüsselt gespeichert."
-            }
+            hint={!status.apiKeySet && status.environmentApiKey ? "ANTHROPIC_API_KEY aus der Umgebung aktiv" : undefined}
           >
             <Input id="claude-api-key" type="password" autoComplete="off" value={apiKeyDraft} placeholder={status.apiKeySet ? "••••••••" : "sk-ant-…"} onChange={(changeEvent) => setApiKeyDraft(changeEvent.target.value)} />
           </FormField>

@@ -167,7 +167,7 @@ function McpServerEditor(props: {
       </FormField>
 
       {jsonMode ? (
-        <FormField label="Konfiguration" hint="Format wie in Claude Desktop / Claude Code (mcpServers). Mehrere Server möglich.">
+        <FormField label="Konfiguration" hint="JSON wie in Claude Desktop (mcpServers).">
           <Textarea
             className="min-h-40 animate-in font-mono text-[12.5px] fade-in duration-200"
             placeholder={'{\n  "mcpServers": {\n    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }\n  }\n}'}
@@ -178,7 +178,7 @@ function McpServerEditor(props: {
       ) : (
         <>
           <div className="grid grid-cols-[1fr_auto] gap-3">
-            <FormField label="Name" hint="Tools heißen dann mcp__name__tool.">
+            <FormField label="Name">
               <Input value={serverInput.name} placeholder="github" onChange={(changeEvent) => updateInput({ name: changeEvent.target.value })} />
             </FormField>
             <FormField label="Verbindung">
@@ -197,17 +197,17 @@ function McpServerEditor(props: {
 
           {serverInput.transport === "stdio" ? (
             <>
-              <FormField label="Befehl" hint="Wird im Projektordner gestartet.">
+              <FormField label="Befehl">
                 <Input className="font-mono text-[12.5px]" value={commandLine} placeholder="npx -y @modelcontextprotocol/server-github" onChange={(changeEvent) => setCommandLine(changeEvent.target.value)} />
               </FormField>
-              <KeyValueEditor label="Umgebungsvariablen" hint="Verschlüsselt gespeichert." rows={envRows} keyPlaceholder="GITHUB_TOKEN" onChange={setEnvRows} />
+              <KeyValueEditor label="Umgebungsvariablen" rows={envRows} keyPlaceholder="GITHUB_TOKEN" onChange={setEnvRows} />
             </>
           ) : (
             <>
               <FormField label="URL">
                 <Input className="font-mono text-[12.5px]" value={serverInput.url} placeholder="https://example.com/mcp" onChange={(changeEvent) => updateInput({ url: changeEvent.target.value })} />
               </FormField>
-              <KeyValueEditor label="Header" hint="z. B. Authorization: Bearer …  Verschlüsselt gespeichert." rows={headerRows} keyPlaceholder="Authorization" onChange={setHeaderRows} />
+              <KeyValueEditor label="Header" rows={headerRows} keyPlaceholder="Authorization" onChange={setHeaderRows} />
             </>
           )}
 
@@ -326,7 +326,7 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
     ) : (
       <EmptyState
         title={visibleServers.length ? "Server wählen" : "Noch keine MCP-Server"}
-        description="MCP-Server geben dem Agent zusätzliche Tools – z. B. GitHub, Datenbanken oder Browser."
+        description="Zusätzliche Tools für den Agent."
         action={
           <Button size="sm" onClick={() => props.onSelect("new")}>
             <Plus className="size-3.5" /> MCP-Server hinzufügen
@@ -422,7 +422,7 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
       <DetailPane detailKey="new" title="Skill anlegen" subtitle="Format wie Claude Code (SKILL.md) – nutzbar in Harnold und Claude Code.">
         <div className="grid gap-4">
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Name" hint="Kleinbuchstaben und -">
+            <FormField label="Name">
               <Input value={newSkill.name} placeholder="release-notes" onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, name: changeEvent.target.value.toLowerCase() }))} />
             </FormField>
             <FormField label="Ablage">
@@ -437,8 +437,8 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
               </Select>
             </FormField>
           </div>
-          <FormField label="Beschreibung" hint="Wann der Agent den Skill nutzen soll.">
-            <Input value={newSkill.description} onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, description: changeEvent.target.value }))} />
+          <FormField label="Wann nutzen?">
+            <Input value={newSkill.description} placeholder="z. B. wenn Release Notes geschrieben werden" onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, description: changeEvent.target.value }))} />
           </FormField>
           <FormField label="Anleitung (Markdown)">
             <Textarea className="min-h-48 font-mono text-[12.5px]" value={newSkill.instructions} onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, instructions: changeEvent.target.value }))} />
@@ -488,7 +488,7 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
     ) : (
       <EmptyState
         title={skills.length ? "Skill wählen" : "Keine Skills gefunden"}
-        description="Skills sind wiederverwendbare Anleitungen, die der Agent bei Bedarf lädt. Gelesen aus ~/.claude/skills und .claude/skills im Projekt."
+        description="Aus ~/.claude/skills und .claude/skills im Projekt."
         action={
           <Button size="sm" onClick={() => props.onSelect("new")}>
             <Plus className="size-3.5" /> Skill anlegen

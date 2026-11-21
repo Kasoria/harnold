@@ -1,4 +1,4 @@
-import type { Environment, EnvironmentAccountChecks, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -30,6 +30,7 @@ const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
   new URLSearchParams({ scope: noteRef.scope, projectId: noteRef.projectId ?? "", path: noteRef.path }).toString();
 
 export const api = {
+  readToday: () => request<TodayOverview>("GET", "/api/today"),
   listProjects: () => request<Project[]>("GET", "/api/projects"),
   createProject: (name: string, path?: string, environmentId?: string | null) => request<Project>("POST", "/api/projects", { name, path, environmentId }),
   setProjectEnvironment: (projectId: string, environmentId: string | null) => request<{ ok: true }>("PUT", `/api/projects/${projectId}/environment`, { environmentId }),
@@ -77,6 +78,8 @@ export const api = {
   setDesignSystemLinks: (designSystemId: string, links: DesignSystemLinkTarget[]) =>
     request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}/links`, { links }),
   /** environmentId: the own Claude login of that environment instead of the workspace one. */
+  readDefaultModel: () => request<{ defaultModel: string }>("GET", "/api/settings/model"),
+  saveDefaultModel: (defaultModel: string) => request<{ defaultModel: string }>("PUT", "/api/settings/model", { defaultModel }),
   readClaudeStatus: (refresh = false, environmentId?: string) =>
     request<ClaudeAuthStatus>("GET", `/api/claude/status?${new URLSearchParams({ ...(refresh ? { refresh: "1" } : {}), ...(environmentId ? { environmentId } : {}) })}`),
   saveClaudeSettings: (mode: ClaudeAuthMode, apiKey?: string) => request<ClaudeAuthStatus>("PUT", "/api/claude/settings", { mode, apiKey }),

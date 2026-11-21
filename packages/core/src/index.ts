@@ -16,7 +16,7 @@ import { channelManager } from "./channels/manager.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
 import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
 import { environmentInputSchema, environmentStore } from "./environments.ts";
-import { claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
+import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
@@ -174,6 +174,36 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
 app.post("/api/sessions/:sessionId/interrupt", (context) => {
   agentRuntime.interrupt(context.req.param("sessionId"));
   return context.json({ ok: true });
+});
+
+// --- Today: what needs attention right now ---
+app.get("/api/today", (context) => {
+  const sessionInfo = (sessionId: string | null) => {
+    const session = sessionId ? sessionStore.get(sessionId) : undefined;
+    return session ? { sessionId: session.id, sessionTitle: session.title, projectId: session.projectId, projectName: projectStore.get(session.projectId)?.name ?? "" } : null;
+  };
+  const recentSessions = projectStore
+    .list()
+    .flatMap((project) => sessionStore.listByProject(project.id).slice(0, 3))
+    .sort((first, second) => second.updatedAt - first.updatedAt)
+    .slice(0, 3)
+    .map((session) => ({ ...sessionInfo(session.id)!, updatedAt: session.updatedAt }));
+  return context.json({
+    waiting: agentRuntime.listPendingPermissions().flatMap((pending) => {
+      const info = sessionInfo(pending.sessionId);
+      return info ? [{ ...pending, ...info }] : [];
+    }),
+    running: agentRuntime.listRunningSessionIds().flatMap((sessionId) => {
+      const info = sessionInfo(sessionId);
+      return info ? [info] : [];
+    }),
+    taskResults: taskStore
+      .listRecentRuns(Date.now() - 24 * 60 * 60 * 1000)
+      .filter((taskRun) => taskRun.status !== "running")
+      .slice(0, 5)
+      .map((taskRun) => ({ ...taskRun, taskName: taskStore.get(taskRun.taskId)?.name ?? "Task", session: sessionInfo(taskRun.sessionId) })),
+    recentSessions,
+  });
 });
 
 app.post("/api/permissions/:requestId", async (context) => {
@@ -406,6 +436,12 @@ const readEnvironmentId = async (context: { req: { json: () => Promise<unknown> 
 app.get("/api/claude/status", async (context) =>
   context.json(await claudeAuth.status(context.req.query("refresh") === "1", claudeProfileOf(context.req.query("environmentId")))),
 );
+
+app.get("/api/settings/model", (context) => context.json({ defaultModel: agentModelSettings.read() }));
+app.put("/api/settings/model", async (context) => {
+  const body = z.object({ defaultModel: z.string().trim().min(1) }).parse(await context.req.json());
+  return context.json({ defaultModel: agentModelSettings.write(body.defaultModel) });
+});
 
 app.put("/api/claude/settings", async (context) => context.json(await claudeAuth.save(claudeSettingsSchema.parse(await context.req.json()))));
 

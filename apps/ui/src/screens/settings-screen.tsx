@@ -3,6 +3,7 @@ import type { ClaudeAuthStatus, ImageProvider, ImageSettings, ImageSettingsView,
 import { api } from "@/api";
 import { Brain, Image as ImageIcon, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { ClaudeConnectionPanel } from "@/components/claude-connection";
+import { ModelSelect } from "@/components/model-select";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
@@ -25,16 +26,18 @@ type SettingsScreenProps = {
   voiceSettings: VoiceSettingsView | null;
   onVoiceSettingsChange: (voiceSettings: VoiceSettingsView) => void;
   claudeStatus: ClaudeAuthStatus | null;
+  defaultModel: string;
+  onDefaultModelChange: (defaultModel: string) => void;
   onClaudeStatusChange: (claudeStatus: ClaudeAuthStatus) => void;
   onError: (unknownError: unknown) => void;
 };
 
-const settingsSections: { value: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: "claude", label: "Claude", description: "Womit der Agent arbeitet: Claude-Konto oder API-Key.", icon: Sparkles },
-  { value: "general", label: "Allgemein", description: "Darstellung und Verbindung zum Workspace.", icon: SlidersHorizontal },
-  { value: "voice", label: "Voice", description: "Spracherkennung und Sprachausgabe für App und Channels.", icon: Mic },
-  { value: "images", label: "Bilder", description: "Bild-Generierung im Canvas und für den Agent.", icon: ImageIcon },
-  { value: "memory", label: "Memory", description: "Ablageort und semantische Suche des Gedächtnisses.", icon: Brain },
+const settingsSections: { value: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: "claude", label: "Claude", icon: Sparkles },
+  { value: "general", label: "Allgemein", icon: SlidersHorizontal },
+  { value: "voice", label: "Voice", icon: Mic },
+  { value: "images", label: "Bilder", icon: ImageIcon },
+  { value: "memory", label: "Memory", icon: Brain },
 ];
 
 const imageProviderLabels: Record<ImageProvider, string> = { none: "Aus", gemini: "Google Gemini", openai: "OpenAI" };
@@ -114,7 +117,12 @@ export function SettingsScreen(props: SettingsScreenProps) {
       .readImageSettings()
       .then((loadedSettings) => {
         setImageSettingsView(loadedSettings);
-        setImageDraft({ provider: loadedSettings.provider, geminiModel: loadedSettings.geminiModel, openaiModel: loadedSettings.openaiModel });
+        // Show the model that is actually used – never an empty "Standard".
+        setImageDraft({
+          provider: loadedSettings.provider,
+          geminiModel: loadedSettings.geminiModel || loadedSettings.defaultModels.gemini,
+          openaiModel: loadedSettings.openaiModel || loadedSettings.defaultModels.openai,
+        });
       })
       .catch(props.onError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,10 +206,22 @@ export function SettingsScreen(props: SettingsScreenProps) {
         </nav>
         <div className="min-w-0 flex-1 overflow-y-auto">
           <div key={activeSection.value} className="mx-auto max-w-xl animate-in px-6 py-6 fade-in duration-200">
-            <h2 className="text-[15px] font-semibold">{activeSection.label}</h2>
-            <p className="mt-0.5 mb-5 text-[12.5px] text-muted-foreground">{activeSection.description}</p>
+            <h2 className="mb-5 text-[15px] font-semibold">{activeSection.label}</h2>
             {activeSection.value === "claude" ? (
-              <ClaudeConnectionPanel status={props.claudeStatus} onStatusChange={props.onClaudeStatusChange} onError={props.onError} />
+              <div className="grid gap-6">
+                <ClaudeConnectionPanel status={props.claudeStatus} onStatusChange={props.onClaudeStatusChange} onError={props.onError} />
+                <FormField label="Modell">
+                  <ModelSelect
+                    value={props.defaultModel}
+                    onChange={(model) =>
+                      api
+                        .saveDefaultModel(model)
+                        .then(({ defaultModel }) => props.onDefaultModelChange(defaultModel))
+                        .catch(props.onError)
+                    }
+                  />
+                </FormField>
+              </div>
             ) : activeSection.value === "general" ? (
           <div key="general" className="grid animate-in gap-5 fade-in duration-200">
             <div className="flex items-center justify-between gap-4">
@@ -220,7 +240,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
             <div className="grid gap-2">
               <span className="text-sm">Workspace</span>
-              <Input placeholder="Core-Adresse (leer = lokal)" value={coreUrl} onChange={(event) => setCoreUrl(event.target.value)} />
+              <Input placeholder="Core-Adresse, z. B. https://harnold.meinserver.de" value={coreUrl} onChange={(event) => setCoreUrl(event.target.value)} />
               <Input type="password" placeholder="Zugriffstoken" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} />
             </div>
             <div>
@@ -245,7 +265,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
             </FormField>
             {imageDraft.provider !== "none" && (
               <>
-                <FormField label="Modell" hint="Leer = Standard.">
+                <FormField label="Modell">
                   <Input
                     value={imageDraft.provider === "gemini" ? imageDraft.geminiModel : imageDraft.openaiModel}
                     placeholder={imageSettingsView?.defaultModels[imageDraft.provider]}
@@ -256,7 +276,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 </FormField>
                 <FormField
                   label={imageDraft.provider === "gemini" ? "Gemini API-Key" : "OpenAI API-Key"}
-                  hint={imageDraft.provider === "gemini" ? "Alternativ Umgebungsvariable GEMINI_API_KEY." : "Leer = Key aus den Voice-Einstellungen."}
+                  hint={imageDraft.provider === "openai" && !imageSettingsView?.secretsSet.openaiApiKey ? "Leer = OpenAI-Key aus Voice" : undefined}
                 >
                   <Input
                     type="password"
@@ -304,8 +324,8 @@ export function SettingsScreen(props: SettingsScreenProps) {
               </FormField>
             </div>
 
-            <FormField label="Sprache" hint="ISO-Code, z. B. de oder en. Leer = automatisch.">
-              <Input value={voiceDraft.language} onChange={(changeEvent) => setVoiceDraft((previous) => ({ ...previous, language: changeEvent.target.value }))} />
+            <FormField label="Sprache">
+              <Input value={voiceDraft.language} placeholder="automatisch erkennen" onChange={(changeEvent) => setVoiceDraft((previous) => ({ ...previous, language: changeEvent.target.value }))} />
             </FormField>
 
             {neededSecretKeys.map((secretKey) => (
@@ -323,7 +343,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
             {renderOptionFields(ttsOptionFields[voiceDraft.ttsProvider])}
 
             {usesLocalProvider && (
-              <FormField label="ffmpeg" hint="Lokale Provider brauchen ffmpeg für die Umwandlung.">
+              <FormField label="ffmpeg">
                 <Input value={voiceDraft.options.ffmpegBinary ?? ""} placeholder="ffmpeg" onChange={(changeEvent) => updateOption("ffmpegBinary", changeEvent.target.value)} />
               </FormField>
             )}

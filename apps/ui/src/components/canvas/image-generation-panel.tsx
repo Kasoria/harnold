@@ -126,7 +126,7 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
               {generating ? "Erzeuge …" : "Erzeugen"}
             </Button>
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">Landet unter assets/generated/ und hier in der Bildmitte. ⌘↵ zum Erzeugen.</p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">⌘↵ erzeugen</p>
         </>
       )}
     </div>

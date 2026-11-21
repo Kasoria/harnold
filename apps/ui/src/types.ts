@@ -233,3 +233,11 @@ export type EnvironmentInput = {
 };
 export type AccountCheck = { ok: boolean; detail: string };
 export type EnvironmentAccountChecks = { github?: AccountCheck; vercel?: AccountCheck };
+
+export type SessionReference = { sessionId: string; sessionTitle: string; projectId: string; projectName: string };
+export type TodayOverview = {
+  waiting: (PermissionRequest & SessionReference)[];
+  running: SessionReference[];
+  taskResults: (TaskRun & { taskName: string; session: SessionReference | null })[];
+  recentSessions: (SessionReference & { updatedAt: number })[];
+};

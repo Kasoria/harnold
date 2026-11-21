@@ -2,17 +2,18 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, CircleAlert, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "@/api";
 import type { ClaudeAuthStatus, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentVariable, Project } from "@/types";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/segmented-control";
 import { ClaudeAccountSection } from "@/components/claude-connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FormField, modelOptions } from "@/components/form-field";
+import { FormField } from "@/components/form-field";
+import { ModelSelect, modelLabel } from "@/components/model-select";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 
 type EnvironmentsScreenProps = {
+  workspaceDefaultModel: string;
   /** Selected environment id, "new" for the create form, null for none. */
   selection: string | null;
   onSelect: (selection: string | null) => void;
@@ -23,8 +24,6 @@ type EnvironmentsScreenProps = {
   onError: (unknownError: unknown) => void;
 };
 
-const modelLabel = (model: string) => modelOptions.find((modelOption) => modelOption.value === model)?.label ?? model;
-
 const accountSummary = (environment: Environment) =>
   [environment.claudeMode !== "inherit" && "eigenes Claude", environment.model && modelLabel(environment.model), environment.githubTokenSet && "GitHub", environment.vercelTokenSet && "Vercel", environment.sshKeyPath && "SSH", environment.variables.length && `${environment.variables.length} Variablen`].filter(Boolean).join(" · ") ||
   "noch keine Konten";
@@ -34,7 +33,6 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
   return (
     <ScreenLayout
       title="Umgebungen"
-      description="Konten (GitHub, Vercel), Git-Identität und Variablen je Kontext – Projekte darin nutzen sie automatisch."
       actions={
         <Button size="sm" className="gap-1.5" onClick={() => props.onSelect("new")}>
           <Plus className="size-3.5" /> Neue Umgebung
@@ -66,6 +64,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
             <EnvironmentEditor
               key={selectedEnvironment?.id ?? "new"}
               environment={selectedEnvironment}
+              workspaceDefaultModel={props.workspaceDefaultModel}
               allEnvironments={props.environments}
               projects={props.projects}
               onSaved={(savedEnvironment) => {
@@ -83,7 +82,6 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
           ) : (
             <EmptyState
               title={props.environments.length ? "Umgebung auswählen" : "Noch keine Umgebung"}
-              description="Zum Beispiel eine für die eigene Firma und eine für einen Kunden – jeweils mit eigenem GitHub- und Vercel-Konto. Der Agent nutzt in jedem Projekt automatisch die Konten seiner Umgebung, ohne Umloggen."
               action={
                 <Button size="sm" onClick={() => props.onSelect("new")}>
                   <Plus className="size-3.5" /> Neue Umgebung
@@ -98,7 +96,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
 }
 
 /** Token field: empty keeps the stored token; "Entfernen" clears it. */
-function TokenField(props: { label: string; id: string; hint: string; stored: boolean; value: string | undefined; placeholder: string; check?: EnvironmentAccountChecks["github"]; onChange: (value: string | undefined) => void }) {
+function TokenField(props: { label: string; id: string; hint?: string; stored: boolean; value: string | undefined; placeholder: string; check?: EnvironmentAccountChecks["github"]; onChange: (value: string | undefined) => void }) {
   const removed = props.value === "" && props.stored;
   return (
     <FormField label={props.label} htmlFor={props.id} hint={props.hint}>
@@ -130,6 +128,7 @@ function TokenField(props: { label: string; id: string; hint: string; stored: bo
 
 function EnvironmentEditor(props: {
   environment: Environment | null;
+  workspaceDefaultModel: string;
   allEnvironments: Environment[];
   projects: Project[];
   onSaved: (savedEnvironment: Environment) => void;
@@ -189,7 +188,7 @@ function EnvironmentEditor(props: {
   };
 
   const remove = () => {
-    if (!existing || !window.confirm(`Umgebung „${existing.name}“ löschen? Ihre Projekte nutzen danach wieder die Standard-Konten des Rechners.`)) return;
+    if (!existing || !window.confirm(`Umgebung „${existing.name}“ löschen? Ihre Projekte nutzen danach wieder die normalen Konten des Rechners.`)) return;
     api.deleteEnvironment(existing.id).then(props.onDeleted).catch(props.onError);
   };
 
@@ -201,7 +200,6 @@ function EnvironmentEditor(props: {
     <DetailPane
       detailKey={existing?.id ?? "new"}
       title={existing ? existing.name : "Neue Umgebung"}
-      subtitle="Gilt für jeden Agent-Durchlauf in den zugeordneten Projekten (auch Tasks und Channels)."
       actions={
         existing && (
           <>
@@ -231,6 +229,7 @@ function EnvironmentEditor(props: {
           claudeMode={draft.claudeMode}
           claudeApiKey={draft.claudeApiKey}
           model={draft.model}
+          workspaceDefaultModel={props.workspaceDefaultModel}
           onChange={update}
           onError={props.onError}
         />
@@ -240,7 +239,6 @@ function EnvironmentEditor(props: {
           <TokenField
             label="GitHub-Token"
             id="environment-github"
-            hint="github.com → Settings → Developer settings → Personal access tokens. Gilt für gh und git push/pull über HTTPS."
             stored={existing?.githubTokenSet ?? false}
             value={draft.githubToken}
             placeholder="github_pat_…"
@@ -250,7 +248,6 @@ function EnvironmentEditor(props: {
           <TokenField
             label="Vercel-Token"
             id="environment-vercel"
-            hint="vercel.com → Account Settings → Tokens. Gilt für die vercel-CLI."
             stored={existing?.vercelTokenSet ?? false}
             value={draft.vercelToken}
             placeholder="Token"
@@ -269,17 +266,16 @@ function EnvironmentEditor(props: {
               <Input id="environment-git-email" value={draft.gitEmail} placeholder="name@firma.de" onChange={(changeEvent) => update({ gitEmail: changeEvent.target.value })} />
             </FormField>
           </div>
-          <FormField label="SSH-Key (optional)" htmlFor="environment-ssh" hint="Für Repos mit git@github.com-Remote, z. B. ~/.ssh/id_kasoria. Leer = Standard-Key.">
-            <Input id="environment-ssh" className="font-mono text-[12.5px]" value={draft.sshKeyPath} placeholder="/Users/…/.ssh/id_ed25519" onChange={(changeEvent) => update({ sshKeyPath: changeEvent.target.value })} />
+          <FormField label="SSH-Key" htmlFor="environment-ssh">
+            <Input id="environment-ssh" className="font-mono text-[12.5px]" value={draft.sshKeyPath} placeholder="~/.ssh/id_ed25519" onChange={(changeEvent) => update({ sshKeyPath: changeEvent.target.value })} />
           </FormField>
         </section>
 
         <section className="grid gap-2">
           <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Variablen</h3>
-          <p className="text-[11.5px] text-muted-foreground">Weitere Umgebungsvariablen, z. B. SUPABASE_ACCESS_TOKEN. Mit Schloss verschlüsselt und nie wieder angezeigt.</p>
           {draft.variables.map((variable, variableIndex) => (
             <div key={variableIndex} className="flex animate-in gap-1.5 fade-in duration-150">
-              <Input className="w-2/5 font-mono text-[12.5px]" placeholder="NAME" value={variable.key} onChange={(changeEvent) => updateVariable(variableIndex, { key: changeEvent.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} />
+              <Input className="w-2/5 font-mono text-[12.5px]" placeholder="SUPABASE_ACCESS_TOKEN" value={variable.key} onChange={(changeEvent) => updateVariable(variableIndex, { key: changeEvent.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} />
               <Input
                 type={variable.secret ? "password" : "text"}
                 autoComplete="off"
@@ -370,6 +366,7 @@ function EnvironmentEditor(props: {
 /** KI per environment: which Claude access (workspace setting, own Claude login, own API key) and the default model. */
 function AiSection(props: {
   environment: Environment | null;
+  workspaceDefaultModel: string;
   claudeMode: EnvironmentClaudeMode;
   claudeApiKey: string | undefined;
   model: string;
@@ -388,16 +385,7 @@ function AiSection(props: {
   return (
     <section className="grid gap-4">
       <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">KI</h3>
-      <FormField
-        label="Claude-Zugang"
-        hint={
-          props.claudeMode === "inherit"
-            ? "Wie unter Einstellungen → Claude."
-            : props.claudeMode === "subscription"
-              ? "Eigenes Claude-Konto (Pro/Max/Team) nur für diese Umgebung."
-              : "Eigener Anthropic API-Key – Kosten laufen über dieses Konto."
-        }
-      >
+      <FormField label="Claude-Zugang">
         <SegmentedControl
           className="w-96"
           options={[
@@ -418,14 +406,13 @@ function AiSection(props: {
             <div className="h-16" />
           )
         ) : (
-          <p className="text-[12px] text-muted-foreground">Nach dem Anlegen hier mit dem Claude-Konto anmelden.</p>
+          <p className="text-[12px] text-muted-foreground">Nach dem Anlegen anmelden.</p>
         ))}
 
       {props.claudeMode === "apiKey" && (
         <TokenField
           label="Anthropic API-Key"
           id="environment-claude-key"
-          hint="console.anthropic.com → API Keys. Verschlüsselt gespeichert."
           stored={props.environment?.claudeApiKeySet ?? false}
           value={props.claudeApiKey}
           placeholder="sk-ant-…"
@@ -433,19 +420,8 @@ function AiSection(props: {
         />
       )}
 
-      <FormField label="Modell" hint="Standard für alle Durchläufe in dieser Umgebung. Eine Auswahl im Chat-Eingabefeld geht vor.">
-        <Select value={props.model || "default"} onValueChange={(model) => props.onChange({ model: model === "default" ? "" : model })}>
-          <SelectTrigger className="w-60">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {modelOptions.map((modelOption) => (
-              <SelectItem key={modelOption.value} value={modelOption.value}>
-                {modelOption.value === "default" ? "Harnold-Standard" : modelOption.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <FormField label="Modell">
+        <ModelSelect value={props.model} onChange={(model) => props.onChange({ model })} inherited={{ model: props.workspaceDefaultModel, source: "Einstellungen" }} />
       </FormField>
     </section>
   );

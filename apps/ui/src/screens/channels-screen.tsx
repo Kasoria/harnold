@@ -22,12 +22,12 @@ export const channelTypeDefinitions: Record<ChannelType, { label: string; hint: 
   },
   discord: {
     label: "Discord",
-    hint: "App im Developer Portal anlegen, Bot hinzufügen, „Message Content Intent“ aktivieren. Antwortet auf DMs und @Erwähnungen.",
+    hint: "Developer Portal: App + Bot anlegen, „Message Content Intent“ aktivieren.",
     fields: [{ key: "botToken", label: "Bot-Token", secret: true }],
   },
   slack: {
     label: "Slack",
-    hint: "Slack-App mit Socket Mode. Scopes: chat:write, app_mentions:read, im:history, files:read. Antwortet auf DMs und @Erwähnungen.",
+    hint: "Slack-App mit Socket Mode. Scopes: chat:write, app_mentions:read, im:history, files:read.",
     fields: [
       { key: "botToken", label: "Bot-Token", placeholder: "xoxb-…", secret: true },
       { key: "appToken", label: "App-Token", placeholder: "xapp-…", secret: true },
@@ -35,7 +35,7 @@ export const channelTypeDefinitions: Record<ChannelType, { label: string; hint: 
   },
   email: {
     label: "E-Mail",
-    hint: "Prüft das Postfach jede Minute (IMAP) und antwortet per SMTP. Nur freigegebene Absender werden bearbeitet.",
+    hint: "IMAP zum Lesen, SMTP zum Antworten.",
     fields: [
       { key: "imapHost", label: "IMAP-Server", placeholder: "imap.example.com" },
       { key: "imapPort", label: "IMAP-Port", placeholder: "993" },
@@ -162,11 +162,11 @@ function ChannelEditor(props: {
       </div>
       <FormField
         label="Erlaubte Absender"
-        hint={channelInput.type === "email" ? "E-Mail-Adressen, eine pro Zeile." : "IDs, eine pro Zeile. Unbekannte Absender bekommen ihre ID als Antwort."}
+        hint={channelInput.type === "email" ? undefined : "Unbekannte Absender erhalten ihre ID als Antwort."}
       >
         <Textarea rows={3} className="font-mono text-[12.5px]" value={allowedSendersText} onChange={(event) => setAllowedSendersText(event.target.value)} />
       </FormField>
-      <FormField label="Rechte des Agents" hint="Bei „Fragen“ kommen Freigaben als Buttons in den Chat.">
+      <FormField label="Rechte des Agents">
         <Select value={channelInput.permissionMode} onValueChange={(value) => updateInput({ permissionMode: value as ChannelInput["permissionMode"] })}>
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -181,7 +181,7 @@ function ChannelEditor(props: {
         </Select>
       </FormField>
 
-      <FormField label="Sprachantworten" hint="Sprachnachrichten werden immer transkribiert (Einstellungen → Voice).">
+      <FormField label="Sprachantworten">
         <Select value={channelInput.voiceReplies} onValueChange={(value) => updateInput({ voiceReplies: value as ChannelInput["voiceReplies"] })}>
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -268,7 +268,7 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
     ) : (
       <EmptyState
         title={props.channels.length ? "Channel wählen" : "Noch keine Channels"}
-        description="Schreib oder sprich mit dem Agent über Telegram, Discord, Slack oder E-Mail. Keine öffentliche URL nötig."
+        description="Telegram, Discord, Slack oder E-Mail."
         action={
           <Button size="sm" disabled={!props.projects.length} onClick={() => props.onSelectChannel("new")}>
             <Plus className="size-3.5" /> Channel hinzufügen
@@ -280,7 +280,6 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
   return (
     <ScreenLayout
       title="Channels"
-      description="Externe Ein- und Ausgänge"
       actions={
         <Button size="sm" variant="secondary" disabled={!props.projects.length} onClick={() => props.onSelectChannel("new")}>
           <Plus className="size-3.5" /> Channel hinzufügen

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 /** Top-level screens. "workspace" = chat + workspace of the active project. */
-export type ScreenName = "workspace" | "tasks" | "channels" | "memory" | "integrations" | "design" | "environments" | "settings";
+export type ScreenName = "today" | "workspace" | "tasks" | "channels" | "memory" | "integrations" | "design" | "environments" | "settings";
 export type HashRoute = { screen: ScreenName; section: string | null; itemId: string | null };
 
-const screenNames: ScreenName[] = ["workspace", "tasks", "channels", "memory", "integrations", "design", "environments", "settings"];
+const screenNames: ScreenName[] = ["today", "workspace", "tasks", "channels", "memory", "integrations", "design", "environments", "settings"];
 
 function parseHash(hash: string): HashRoute {
   const [screenSegment, ...restSegments] = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
@@ -18,7 +18,11 @@ function parseHash(hash: string): HashRoute {
 
 /** Minimal hash router: back/forward work, routes are linkable. */
 export function useHashRoute() {
-  const [route, setRoute] = useState<HashRoute>(() => parseHash(window.location.hash));
+  const [route, setRoute] = useState<HashRoute>(() => {
+    // A fresh open (no hash) starts on "Heute".
+    if (!window.location.hash) history.replaceState(null, "", "#/today");
+    return parseHash(window.location.hash);
+  });
 
   useEffect(() => {
     const handleHashChange = () => setRoute(parseHash(window.location.hash));

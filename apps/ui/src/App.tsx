@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -16,12 +16,14 @@ import { routePath, useHashRoute } from "@/hooks/use-hash-route";
 import { SettingsScreen, settingsSectionNames, type SettingsSection } from "@/screens/settings-screen";
 import { DesignSystemsScreen } from "@/screens/design-systems-screen";
 import { EnvironmentsScreen } from "@/screens/environments-screen";
+import { TodayScreen } from "@/screens/today-screen";
 import { ClaudeOnboarding } from "@/components/claude-connection";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
 import { IntegrationsScreen, type IntegrationsTab } from "@/screens/integrations-screen";
 import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
 import { Button } from "@/components/ui/button";
+import type { InheritedModel } from "@/components/model-select";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
@@ -52,6 +54,8 @@ export function App() {
   const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [todayReloadCounter, setTodayReloadCounter] = useState(0);
+  const [defaultModel, setDefaultModel] = useState("claude-opus-5-5");
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => safeStorage.getItem(activeEnvironmentStorageKey));
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
@@ -99,6 +103,19 @@ export function App() {
     void refreshTasks();
     void refreshChannels();
     void refreshEnvironments();
+    // Approvals that were already waiting before this window opened.
+    api
+      .readToday()
+      .then((overview) =>
+        setPermissionRequests((previous) => [
+          ...previous,
+          ...overview.waiting
+            .filter((waiting) => !previous.some((request) => request.requestId === waiting.requestId))
+            .map(({ requestId, sessionId, toolName, input }) => ({ requestId, sessionId, toolName, input })),
+        ]),
+      )
+      .catch(reportError);
+    api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(reportError);
     api.readVoiceSettings().then(setVoiceSettings).catch(reportError);
     api
       .readClaudeStatus()
@@ -167,6 +184,7 @@ export function App() {
               return next;
             });
             if (!serverEvent.running && serverEvent.sessionId === currentSessionId) setStreamingDraft("");
+            if (!serverEvent.running) setTodayReloadCounter((previous) => previous + 1);
             return;
           case "permission_request":
             setPermissionRequests((previous) => [...previous, serverEvent]);
@@ -204,6 +222,7 @@ export function App() {
             api.readClaudeStatus().then(setClaudeStatus).catch(() => undefined);
             return;
           case "task_run_finished":
+            setTodayReloadCounter((previous) => previous + 1);
             setToast({
               message: `Task „${serverEvent.taskName}“ ${serverEvent.success ? "fertig" : "fehlgeschlagen"}`,
               tone: serverEvent.success ? "info" : "error",
@@ -222,6 +241,20 @@ export function App() {
       }),
     [refreshSessions, refreshTasks, refreshChannels, refreshEnvironments, navigate],
   );
+
+  /** Model a turn in this project uses when the composer/task picks none: environment model, else settings. */
+  const inheritedModelFor = (projectId: string | null): InheritedModel => {
+    const environment = environments.find((candidate) => projectId && candidate.projectIds.includes(projectId));
+    return environment?.model ? { model: environment.model, source: environment.name } : { model: defaultModel, source: "Einstellungen" };
+  };
+
+  const sessionReferenceFor = (sessionId: string): SessionReference | null => {
+    for (const [projectId, sessions] of Object.entries(sessionsByProjectId)) {
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      if (session) return { sessionId, sessionTitle: session.title, projectId, projectName: projects.find((project) => project.id === projectId)?.name ?? "" };
+    }
+    return null;
+  };
 
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const activeSession = activeProjectId
@@ -338,6 +371,18 @@ export function App() {
 
   const renderFeatureScreen = () => {
     switch (route.screen) {
+      case "today":
+        return (
+          <TodayScreen
+            permissionRequests={permissionRequests}
+            runningSessionIds={runningSessionIds}
+            sessionReferenceFor={sessionReferenceFor}
+            reloadCounter={todayReloadCounter}
+            onOpenSession={openSessionFromScreen}
+            onAnswerPermission={(requestId, allow) => api.answerPermission(requestId, allow).catch(reportError)}
+            onError={reportError}
+          />
+        );
       case "tasks":
         return (
           <TasksScreen
@@ -345,6 +390,7 @@ export function App() {
             onSelectTask={(taskId) => navigate(routePath("tasks", taskId))}
             tasks={tasks}
             projects={projects}
+            inheritedModelFor={inheritedModelFor}
             channels={channels}
             defaultProjectId={activeProjectId}
             onOpenSession={openSessionFromScreen}
@@ -411,6 +457,7 @@ export function App() {
             selection={route.itemId}
             onSelect={(selection) => navigate(routePath("environments", selection))}
             environments={environments}
+            workspaceDefaultModel={defaultModel}
             projects={projects}
             onEnvironmentsChange={() => void refreshEnvironments()}
             onSaved={(message) => setToast({ message, tone: "info" })}
@@ -422,6 +469,8 @@ export function App() {
           <SettingsScreen
             section={(settingsSectionNames.includes(route.section as SettingsSection) ? route.section : "claude") as SettingsSection}
             claudeStatus={claudeStatus}
+            defaultModel={defaultModel}
+            onDefaultModelChange={setDefaultModel}
             onClaudeStatusChange={setClaudeStatus}
             onSectionChange={(section) => navigate(routePath("settings", section))}
             onSaved={(message) => setToast({ message, tone: "info" })}
@@ -479,6 +528,7 @@ export function App() {
               activeEnvironmentId={activeEnvironmentId}
               onActiveEnvironmentChange={switchEnvironment}
               taskCount={tasks.length}
+              waitingCount={permissionRequests.length}
               channelsStatus={
                 channels.length === 0
                   ? null
@@ -508,6 +558,7 @@ export function App() {
               workspaceOpen={workspaceOpen}
               onOpenWorkspace={() => setWorkspaceVisibility(true)}
               onSend={sendToAgent}
+              inheritedModel={inheritedModelFor(activeProjectId)}
               onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
               onAnswerPermission={(requestId, allow) => api.answerPermission(requestId, allow).catch(reportError)}
               onDeleteSession={() => activeSession && void deleteSession(activeSession)}

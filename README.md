@@ -66,6 +66,14 @@ Der Agent hat in jeder Session Tools (`harnold`) für alles in Harnold: Überbli
 - Der Agent bekommt das verknüpfte System (Pfad, Tokens) und Zugriff auf den Ordner; Entwürfe binden es über `_harnold/design-systems/<id>/tokens.css` ein (virtuell in der Preview).
 - Alte projektlokale `design-system/`-Ordner werden einmalig importiert und verknüpft.
 
+## Heute
+
+Startansicht: wartende Freigaben, laufende Sessions, Task-Ergebnisse (24 h), zuletzt genutzte Sessions.
+
+## Modell
+
+Einstellungen → Claude → Modell (Standard Opus 5.5). Umgebung und Auswahl im Chat bzw. Task können es überschreiben; angezeigt wird immer das tatsächliche Modell.
+
 ## Umgebungen
 
 - Eigener Screen. Eine Umgebung bündelt GitHub-Token, Vercel-Token, Git-Identität, optionalen SSH-Key und Variablen (verschlüsselt). Jedes Projekt gehört zu höchstens einer.

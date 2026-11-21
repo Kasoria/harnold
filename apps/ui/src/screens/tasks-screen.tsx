@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusDot } from "@/components/status-dot";
-import { FormField, formatRelativeTime, modelOptions, permissionModeOptions } from "@/components/form-field";
+import { FormField, formatRelativeTime, permissionModeOptions } from "@/components/form-field";
+import { ModelSelect, type InheritedModel } from "@/components/model-select";
 
 const schedulePresets = [
   { value: "0 * * * *", label: "Stündlich" },
@@ -24,6 +25,7 @@ export function describeSchedule(schedule: string): string {
 }
 
 type TasksScreenProps = {
+  inheritedModelFor: (projectId: string) => InheritedModel;
   selectedTaskId: string | "new" | null;
   onSelectTask: (taskId: string | "new" | null) => void;
   tasks: Task[];
@@ -49,6 +51,7 @@ function emptyTaskInput(projectId: string): TaskInput {
 }
 
 function TaskEditor(props: {
+  inheritedModelFor: (projectId: string) => InheritedModel;
   task: Task | null;
   initialInput: TaskInput;
   projects: Project[];
@@ -112,7 +115,7 @@ function TaskEditor(props: {
           onChange={(event) => updateInput({ prompt: event.target.value })}
         />
       </FormField>
-      <FormField label="Zeitplan" hint={customSchedule ? "Cron-Ausdruck: Minute Stunde Tag Monat Wochentag (Server-Zeitzone)." : undefined}>
+      <FormField label="Zeitplan" hint={customSchedule ? "Minute Stunde Tag Monat Wochentag" : undefined}>
         <div className="flex gap-2">
           <Select
             value={customSchedule ? customScheduleValue : taskInput.schedule}
@@ -162,21 +165,10 @@ function TaskEditor(props: {
           </Select>
         </FormField>
         <FormField label="Modell">
-          <Select value={taskInput.model ?? "default"} onValueChange={(value) => updateInput({ model: value === "default" ? null : value })}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {modelOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ModelSelect className="w-full" value={taskInput.model ?? ""} onChange={(model) => updateInput({ model: model || null })} inherited={props.inheritedModelFor(taskInput.projectId)} />
         </FormField>
       </div>
-      <FormField label="Ergebnis senden an" hint="Das Ergebnis erscheint immer als Session im Projekt.">
+      <FormField label="Ergebnis zusätzlich senden an">
         <div className="flex gap-2">
           <Select
             value={taskInput.notifyChannelId ?? "none"}
@@ -271,6 +263,7 @@ export function TasksScreen(props: TasksScreenProps) {
         task={null}
         initialInput={emptyTaskInput(defaultProjectId)}
         projects={props.projects}
+        inheritedModelFor={props.inheritedModelFor}
         channels={props.channels}
         onSaved={(savedTaskId) => props.onSelectTask(savedTaskId ?? null)}
         onCancel={() => props.onSelectTask(null)}
@@ -306,6 +299,7 @@ export function TasksScreen(props: TasksScreenProps) {
           notifyChatId: selectedTask.notifyChatId,
         }}
         projects={props.projects}
+        inheritedModelFor={props.inheritedModelFor}
         channels={props.channels}
         onSaved={(savedTaskId) => props.onSelectTask(savedTaskId === null ? null : selectedTask.id)}
         onCancel={() => props.onSelectTask(null)}
@@ -316,7 +310,6 @@ export function TasksScreen(props: TasksScreenProps) {
   ) : (
     <EmptyState
       title={props.tasks.length ? "Task wählen" : "Noch keine Tasks"}
-      description="Tasks lassen den Agent zeitgesteuert arbeiten – z. B. ein tägliches Briefing oder wöchentliche Reports."
       action={
         <Button size="sm" disabled={!props.projects.length} onClick={() => props.onSelectTask("new")}>
           <Plus className="size-3.5" /> Neuer Task
@@ -328,7 +321,6 @@ export function TasksScreen(props: TasksScreenProps) {
   return (
     <ScreenLayout
       title="Tasks"
-      description="Geplante Agent-Läufe"
       actions={
         <Button size="sm" variant="secondary" disabled={!props.projects.length} onClick={() => props.onSelectTask("new")}>
           <Plus className="size-3.5" /> Neuer Task

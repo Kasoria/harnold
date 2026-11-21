@@ -121,6 +121,10 @@ export const taskStore = {
   listRuns(taskId: string, limit = 20): TaskRun[] {
     return database.prepare("SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?").all(taskId, limit).map(mapTaskRun);
   },
+  /** Finished or running runs of all tasks since a point in time, newest first. */
+  listRecentRuns(sinceMs: number, limit = 10): TaskRun[] {
+    return database.prepare("SELECT * FROM task_runs WHERE started_at >= ? ORDER BY started_at DESC LIMIT ?").all(sinceMs, limit).map(mapTaskRun);
+  },
   lastRun(taskId: string): TaskRun | undefined {
     return taskStore.listRuns(taskId, 1)[0];
   },

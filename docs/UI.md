@@ -18,16 +18,18 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 | Workspace | Rest | Canvas / Preview / Code / Dateien |
 
 ### Sidebar
-- Oben: Dashboard.
+- Oben: **Heute** – Startansicht bei frischem Öffnen. Nur: wartende Freigaben (direkt erlauben/ablehnen), laufende Sessions, Task-Ergebnisse der letzten 24 h, 3 Sessions zum Weitermachen. Leere Bereiche entfallen.
 - Baum: **Projekt** (farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
-- Feature-Navigation: Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
+- Feature-Navigation: Heute, Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
 
 ### Feature-Screens
 - Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
-- Aufbau: Kopf (Titel, Beschreibung, Aktionen, ggf. Tabs) + Master-Detail (Liste links, Detail/Editor rechts) bzw. Abschnitts-Navigation bei Einstellungen.
+- Aufbau: Kopf (Titel, Aktionen, ggf. Tabs) + Master-Detail (Liste links, Detail/Editor rechts) bzw. Abschnitts-Navigation bei Einstellungen.
 - Sheets/Modals/Inline nur für Erstellen/Bearbeiten **innerhalb** eines Screens, sparsam.
+- **Keine Hint-Texte**, wo Label, Icon, Platzhalter oder Kontext reichen. Unvermeidbare Hints: ein kurzer, konkreter Satz.
+- Nie „Standard“ ohne Wert: immer den tatsächlichen Wert zeigen (z. B. Modell „Opus 5.5 · Einstellungen“).
 
 ### Chat
 - Header: Session-Titel, Status-Pill („Idle“/„Läuft“), Verlauf, Menü (…).

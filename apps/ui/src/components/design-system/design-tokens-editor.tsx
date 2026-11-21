@@ -215,7 +215,7 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
   return (
     <div className="animate-in fade-in duration-200">
         {designSystemData.error && <p className="mt-3 rounded-lg border border-destructive/40 px-3 py-2 text-[12.5px] text-destructive">{designSystemData.error}</p>}
-        {mode && <p className="mb-2 text-[12px] text-muted-foreground">Grau = vom hellen Modus geerbt. Änderungen hier gelten nur im Dunkel-Modus.</p>}
+        {mode && <p className="mb-2 text-[12px] text-muted-foreground">Grau = vom hellen Modus geerbt.</p>}
 
         {sections.map(({ sectionKey, tokens }) => (
           <section key={sectionKey} className="mt-7">

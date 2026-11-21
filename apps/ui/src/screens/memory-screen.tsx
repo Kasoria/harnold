@@ -221,7 +221,6 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const detail = !editor ? (
     <EmptyState
       title="Notiz wählen"
-      description="Markdown-Notizen, die der Agent kennt. Workspace gilt überall, Projekt nur hier. Sag dem Agent „merk dir …“ oder leg selbst eine an."
       action={
         <Button size="sm" onClick={() => selectNote("new")}>
           <Plus className="size-3.5" /> Neue Notiz

@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { query, type PermissionMode, type PermissionResult, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { chatItemStore, projectStore, sessionStore, type ChatItemPayload } from "./db.ts";
 import { eventHub } from "./events.ts";
-import { config } from "./config.ts";
 import { memoryNotes } from "./memory.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
 import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
 import { environmentStore } from "./environments.ts";
+import { agentModelSettings } from "./claude-auth.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
 import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
@@ -28,7 +28,7 @@ ${memoryInstructions}
 ${mediaInstructions}
 `.trim();
 
-type PendingPermission = { sessionId: string; resolve: (permissionResult: PermissionResult) => void };
+type PendingPermission = { sessionId: string; toolName: string; input: unknown; resolve: (permissionResult: PermissionResult) => void };
 
 const runningTurns = new Map<string, AbortController>();
 const pendingPermissions = new Map<string, PendingPermission>();
@@ -143,7 +143,7 @@ export const agentRuntime = {
           // All design systems are open to the agent (it may create/link one mid-turn).
           additionalDirectories: [designSystemsDirectory],
           resume: session.agentSessionId ?? undefined,
-          model: model ?? agentSetup.model ?? config.defaultModel,
+          model: model ?? agentSetup.model ?? agentModelSettings.read(),
           permissionMode,
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
@@ -156,7 +156,7 @@ export const agentRuntime = {
           canUseTool: (toolName, input, { signal }) =>
             new Promise<PermissionResult>((resolve) => {
               const requestId = randomUUID();
-              pendingPermissions.set(requestId, { sessionId, resolve });
+              pendingPermissions.set(requestId, { sessionId, toolName, input, resolve });
               signal.addEventListener("abort", () => {
                 pendingPermissions.delete(requestId);
                 resolve({ behavior: "deny", message: "Abgebrochen" });
@@ -200,6 +200,16 @@ export const agentRuntime = {
       eventHub.publish({ type: "turn_state", sessionId, running: false });
     }
     return outcome;
+  },
+
+  /** Open permission requests (so a freshly opened app still shows what is waiting). */
+  listPendingPermissions(): { requestId: string; sessionId: string; toolName: string; input: unknown }[] {
+    return [...pendingPermissions].map(([requestId, pendingPermission]) => ({ requestId, sessionId: pendingPermission.sessionId, toolName: pendingPermission.toolName, input: pendingPermission.input }));
+  },
+
+  /** Ids of sessions with a running turn. */
+  listRunningSessionIds(): string[] {
+    return [...runningTurns.keys()];
   },
 
   interrupt(sessionId: string): void {

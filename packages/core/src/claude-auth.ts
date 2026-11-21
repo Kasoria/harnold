@@ -69,6 +69,16 @@ export function removeClaudeProfile(environmentId: string): void {
 }
 
 const modeKey = "claude.authMode";
+const defaultModelKey = "claude.defaultModel";
+
+/** Workspace default model – concrete, never "whatever Claude Code picks". Environments and the composer may override it. */
+export const agentModelSettings = {
+  read: (): string => settingsStore.read<string>(defaultModelKey, config.defaultModel ?? "claude-opus-5-5"),
+  write: (model: string): string => {
+    settingsStore.write(defaultModelKey, model);
+    return model;
+  },
+};
 const secretsKey = "claude.secrets";
 
 /** The Claude Code binary bundled with the Agent SDK (falls back to `claude` on PATH). */

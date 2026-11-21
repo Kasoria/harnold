@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Pencil, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
-import type { ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
+import type { Attachment, ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,7 @@ import { useSpeechPlayback } from "@/hooks/use-speech-playback";
 import { ToolGroup, summarizeToolInput, type ToolResultItem, type ToolUseItem } from "./tool-group";
 import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
+import { ImageGallery, imagePathsIn } from "./attachment-views";
 import { ProjectQuickSelect } from "./project-quick-select";
 import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
@@ -49,7 +50,7 @@ type ChatPaneProps = {
   composerInsertion: { text: string; nonce: number } | null;
   workspaceOpen: boolean;
   onOpenWorkspace: () => void;
-  onSend: (text: string, permissionMode: PermissionMode, model?: string) => void;
+  onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
   inheritedModel: InheritedModel;
   onInterrupt: () => void;
   onAnswerPermission: (requestId: string, allow: boolean) => void;
@@ -154,6 +155,33 @@ export function ChatPane(props: ChatPaneProps) {
       ),
     [props.chatItems],
   );
+  /**
+   * Images to preview inline per block: results of generate_image, image files the agent read, and image paths
+   * in answers. Each image appears once per turn (where it first shows up).
+   */
+  const imagePathsByBlockKey = useMemo(() => {
+    const pathsByKey = new Map<string, string[]>();
+    let shownInTurn = new Set<string>();
+    const take = (blockKey: string, candidatePaths: string[]) => {
+      const newPaths = candidatePaths.filter((candidatePath) => !shownInTurn.has(candidatePath));
+      for (const newPath of newPaths) shownInTurn.add(newPath);
+      if (newPaths.length) pathsByKey.set(blockKey, newPaths);
+    };
+    for (const renderBlock of renderBlocks) {
+      if (renderBlock.type === "tools") {
+        const toolImagePaths = renderBlock.toolUses.flatMap((toolUse) => {
+          const toolResult = toolResultsByToolUseId.get(toolUse.toolUseId);
+          if (!toolResult || toolResult.isError) return [];
+          if (toolUse.toolName.endsWith("generate_image")) return imagePathsIn(toolResult.content);
+          const readPath = toolUse.toolName === "Read" ? String((toolUse.input as { file_path?: string })?.file_path ?? "") : "";
+          return readPath && props.project && readPath.startsWith(props.project.path + "/") ? imagePathsIn(readPath.slice(props.project.path.length + 1)) : [];
+        });
+        take(renderBlock.key, toolImagePaths);
+      } else if (renderBlock.chatItem.kind === "user_text") shownInTurn = new Set();
+      else if (renderBlock.chatItem.kind === "assistant_text") take(renderBlock.chatItem.id, imagePathsIn(renderBlock.chatItem.text));
+    }
+    return pathsByKey;
+  }, [renderBlocks, toolResultsByToolUseId, props.project]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -255,13 +283,12 @@ export function ChatPane(props: ChatPaneProps) {
 
           {renderBlocks.map((renderBlock) => {
             if (renderBlock.type === "tools") {
+              const toolImagePaths = imagePathsByBlockKey.get(renderBlock.key);
               return (
-                <ToolGroup
-                  key={renderBlock.key}
-                  toolUses={renderBlock.toolUses}
-                  toolResultsByToolUseId={toolResultsByToolUseId}
-                  running={running}
-                />
+                <div key={renderBlock.key} className="flex flex-col gap-2">
+                  <ToolGroup toolUses={renderBlock.toolUses} toolResultsByToolUseId={toolResultsByToolUseId} running={running} />
+                  {toolImagePaths && props.project && <ImageGallery projectId={props.project.id} imagePaths={toolImagePaths} />}
+                </div>
               );
             }
             const { chatItem } = renderBlock;
@@ -272,6 +299,8 @@ export function ChatPane(props: ChatPaneProps) {
                   <UserMessage
                     key={chatItem.id}
                     text={chatItem.text}
+                    projectId={props.project?.id ?? null}
+                    attachments={chatItem.attachments ?? []}
                     versions={versions && versions.versionSessionIds.length > 1 ? { currentIndex: versions.currentIndex, total: versions.versionSessionIds.length } : null}
                     onShowVersion={(versionIndex) => versions && props.onOpenVersion(versions.versionSessionIds[versionIndex])}
                     canEdit={!running}
@@ -283,6 +312,9 @@ export function ChatPane(props: ChatPaneProps) {
                 return (
                   <div key={chatItem.id} className="group/answer relative animate-in fade-in duration-200">
                     <ChatMarkdown text={chatItem.text} />
+                    {imagePathsByBlockKey.has(chatItem.id) && props.project && (
+                      <ImageGallery projectId={props.project.id} imagePaths={imagePathsByBlockKey.get(chatItem.id)!} className="mt-2" />
+                    )}
                     <div className="mt-0.5 flex items-center gap-1">
                     <CopyButton
                       readText={() => chatItem.text}

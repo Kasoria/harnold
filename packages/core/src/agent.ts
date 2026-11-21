@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { query, type PermissionMode, type PermissionResult, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { chatItemStore, projectStore, sessionStore, type ChatItemPayload } from "./db.ts";
+import { query, type PermissionMode, type PermissionResult, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload } from "./db.ts";
+import { contentBlocksFor } from "./attachments.ts";
 import { eventHub } from "./events.ts";
 import { memoryNotes } from "./memory.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
@@ -13,7 +14,7 @@ import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNam
 import { agentCommands } from "./slash-commands.ts";
 import { agentPluginOptions } from "./plugins.ts";
 
-export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string };
+export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
 
 const harnoldSystemAppend = `
@@ -130,12 +131,25 @@ function handleAgentMessage(sessionId: string, projectId: string, agentMessage: 
   }
 }
 
+/** Plain text, or – with attachments – one user message with image/document/text blocks (streaming input). */
+function promptFor(project: { id: string; path: string } & Parameters<typeof contentBlocksFor>[0], promptText: string, attachments: Attachment[]): string | AsyncIterable<SDKUserMessage> {
+  if (!attachments.length) return promptText;
+  const userMessage: SDKUserMessage = {
+    type: "user",
+    parent_tool_use_id: null,
+    message: { role: "user", content: contentBlocksFor(project, promptText, attachments) },
+  };
+  return (async function* () {
+    yield userMessage;
+  })();
+}
+
 export const agentRuntime = {
   isRunning(sessionId: string): boolean {
     return runningTurns.has(sessionId);
   },
 
-  async runTurn({ sessionId, text, permissionMode, model }: TurnRequest): Promise<TurnOutcome> {
+  async runTurn({ sessionId, text, permissionMode, model, attachments = [] }: TurnRequest): Promise<TurnOutcome> {
     const session = sessionStore.get(sessionId);
     if (!session) throw new Error("Session nicht gefunden");
     const project = projectStore.get(session.projectId);
@@ -144,10 +158,10 @@ export const agentRuntime = {
     const agentSetup = await environmentStore.agentSetupFor(project.id);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
-      sessionStore.update(sessionId, { title: text.slice(0, 60) });
+      sessionStore.update(sessionId, { title: (text.trim() || attachments.map((attachment) => attachment.name).join(", ")).slice(0, 60) });
       eventHub.publish({ type: "sessions_changed", projectId: project.id });
     }
-    const userChatItem = persistAndPublish(sessionId, { kind: "user_text", text });
+    const userChatItem = persistAndPublish(sessionId, { kind: "user_text", text, ...(attachments.length ? { attachments } : {}) });
     if (session.forkOriginSessionId && !session.forkItemId) sessionStore.update(sessionId, { forkItemId: userChatItem.id });
     // A version created by editing a message picks the conversation up at the point before that message.
     const pendingFork = session.agentSessionId ? null : session.pendingFork;
@@ -162,7 +176,7 @@ export const agentRuntime = {
       const integrationOptions = agentIntegrationOptions(project);
       const pluginOptions = agentPluginOptions();
       const agentStream = query({
-        prompt: pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text,
+        prompt: promptFor(project, pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text, attachments),
         options: {
           cwd: project.path,
           // The project's environment (accounts, git identity, variables) on top of the Claude credentials.

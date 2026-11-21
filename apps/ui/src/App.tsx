@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { Attachment, SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -63,6 +63,8 @@ export function App() {
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => safeStorage.getItem(activeEnvironmentStorageKey));
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [iconDialogProject, setIconDialogProject] = useState<Project | null>(null);
+  /** Project shown in the memory screen; follows the active project until picked there. */
+  const [memoryProjectId, setMemoryProjectId] = useState<string | null>(null);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const [panelsAnimating, setPanelsAnimating] = useState(false);
@@ -405,11 +407,11 @@ export function App() {
   };
 
   /** Ensures a session exists, then sends — used by the composer and by "In Code übernehmen". */
-  const sendToAgent = async (text: string, permissionMode: PermissionMode, model?: string) => {
+  const sendToAgent = async (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => {
     if (!activeProjectId) return;
     try {
       const targetSessionId = activeSessionId ?? (await createSession(activeProjectId))?.id;
-      if (targetSessionId) await api.sendMessage(targetSessionId, text, permissionMode, model);
+      if (targetSessionId) await api.sendMessage(targetSessionId, text, permissionMode, model, attachments);
     } catch (sendError) {
       reportError(sendError);
     }
@@ -487,7 +489,12 @@ export function App() {
               : null;
         return (
           <MemoryScreen
-            project={activeProject}
+            project={projects.find((project) => project.id === memoryProjectId) ?? activeProject}
+            projects={projects}
+            onProjectChange={(projectId) => {
+              setMemoryProjectId(projectId);
+              navigate(routePath("memory"));
+            }}
             selection={memorySelection}
             onSelect={(selection) =>
               navigate(selection === null ? routePath("memory") : selection === "new" ? routePath("memory", "new") : `${routePath("memory", selection.scope)}/${selection.path.split("/").map(encodeURIComponent).join("/")}`)

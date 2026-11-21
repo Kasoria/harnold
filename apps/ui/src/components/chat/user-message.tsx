@@ -3,9 +3,13 @@ import { ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, isActionEnter } from "@/lib/utils";
 import { CopyButton } from "./chat-markdown";
+import { SentAttachments } from "./attachment-views";
+import type { Attachment } from "@/types";
 
 type UserMessageProps = {
   text: string;
+  projectId: string | null;
+  attachments: Attachment[];
   /** Versions of this message (original + edits); null when there is only one. */
   versions: { currentIndex: number; total: number } | null;
   onShowVersion: (versionIndex: number) => void;
@@ -63,7 +67,12 @@ export function UserMessage(props: UserMessageProps) {
 
   return (
     <div className="group/user flex max-w-[85%] animate-in flex-col items-end self-end fade-in duration-200">
-      <div className="rounded-xl bg-muted px-3.5 py-2 whitespace-pre-wrap">{props.text}</div>
+      {props.attachments.length > 0 && props.projectId && (
+        <div className="mb-1.5">
+          <SentAttachments projectId={props.projectId} attachments={props.attachments} />
+        </div>
+      )}
+      {props.text && <div className="rounded-xl bg-muted px-3.5 py-2 whitespace-pre-wrap">{props.text}</div>}
       <div className="mt-0.5 flex items-center gap-0.5">
         <CopyButton readText={() => props.text} label="Kopieren" className={hoverActionClassName} />
         {props.canEdit && (

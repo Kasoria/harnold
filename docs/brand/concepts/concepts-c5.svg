@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="984" viewBox="0 0 1600 984"><defs><filter id="grey"><feColorMatrix type="saturate" values="0"/></filter></defs><rect width="1600" height="984" fill="#f7f7f4"/><text x="60" y="78" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="40" font-weight="700" fill="#161616">Logo concepts</text><text x="60" y="116" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="20" fill="#6b6b6b">Concepts for review — pick a direction (or tell me what you like in each).</text><rect x="60" y="150" width="726" height="774" rx="18" fill="#fff" stroke="#e4e4e0" stroke-width="1"/><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="90" y="190" width="666" height="300" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Zu schwer: die Stange biegt sich -->
+  <g transform="translate(0 8)"><path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <rect x="50" y="32" width="48" height="176" rx="16" transform="rotate(10 74 120)"/>
+  <rect x="158" y="32" width="48" height="176" rx="16" transform="rotate(-10 182 120)"/></g>
+</svg>
+</g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 256" x="90" y="514" width="666" height="120" preserveAspectRatio="xMidYMid meet">
+<g>
+  <title>Harnold</title>
+  <!-- Zu schwer: die Stange biegt sich -->
+  <g transform="translate(0 8)"><path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <rect x="50" y="32" width="48" height="176" rx="16" transform="rotate(10 74 120)"/>
+  <rect x="158" y="32" width="48" height="176" rx="16" transform="rotate(-10 182 120)"/></g>
+</g>
+<text x="296" y="176" font-family="Inter, -apple-system, Helvetica, Arial, sans-serif" font-weight="700" font-size="148" letter-spacing="-4">harnold</text>
+</svg></g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="90" y="660" width="64" height="64" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Zu schwer: die Stange biegt sich -->
+  <g transform="translate(0 8)"><path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <rect x="50" y="32" width="48" height="176" rx="16" transform="rotate(10 74 120)"/>
+  <rect x="158" y="32" width="48" height="176" rx="16" transform="rotate(-10 182 120)"/></g>
+</svg>
+</g><text x="122" y="744" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">64px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="180" y="692" width="32" height="32" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Zu schwer: die Stange biegt sich -->
+  <g transform="translate(0 8)"><path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <rect x="50" y="32" width="48" height="176" rx="16" transform="rotate(10 74 120)"/>
+  <rect x="158" y="32" width="48" height="176" rx="16" transform="rotate(-10 182 120)"/></g>
+</svg>
+</g><text x="196" y="744" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">32px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="238" y="708" width="16" height="16" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Zu schwer: die Stange biegt sich -->
+  <g transform="translate(0 8)"><path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <rect x="50" y="32" width="48" height="176" rx="16" transform="rotate(10 74 120)"/>
+  <rect x="158" y="32" width="48" height="176" rx="16" transform="rotate(-10 182 120)"/></g>
+</svg>
+</g><text x="246" y="744" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">16px</text><text x="90.0" y="780" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#161616">A · C4 Grinsen</text><text x="90.0" y="814" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">Gebogene Stange, eckig-gerundete Scheiben (vorher)</text><rect x="814" y="150" width="726" height="774" rx="18" fill="#fff" stroke="#161616" stroke-width="2"/><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="844" y="190" width="666" height="300" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Grinsen mit Pillen-Scheiben -->
+  <g transform="translate(0 8)">
+    <path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+    <rect x="47" y="30" width="54" height="180" rx="27" transform="rotate(10 74 120)"/>
+    <rect x="155" y="30" width="54" height="180" rx="27" transform="rotate(-10 182 120)"/>
+  </g>
+</svg>
+</g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 256" x="844" y="514" width="666" height="120" preserveAspectRatio="xMidYMid meet">
+<g>
+  <title>Harnold</title>
+  <!-- Grinsen mit Pillen-Scheiben -->
+  <g transform="translate(0 8)">
+    <path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+    <rect x="47" y="30" width="54" height="180" rx="27" transform="rotate(10 74 120)"/>
+    <rect x="155" y="30" width="54" height="180" rx="27" transform="rotate(-10 182 120)"/>
+  </g>
+</g>
+<text x="296" y="176" font-family="Inter, -apple-system, Helvetica, Arial, sans-serif" font-weight="700" font-size="148" letter-spacing="-4">harnold</text>
+</svg></g><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="844" y="660" width="64" height="64" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Grinsen mit Pillen-Scheiben -->
+  <g transform="translate(0 8)">
+    <path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+    <rect x="47" y="30" width="54" height="180" rx="27" transform="rotate(10 74 120)"/>
+    <rect x="155" y="30" width="54" height="180" rx="27" transform="rotate(-10 182 120)"/>
+  </g>
+</svg>
+</g><text x="876" y="744" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">64px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="934" y="692" width="32" height="32" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Grinsen mit Pillen-Scheiben -->
+  <g transform="translate(0 8)">
+    <path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+    <rect x="47" y="30" width="54" height="180" rx="27" transform="rotate(10 74 120)"/>
+    <rect x="155" y="30" width="54" height="180" rx="27" transform="rotate(-10 182 120)"/>
+  </g>
+</svg>
+</g><text x="950" y="744" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">32px</text><g filter="url(#grey)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" x="992" y="708" width="16" height="16" preserveAspectRatio="xMidYMid meet">
+  <title>Harnold</title>
+  <!-- Grinsen mit Pillen-Scheiben -->
+  <g transform="translate(0 8)">
+    <path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+    <rect x="47" y="30" width="54" height="180" rx="27" transform="rotate(10 74 120)"/>
+    <rect x="155" y="30" width="54" height="180" rx="27" transform="rotate(-10 182 120)"/>
+  </g>
+</svg>
+</g><text x="1000" y="744" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" fill="#8a8a8a" text-anchor="middle">16px</text><text x="844.0" y="780" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#161616">B · C5 Grinsen rund</text><text x="844.0" y="808" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#161616" letter-spacing="1.5">RECOMMENDED</text><text x="844.0" y="842" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">Gebogene Stange mit den Pillen-Scheiben aus C2 – weicher,</text><text x="844.0" y="868" font-family="system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="19" fill="#555">freundlicher</text></svg>

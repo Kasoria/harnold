@@ -65,9 +65,12 @@ export type Session = {
   updatedAt: number;
 };
 
+/** A file attached to a chat message; stored in the project under attachments/. */
+export type Attachment = { path: string; name: string; mimeType: string; size: number };
+
 /** Normalized, UI-facing chat entries (independent of the model provider). */
 export type ChatItemPayload =
-  | { kind: "user_text"; text: string }
+  | { kind: "user_text"; text: string; attachments?: Attachment[] }
   | { kind: "assistant_text"; text: string }
   | { kind: "thinking"; text: string }
   /** Harnold's own markers in the timeline (context cleared/compacted, session moved). */

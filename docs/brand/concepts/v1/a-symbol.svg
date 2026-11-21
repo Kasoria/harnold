@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Flat-Top: Haarblock -->
+  <rect x="66" y="20" width="124" height="46" rx="6"/>
+  <!-- Gesicht mit breitem Kiefer, Sonnenbrillen-Fuge und Smirk als Aussparungen -->
+  <path fill-rule="evenodd" d="M72 74 H184 V150 L198 172 V206 Q198 234 170 234 H86 Q58 234 58 206 V172 L72 150 Z
+    M68 100 H188 V134 H68 Z
+    M108 186 H146 L152 178 L157 182 L149 193 H108 Z
+    M125 220 H131 V234 H125 Z"/>
+  <!-- Brillengläser -->
+  <path d="M74 106 H124 V118 L118 128 H82 L74 118 Z M132 106 H182 V118 L174 128 H138 L132 118 Z"/>
+  <rect x="120" y="108" width="16" height="6"/>
+</svg>

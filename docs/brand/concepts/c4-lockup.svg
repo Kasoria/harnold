@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 256">
+<g>
+  <title>Harnold</title>
+  <!-- Zu schwer: die Stange biegt sich -->
+  <g transform="translate(0 8)"><path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <rect x="50" y="32" width="48" height="176" rx="16" transform="rotate(10 74 120)"/>
+  <rect x="158" y="32" width="48" height="176" rx="16" transform="rotate(-10 182 120)"/></g>
+</g>
+<text x="296" y="176" font-family="Inter, -apple-system, Helvetica, Arial, sans-serif" font-weight="700" font-size="148" letter-spacing="-4">harnold</text>
+</svg>

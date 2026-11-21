@@ -1,4 +1,4 @@
-import type { PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -60,8 +60,21 @@ export const api = {
   createSession: (projectId: string) => request<Session>("POST", `/api/projects/${projectId}/sessions`),
   deleteSession: (sessionId: string) => request("DELETE", `/api/sessions/${sessionId}`),
   listChatItems: (sessionId: string) => request<ChatItem[]>("GET", `/api/sessions/${sessionId}/items`),
-  sendMessage: (sessionId: string, text: string, permissionMode: PermissionMode, model?: string) =>
-    request("POST", `/api/sessions/${sessionId}/messages`, { text, permissionMode, model: model || undefined }),
+  sendMessage: (sessionId: string, text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) =>
+    request("POST", `/api/sessions/${sessionId}/messages`, { text, permissionMode, model: model || undefined, attachments: attachments?.length ? attachments : undefined }),
+  /** Uploads files for a chat message (multipart). */
+  uploadAttachments: async (projectId: string, files: File[]): Promise<Attachment[]> => {
+    const formData = new FormData();
+    for (const file of files) formData.append("files", file, file.name);
+    const response = await fetch(`${coreBaseUrl}/api/projects/${projectId}/attachments`, {
+      method: "POST",
+      headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+      body: formData,
+    });
+    const responseBody = await response.json();
+    if (!response.ok) throw new Error(responseBody.error ?? response.statusText);
+    return responseBody as Attachment[];
+  },
   interrupt: (sessionId: string) => request("POST", `/api/sessions/${sessionId}/interrupt`),
   answerPermission: (requestId: string, allow: boolean) => request("POST", `/api/permissions/${requestId}`, { allow }),
   readTree: (projectId: string) => request<FileNode[]>("GET", `/api/projects/${projectId}/tree`),

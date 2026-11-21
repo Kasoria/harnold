@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 256">
+<g>
+  <title>Harnold</title>
+  <rect x="36" y="36" width="44" height="184" rx="10"/>
+  <rect x="176" y="36" width="44" height="184" rx="10"/>
+  <!-- Gurtschnalle als Querbalken, Dorn senkrecht -->
+  <path fill-rule="evenodd" d="M80 94 H176 A22 22 0 0 1 198 116 V140 A22 22 0 0 1 176 162 H80 A22 22 0 0 1 58 140 V116 A22 22 0 0 1 80 94 Z M88 114 H168 A6 6 0 0 1 174 120 V136 A6 6 0 0 1 168 142 H88 A6 6 0 0 1 82 136 V120 A6 6 0 0 1 88 114 Z"/>
+  <rect x="122" y="102" width="12" height="52" rx="6"/>
+</g>
+<text x="296" y="176" font-family="Inter, -apple-system, Helvetica, Arial, sans-serif" font-weight="700" font-size="148" letter-spacing="-4">harnold</text>
+</svg>

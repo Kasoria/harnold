@@ -25,6 +25,7 @@ import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPubl
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
 import { deleteExpiredQuickChats, quickChatProject, quickChatSettings, startQuickChatCleanup } from "./quick-chats.ts";
 import { pluginStore } from "./plugins.ts";
+import { saveAttachment } from "./attachments.ts";
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -201,10 +202,24 @@ app.get("/api/projects/:projectId/commands", (context) => context.json(agentComm
 app.get("/api/sessions/:sessionId/items", (context) => context.json(chatItemStore.list(context.req.param("sessionId"))));
 
 const permissionModeSchema = z.enum(["default", "acceptEdits", "bypassPermissions", "plan"]);
+const attachmentSchema = z.object({ path: z.string().min(1), name: z.string().min(1), mimeType: z.string(), size: z.number() });
+
+// Files attached to a chat message (multipart field "files"); stored under attachments/ in the project.
+app.post("/api/projects/:projectId/attachments", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const formBody = await context.req.parseBody({ all: true });
+  const uploadedFiles = [formBody.files].flat().filter((entry): entry is File => entry instanceof File);
+  if (!uploadedFiles.length) throw new Error("Keine Datei erhalten");
+  const attachments = await Promise.all(
+    uploadedFiles.map(async (uploadedFile) => saveAttachment(project, uploadedFile.name, uploadedFile.type, Buffer.from(await uploadedFile.arrayBuffer()))),
+  );
+  return context.json(attachments);
+});
 
 app.post("/api/sessions/:sessionId/messages", async (context) => {
   const body = z
-    .object({ text: z.string().min(1), permissionMode: permissionModeSchema.default("default"), model: z.string().optional() })
+    .object({ text: z.string(), permissionMode: permissionModeSchema.default("default"), model: z.string().optional(), attachments: z.array(attachmentSchema).max(20).optional() })
+    .refine((body) => body.text.trim() || body.attachments?.length, "Nachricht ist leer")
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   if (agentRuntime.isRunning(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
@@ -223,9 +238,17 @@ app.post("/api/sessions/:sessionId/edit", async (context) => {
   const session = sessionStore.get(context.req.param("sessionId"));
   if (!session) throw new Error("Session nicht gefunden");
   await environmentStore.agentSetupFor(session.projectId);
+  const editedItem = chatItemStore.list(session.id).find((chatItem) => chatItem.id === body.itemId);
   const forkedSession = sessionActions.forkForEdit(session.id, body.itemId);
   void agentRuntime
-    .runTurn({ sessionId: forkedSession.id, text: body.text, permissionMode: body.permissionMode, model: body.model })
+    .runTurn({
+      sessionId: forkedSession.id,
+      text: body.text,
+      permissionMode: body.permissionMode,
+      model: body.model,
+      // The edit changes the text; files attached to the original message stay attached.
+      attachments: editedItem?.kind === "user_text" ? editedItem.attachments : undefined,
+    })
     .catch((turnError) => console.error("[agent]", turnError));
   return context.json(forkedSession);
 });

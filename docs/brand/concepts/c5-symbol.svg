@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Harnold</title>
+  <!-- Grinsen mit Pillen-Scheiben -->
+  <g transform="translate(0 8)">
+    <path d="M14 104 Q128 160 242 104" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+    <rect x="47" y="30" width="54" height="180" rx="27" transform="rotate(10 74 120)"/>
+    <rect x="155" y="30" width="54" height="180" rx="27" transform="rotate(-10 182 120)"/>
+  </g>
+</svg>

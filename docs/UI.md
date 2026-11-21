@@ -46,6 +46,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Destruktive Aktionen immer mit Bestätigungsdialog (`confirmAction`), nie `window.confirm`. Aktion links, Abbrechen rechts, Fokus auf der Aktion (Enter bestätigt, Esc bricht ab, ←/→ wechselt).
 - Gesendete Nachricht bearbeiten → neue Version der Unterhaltung ab dort; Umschalter „‹ 1/2 ›“ an der Nachricht. Sidebar zeigt je Unterhaltung eine Zeile (öffnet die zuletzt genutzte Version).
 - Composer: Anhang, Textfeld („… Datei oder Screenshot einfügen/ablegen“), Mikrofon, runder Senden-Button. Darunter: Modell, Permission-Modus, Kontext-Ring.
+- Anhänge (Bilder, PDFs, Text, Office) per Büroklammer, Einfügen oder Drag & Drop; liegen im Projekt unter attachments/. Bilder (Anhänge, generierte, in Antworten genannte) erscheinen als Vorschau im Chat, Klick öffnet groß.
 
 ### Workspace
 - Header: Breadcrumb (Projekt › Session › Ansicht) + Icon-Aktionen rechts (Vollbild, Kommentare, Link, Neu laden, Extern öffnen, Schließen).

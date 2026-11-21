@@ -11,12 +11,16 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { formatRelativeTime } from "@/components/form-field";
 import { EmptyState, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
+import { ProjectAvatar } from "@/components/project-avatar";
 
 /** `{ scope, path }` of the open note, "new" for a draft, null for none. */
 export type MemorySelection = { scope: MemoryScope; path: string } | "new" | null;
 
 type MemoryScreenProps = {
   project: Project | null;
+  /** All projects, for the project selector (project memory belongs to one project). */
+  projects: Project[];
+  onProjectChange: (projectId: string) => void;
   selection: MemorySelection;
   onSelect: (selection: MemorySelection) => void;
   memoryChangeCounter: number;
@@ -306,7 +310,23 @@ export function MemoryScreen(props: MemoryScreenProps) {
   return (
     <ScreenLayout
       title="Memory"
-      description={props.project ? `Workspace + Projekt „${props.project.name}“` : "Workspace"}
+      tabs={
+        props.projects.length > 0 && (
+          <Select value={props.project?.id ?? ""} onValueChange={props.onProjectChange}>
+            <SelectTrigger size="sm" className="h-7 min-w-40 text-[12.5px]" aria-label="Projekt">
+              <SelectValue placeholder="Projekt wählen" />
+            </SelectTrigger>
+            <SelectContent>
+              {props.projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  <ProjectAvatar name={project.name} icon={project.icon} className="size-4 text-[9px]" />
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )
+      }
       actions={
         <>
           <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={props.onOpenSettings}>

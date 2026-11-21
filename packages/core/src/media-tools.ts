@@ -6,7 +6,7 @@ import { aspectRatios, generateImages, imageConfig } from "./image-generation.ts
 export const mediaServerName = "harnold_media";
 
 export const mediaInstructions = `
-Bilder: Mit dem Tool generate_image (${mediaServerName}) erzeugst du Bilder (Fotos, Illustrationen, Moodboards). Sie landen unter assets/generated/ und auf dem Canvas. Für Varianten oder Bearbeitungen vorhandene Bilder als references übergeben. In Entwürfen relativ einbinden (z. B. ../assets/generated/x.png).
+Bilder: Mit dem Tool generate_image (${mediaServerName}) erzeugst du Bilder (Fotos, Illustrationen, Moodboards). Sie landen unter assets/generated/ und auf dem Canvas. Für Varianten oder Bearbeitungen vorhandene Bilder als references übergeben. In Entwürfen relativ einbinden (z. B. ../assets/generated/x.png). Erzeugte Bilder und Bildpfade in deiner Antwort (z. B. assets/generated/x.png) sieht der Nutzer im Chat als Vorschau.
 `.trim();
 
 /** In-process MCP server for media generation. Not auto-allowed: each call costs money and goes through the permission flow. */

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 256">
+<g>
+  <title>Harnold</title>
+  <!-- Flat-Top -->
+  <rect x="68" y="10" width="120" height="42" rx="5"/>
+  <!-- Kopf: breiter werdender Kiefer; Sonnenbrille + Smirk als Aussparung -->
+  <path fill-rule="evenodd" d="M76 58 H180 L192 160 V176 Q192 204 164 204 H92 Q64 204 64 176 V160 Z
+    M70 92 H186 L187 104 L178 124 H140 L134 112 H122 L116 124 H78 L69 104 Z
+    M108 166 H146 L156 156 L162 162 L150 174 H108 Z"/>
+  <!-- Ohren -->
+  <rect x="56" y="98" width="14" height="34" rx="7"/>
+  <rect x="186" y="98" width="14" height="34" rx="7"/>
+  <!-- Stiernacken + Schultern -->
+  <path d="M94 200 H162 L170 222 Q214 228 236 256 H20 Q42 228 86 222 Z"/>
+</g>
+<text x="296" y="176" font-family="Inter, -apple-system, Helvetica, Arial, sans-serif" font-weight="700" font-size="148" letter-spacing="-4">harnold</text>
+</svg>

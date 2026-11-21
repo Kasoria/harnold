@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Loader2, Mic, Square, Volume2, VolumeX, X } from "lucide-react";
-import type { AgentCommand, PermissionMode } from "@/types";
+import { ArrowUp, Loader2, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
+import type { AgentCommand, Attachment, PermissionMode } from "@/types";
+import { AttachmentChip } from "./attachment-views";
 import { api } from "@/api";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,12 +44,15 @@ type ComposerProps = {
   ttsReady: boolean;
   readAloud: boolean;
   onReadAloudChange: (readAloud: boolean) => void;
-  onSend: (text: string, permissionMode: PermissionMode, model?: string) => void;
+  onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
   onInterrupt: () => void;
   onError: (unknownError: unknown) => void;
   /** Left side of the row under the input (e.g. project quick select). */
   footerStart?: React.ReactNode;
 };
+
+/** A file in the composer: uploads right away, is sent with the next message. */
+type PendingAttachment = { localId: string; name: string; mimeType: string; size: number; previewUrl?: string; status: "uploading" | "ready" | "failed"; attachment?: Attachment };
 
 function formatDuration(totalSeconds: number) {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
@@ -70,6 +74,41 @@ export function Composer(props: ComposerProps) {
   const [agentCommandList, setAgentCommandList] = useState<AgentCommand[]>([]);
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (files: File[]) => {
+    for (const file of files) {
+      const localId = crypto.randomUUID();
+      const isImage = file.type.startsWith("image/");
+      setPendingAttachments((previous) => [
+        ...previous,
+        { localId, name: file.name || "Einfügung.png", mimeType: file.type, size: file.size, previewUrl: isImage ? URL.createObjectURL(file) : undefined, status: "uploading" },
+      ]);
+      const namedFile = file.name ? file : new File([file], `Einfügung-${Date.now()}.png`, { type: file.type });
+      api
+        .uploadAttachments(props.projectId, [namedFile])
+        .then(([attachment]) =>
+          setPendingAttachments((previous) => previous.map((pending) => (pending.localId === localId ? { ...pending, status: "ready", attachment, name: attachment.name } : pending))),
+        )
+        .catch((uploadError) => {
+          props.onError(uploadError);
+          setPendingAttachments((previous) => previous.map((pending) => (pending.localId === localId ? { ...pending, status: "failed" } : pending)));
+        });
+    }
+    textareaRef.current?.focus();
+  };
+
+  const removeAttachment = (localId: string) =>
+    setPendingAttachments((previous) => {
+      const removed = previous.find((pending) => pending.localId === localId);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return previous.filter((pending) => pending.localId !== localId);
+    });
+
+  const readyAttachments = pendingAttachments.flatMap((pending) => (pending.status === "ready" && pending.attachment ? [pending.attachment] : []));
+  const uploadingAttachments = pendingAttachments.some((pending) => pending.status === "uploading");
 
   const commandQuery = /^\/[\w:.-]*$/.test(composerText) ? composerText.slice(1).toLowerCase() : null;
   const commandMenuOpen = commandQuery !== null && !commandMenuDismissed;
@@ -116,7 +155,7 @@ export function Composer(props: ComposerProps) {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
   }, [composerText]);
 
-  const canSend = composerText.trim().length > 0 && !props.running && !voiceRecorder.recording && !transcribing;
+  const canSend = (composerText.trim().length > 0 || readyAttachments.length > 0) && !uploadingAttachments && !props.running && !voiceRecorder.recording && !transcribing;
 
   /** Runs commands Harnold handles itself; true when handled. */
   const runLocalCommand = (text: string): boolean => {
@@ -148,8 +187,10 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (!canSend) return;
-    props.onSend(text, permissionMode, model || undefined);
+    props.onSend(text, permissionMode, model || undefined, readyAttachments);
     setComposerText("");
+    for (const pending of pendingAttachments) if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl);
+    setPendingAttachments([]);
   };
 
   const chooseCommand = (command: ComposerCommand) => {
@@ -195,7 +236,42 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className="shrink-0 px-4 pt-2 pb-3">
-      <div className="relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40">
+      <div
+        className={cn(
+          "relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40",
+          dragActive && "ring-2 ring-primary/60",
+        )}
+        onDragOver={(dragEvent) => {
+          if (!dragEvent.dataTransfer.types.includes("Files")) return;
+          dragEvent.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={(dragEvent) => {
+          if (!dragEvent.currentTarget.contains(dragEvent.relatedTarget as Node | null)) setDragActive(false);
+        }}
+        onDrop={(dragEvent) => {
+          if (!dragEvent.dataTransfer.files.length) return;
+          dragEvent.preventDefault();
+          setDragActive(false);
+          addFiles([...dragEvent.dataTransfer.files]);
+        }}
+      >
+        {pendingAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
+            {pendingAttachments.map((pending) => (
+              <AttachmentChip
+                key={pending.localId}
+                name={pending.name}
+                mimeType={pending.mimeType}
+                size={pending.size}
+                previewUrl={pending.previewUrl}
+                uploading={pending.status === "uploading"}
+                failed={pending.status === "failed"}
+                onRemove={() => removeAttachment(pending.localId)}
+              />
+            ))}
+          </div>
+        )}
         {commandMenuOpen && matchingCommands.length > 0 && (
           <div
             role="listbox"
@@ -220,7 +296,21 @@ export function Composer(props: ComposerProps) {
             ))}
           </div>
         )}
-        <div className="flex items-end gap-1.5 p-2 pl-3">
+        <div className="flex items-end gap-1.5 p-2 pl-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            accept="image/*,application/pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.html,.xml,.yaml,.yml"
+            onChange={(changeEvent) => {
+              addFiles([...(changeEvent.target.files ?? [])]);
+              changeEvent.target.value = "";
+            }}
+          />
+          <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label="Datei anhängen" onClick={() => fileInputRef.current?.click()}>
+            <Paperclip className="size-4" />
+          </Button>
           {voiceRecorder.recording ? (
             <div className="flex min-h-8 flex-1 animate-in items-center gap-3 py-1.5 fade-in duration-200">
               <span className="relative flex size-2.5">
@@ -246,6 +336,12 @@ export function Composer(props: ComposerProps) {
               placeholder={transcribing ? "Transkribiere …" : props.placeholder}
               disabled={transcribing}
               onChange={(changeEvent) => setComposerText(changeEvent.target.value)}
+              onPaste={(clipboardEvent) => {
+                const pastedFiles = [...clipboardEvent.clipboardData.files];
+                if (!pastedFiles.length) return;
+                clipboardEvent.preventDefault();
+                addFiles(pastedFiles);
+              }}
               onKeyDown={(keyboardEvent) => {
                 if (commandMenuOpen && matchingCommands.length > 0) {
                   if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {

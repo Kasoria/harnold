@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect x="40" y="36" width="44" height="184" rx="10"/>
+  <rect x="172" y="36" width="44" height="184" rx="10"/>
+  <!-- Schnalle als Querbalken -->
+  <path fill-rule="evenodd" d="M64 92 H192 V164 H64 Z M84 112 H172 V144 H84 Z"/>
+  <!-- Dorn -->
+  <rect x="84" y="122" width="62" height="12" rx="6"/>
+</svg>

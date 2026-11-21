@@ -9,9 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SegmentedControl } from "@/components/segmented-control";
 import { FileTree } from "./file-tree";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
-import { DesignSystemView } from "@/components/design-system/design-system-view";
 
-type WorkspaceView = "canvas" | "preview" | "code" | "system";
+type WorkspaceView = "canvas" | "preview" | "code";
 
 type WorkspacePaneProps = {
   project: Project;
@@ -21,7 +20,6 @@ type WorkspacePaneProps = {
   onReferenceFile: (filePath: string) => void;
   onInsertIntoComposer: (text: string) => void;
   onImplementDesign: (filePath: string) => void;
-  onAskAgent: (prompt: string) => void;
   onClose: () => void;
   onError: (unknownError: unknown) => void;
 };
@@ -113,9 +111,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   const breadcrumbSegments =
     activeView === "canvas"
       ? [project.name, "Canvas"]
-      : activeView === "system"
-        ? [project.name, "Design System"]
-        : [project.name, ...(selectedPath?.split("/") ?? [])];
+      : [project.name, ...(selectedPath?.split("/") ?? [])];
   const isDesignFile = selectedPath ? selectedPath.startsWith("design/") : false;
 
   return (
@@ -137,14 +133,13 @@ export function WorkspacePane(props: WorkspacePaneProps) {
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <SegmentedControl
-              className="mr-1 w-72"
+              className="mr-1 w-56"
               value={activeView}
               onValueChange={setActiveView}
               options={[
                 { value: "canvas", label: "Canvas" },
                 { value: "preview", label: "Preview" },
                 { value: "code", label: editorIsDirty ? "Code •" : "Code" },
-                { value: "system", label: "System" },
               ]}
             />
           {isDesignFile && selectedPath && (activeView === "preview" || activeView === "code") && (
@@ -190,22 +185,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
         </nav>
 
         <div className="relative min-w-0 flex-1">
-          {activeView === "system" ? (
-            <div className="absolute inset-0">
-              <DesignSystemView
-                projectId={project.id}
-                fileChangeCounter={props.fileChangeCounter}
-                lastChangedPaths={props.lastChangedPaths}
-                onOpenFile={(filePath, view) => {
-                  setSelectedPath(filePath);
-                  setActiveView(view);
-                }}
-                onAskAgent={props.onAskAgent}
-                onInsertIntoComposer={props.onInsertIntoComposer}
-                onError={onError}
-              />
-            </div>
-          ) : activeView === "canvas" ? (
+          {activeView === "canvas" ? (
             <ProjectCanvas
               projectId={project.id}
               fileChangeCounter={props.fileChangeCounter}

@@ -28,7 +28,7 @@ Server-Modus: `pnpm --filter @harnold/ui build`, dann `pnpm --filter @harnold/co
 | `HARNOLD_TOKEN` | – | Zugriffstoken (Pflicht im Server-Betrieb) |
 | `HARNOLD_MODEL` | SDK-Standard | Modell |
 
-Auth zu Claude: Claude-Login (wie Claude Code) oder `ANTHROPIC_API_KEY`.
+Auth zu Claude: beim ersten Start Onboarding, sonst Einstellungen → Claude. Claude-Konto (Pro/Max/Team/Console, geteilt mit `claude` auf dem Rechner, Anmeldung per Code) oder API-Key (verschlüsselt gespeichert; Fallback `ANTHROPIC_API_KEY`).
 
 ## Tasks & Channels
 
@@ -55,11 +55,12 @@ Auth zu Claude: Claude-Login (wie Claude Code) oder `ANTHROPIC_API_KEY`.
 - Zusätzlich lädt der Agent wie Claude Code `.mcp.json` und `~/.claude.json`.
 - Skills im Claude-Format (`SKILL.md`) aus `~/.claude/skills` und `<projekt>/.claude/skills`, einzeln abschaltbar.
 
-## Design System
+## Design Systems
 
-- `design-system/tokens.json` (Gruppen, Werte oder `{ "$value", "$type" }`, Referenzen `{color.accent}`, `$modes.dark`) → `tokens.css` wird automatisch erzeugt.
-- Workspace → „System“: Tokens ansehen und direkt bearbeiten (Farbwähler, Hell/Dunkel), Komponenten aus `design-system/components/`.
-- Der Agent bekommt die Tokens bei jedem Durchlauf und bindet `tokens.css` in Entwürfe ein.
+- Eigener Screen. Systeme liegen workspace-weit unter `~/.harnold/design-systems/<id>/` (`tokens.json` mit Referenzen `{color.accent}` und `$modes.dark` → `tokens.css` automatisch; `components/`).
+- Mit beliebig vielen Projekten und Sessions verknüpfbar; je Ziel ein System, Session vor Projekt.
+- Der Agent bekommt das verknüpfte System (Pfad, Tokens) und Zugriff auf den Ordner; Entwürfe binden es über `_harnold/design-systems/<id>/tokens.css` ein (virtuell in der Preview).
+- Alte projektlokale `design-system/`-Ordner werden einmalig importiert und verknüpft.
 
 ## Bild-Generierung
 

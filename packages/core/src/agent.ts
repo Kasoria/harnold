@@ -5,7 +5,8 @@ import { eventHub } from "./events.ts";
 import { config } from "./config.ts";
 import { memoryNotes } from "./memory.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
-import { designSystem } from "./design-system.ts";
+import { designSystemStore } from "./design-system.ts";
+import { claudeAuth } from "./claude-auth.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
 
@@ -15,7 +16,7 @@ export type TurnOutcome = { success: boolean; finalText: string; errorText?: str
 const harnoldSystemAppend = `
 Du läufst in Harnold, einem Workspace, in dem Chat, Code und Design im selben Projektordner liegen.
 - Visuelle Entwürfe (Artifacts) als eigenständige HTML-Dateien unter design/ anlegen (z. B. design/hero.html). Sie werden dem Nutzer sofort live angezeigt.
-- Ein Design System liegt ggf. unter design-system/ (Details unten, falls vorhanden).
+- Ist ein Design System verknüpft, steht es unten (Pfad, Tokens, Einbindung).
 - design/canvas.json ist der Canvas des Nutzers (Frames + Elemente mit x/y/width/height, frameId). Neue Dateien unter design/ erscheinen dort automatisch; zum Gruppieren Frames anlegen und frameId/Position setzen.
 - Referenzen wie @pfad/zur/datei beziehen sich auf Dateien im Projekt.
 
@@ -115,6 +116,7 @@ export const agentRuntime = {
     const project = projectStore.get(session.projectId);
     if (!project) throw new Error("Projekt nicht gefunden");
     if (runningTurns.has(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
+    await claudeAuth.assertReady();
 
     if (!session.agentSessionId && session.title === "Neue Session") {
       sessionStore.update(sessionId, { title: text.slice(0, 60) });
@@ -129,17 +131,20 @@ export const agentRuntime = {
 
     try {
       const integrationOptions = agentIntegrationOptions(project);
+      const linkedDesignSystem = designSystemStore.resolveFor(project.id, sessionId);
       const agentStream = query({
         prompt: text,
         options: {
           cwd: project.path,
+          env: claudeAuth.agentEnvironment(),
+          additionalDirectories: linkedDesignSystem ? [linkedDesignSystem.directory] : undefined,
           resume: session.agentSessionId ?? undefined,
           model: model ?? config.defaultModel,
           permissionMode,
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
           settingSources: ["user", "project", "local"],
-          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, designSystem.contextFor(project), memoryNotes.contextFor(project)].filter(Boolean).join("\n\n") },
+          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project)].filter(Boolean).join("\n\n") },
           mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project) },
           allowedTools: [...memoryToolNames, ...integrationOptions.allowedTools],
           skills: integrationOptions.skills,

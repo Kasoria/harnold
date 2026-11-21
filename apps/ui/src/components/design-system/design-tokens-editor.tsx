@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileJson, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { api } from "@/api";
-import type { DesignSystemView as DesignSystemData, FlatToken, TokenTree } from "@/types";
+import type { DesignSystemDetail, FlatToken, TokenTree } from "@/types";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { SegmentedControl } from "@/components/segmented-control";
 
-type DesignSystemViewProps = {
-  projectId: string;
-  fileChangeCounter: number;
-  lastChangedPaths: string[];
-  onOpenFile: (filePath: string, view: "preview" | "code") => void;
-  onAskAgent: (prompt: string) => void;
-  onInsertIntoComposer: (text: string) => void;
+type DesignTokensEditorProps = {
+  designSystem: DesignSystemDetail;
+  /** Light/dark switch is rendered by the parent. */
+  mode: "base" | "dark";
+  /** Bumps when files changed on disk (reloads component thumbnails). */
+  reloadCounter: number;
+  onSaved: (savedSystem: DesignSystemDetail) => void;
   onError: (unknownError: unknown) => void;
 };
 
@@ -26,11 +23,6 @@ const sectionTitles: Record<SectionKey, string> = {
   shadow: "Schatten",
   other: "Weitere",
 };
-
-const deriveFromProjectPrompt =
-  "Analysiere das Projekt (Code, Styles, vorhandene Entwürfe unter design/) und lege ein Design System unter design-system/ an: " +
-  "tokens.json (Farben, Typografie, Abstände, Radien, Schatten; $modes.dark falls sinnvoll) und Referenz-Komponenten unter design-system/components/*.html, " +
-  "die ../tokens.css einbinden. Passe danach vorhandene Entwürfe an die Tokens an.";
 
 function sectionOf(flatToken: FlatToken): SectionKey {
   const lowerPath = flatToken.path.toLowerCase();
@@ -150,32 +142,24 @@ function TokenPreview(props: { flatToken: FlatToken; section: SectionKey }) {
   }
 }
 
-export function DesignSystemView(props: DesignSystemViewProps) {
-  const [designSystemData, setDesignSystemData] = useState<DesignSystemData | null>(null);
-  const [activeMode, setActiveMode] = useState<"base" | "dark">("base");
-  const [initializing, setInitializing] = useState(false);
+/** Editable token sections + reference components of one design system. */
+export function DesignTokensEditor(props: DesignTokensEditorProps) {
+  const [designSystemData, setDesignSystemData] = useState<DesignSystemDetail>(props.designSystem);
   const pendingTreeRef = useRef<TokenTree | null>(null);
   const saveTimerRef = useRef<number | undefined>(undefined);
-
-  const { projectId, onError } = props;
-
-  useEffect(() => {
-    api.readDesignSystem(projectId).then(setDesignSystemData).catch(onError);
-  }, [projectId, onError]);
+  const { onError } = props;
+  const designSystemId = props.designSystem.id;
 
   useEffect(() => {
-    if (!props.lastChangedPaths.some((changedPath) => changedPath.startsWith("design-system/"))) return;
-    if (pendingTreeRef.current) return; // local edit in flight wins
-    api.readDesignSystem(projectId).then(setDesignSystemData).catch(onError);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.fileChangeCounter]);
+    if (!pendingTreeRef.current) setDesignSystemData(props.designSystem); // local edit in flight wins
+  }, [props.designSystem]);
 
-  const hasDarkMode = Boolean(designSystemData?.modeTokens.dark);
+  const activeMode = props.mode;
+  const hasDarkMode = Boolean(designSystemData.modeTokens.dark);
   const mode = activeMode === "dark" && hasDarkMode ? "dark" : null;
 
   /** Base tokens, with dark overrides merged in when the dark mode is shown. */
   const displayedTokens = useMemo(() => {
-    if (!designSystemData) return [];
     const overridesByPath = new Map((mode ? designSystemData.modeTokens[mode] : []).map((flatToken) => [flatToken.path, flatToken]));
     const merged = designSystemData.flatTokens.map((flatToken) => ({ flatToken: overridesByPath.get(flatToken.path) ?? flatToken, inherited: Boolean(mode) && !overridesByPath.has(flatToken.path) }));
     const basePaths = new Set(designSystemData.flatTokens.map((flatToken) => flatToken.path));
@@ -193,12 +177,10 @@ export function DesignSystemView(props: DesignSystemViewProps) {
   }, [displayedTokens]);
 
   const commitToken = (tokenPath: string, nextValue: string) => {
-    if (!designSystemData) return;
     const nextTree = setTokenValue(pendingTreeRef.current ?? designSystemData.tokens, tokenPath, nextValue, mode);
     pendingTreeRef.current = nextTree;
     // Optimistic: show the raw value right away; the server response resolves references.
     setDesignSystemData((previous) => {
-      if (!previous) return previous;
       const patchToken = (flatToken: FlatToken) => (flatToken.path === tokenPath ? { ...flatToken, value: nextValue, resolvedValue: nextValue.includes("{") ? flatToken.resolvedValue : nextValue } : flatToken);
       if (!mode) return { ...previous, tokens: nextTree, flatTokens: previous.flatTokens.map(patchToken) };
       const modeList = previous.modeTokens[mode] ?? [];
@@ -215,11 +197,12 @@ export function DesignSystemView(props: DesignSystemViewProps) {
       const treeToSave = pendingTreeRef.current;
       if (!treeToSave) return;
       api
-        .saveDesignTokens(projectId, treeToSave)
-        .then((savedView) => {
+        .saveDesignTokens(designSystemId, treeToSave)
+        .then((savedSystem) => {
           if (pendingTreeRef.current === treeToSave) {
             pendingTreeRef.current = null;
-            setDesignSystemData(savedView);
+            setDesignSystemData(savedSystem);
+            props.onSaved(savedSystem);
           }
         })
         .catch((saveError) => {
@@ -229,69 +212,10 @@ export function DesignSystemView(props: DesignSystemViewProps) {
     }, 300);
   };
 
-  const initialize = async () => {
-    setInitializing(true);
-    try {
-      setDesignSystemData(await api.initializeDesignSystem(projectId));
-    } catch (initializeError) {
-      onError(initializeError);
-    } finally {
-      setInitializing(false);
-    }
-  };
-
-  if (!designSystemData) return <div className="h-full bg-background" />;
-
-  if (!designSystemData.exists) {
-    return (
-      <div className="flex h-full animate-in items-center justify-center bg-background p-6 fade-in duration-200">
-        <div className="max-w-sm text-center">
-          <h2 className="text-[15px] font-semibold">Noch kein Design System</h2>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            Tokens und Referenz-Komponenten unter <code className="font-mono text-[12px]">design-system/</code>. Der Agent nutzt sie automatisch für Entwürfe und Code.
-          </p>
-          <div className="mt-4 flex justify-center gap-2">
-            <Button size="sm" disabled={initializing} onClick={() => void initialize()}>
-              {initializing ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Standard anlegen
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => props.onAskAgent(deriveFromProjectPrompt)}>
-              <Wand2 className="size-3.5" /> Aus Projekt ableiten
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full animate-in overflow-y-auto bg-background fade-in duration-200">
-      <div className="mx-auto max-w-4xl px-6 py-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[15px] font-semibold">Design System</h2>
-          <span className="text-[12px] text-muted-foreground">{designSystemData.flatTokens.length} Tokens</span>
-          <div className="ml-auto flex items-center gap-1.5">
-            {hasDarkMode && (
-              <SegmentedControl
-                className="w-36"
-                options={[
-                  { value: "base", label: "Hell" },
-                  { value: "dark", label: "Dunkel" },
-                ]}
-                value={activeMode}
-                onValueChange={setActiveMode}
-              />
-            )}
-            <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" onClick={() => props.onOpenFile("design-system/tokens.json", "code")}>
-              <FileJson className="size-3.5" /> tokens.json
-            </Button>
-            <Button size="sm" variant="secondary" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => props.onInsertIntoComposer("@design-system/tokens.json ")}>
-              <Wand2 className="size-3.5" /> Mit Agent ändern
-            </Button>
-          </div>
-        </div>
-
+    <div className="animate-in fade-in duration-200">
         {designSystemData.error && <p className="mt-3 rounded-lg border border-destructive/40 px-3 py-2 text-[12.5px] text-destructive">{designSystemData.error}</p>}
-        {mode && <p className="mt-2 text-[12px] text-muted-foreground">Grau = vom hellen Modus geerbt. Änderungen hier gelten nur im Dunkel-Modus.</p>}
+        {mode && <p className="mb-2 text-[12px] text-muted-foreground">Grau = vom hellen Modus geerbt. Änderungen hier gelten nur im Dunkel-Modus.</p>}
 
         {sections.map(({ sectionKey, tokens }) => (
           <section key={sectionKey} className="mt-7">
@@ -325,7 +249,7 @@ export function DesignSystemView(props: DesignSystemViewProps) {
           <h3 className="mb-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Komponenten</h3>
           {designSystemData.components.length === 0 ? (
             <p className="text-[13px] text-muted-foreground">
-              Keine Komponenten in <code className="font-mono text-[12px]">design-system/components/</code>.
+              Keine Komponenten in <code className="font-mono text-[12px]">components/</code>.
             </p>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
@@ -333,16 +257,16 @@ export function DesignSystemView(props: DesignSystemViewProps) {
                 <button
                   key={component.path}
                   className="group/component overflow-hidden rounded-xl border bg-card text-left shadow-xs transition-shadow duration-150 hover:shadow-md"
-                  onClick={() => props.onOpenFile(component.path, /\.html?$/i.test(component.path) ? "preview" : "code")}
+                  onClick={() => window.open(api.designSystemFileUrl(designSystemId, component.path), "_blank", "noopener")}
                 >
                   <div className="pointer-events-none relative h-32 overflow-hidden border-b bg-white">
                     {/\.html?$/i.test(component.path) ? (
                       <iframe
-                        key={props.fileChangeCounter}
+                        key={props.reloadCounter}
                         title={component.name}
                         tabIndex={-1}
                         sandbox="allow-scripts"
-                        src={api.previewUrl(projectId, component.path)}
+                        src={api.designSystemFileUrl(designSystemId, component.path)}
                         className="absolute top-0 left-0 h-[256px] w-[200%] origin-top-left scale-50"
                       />
                     ) : (
@@ -355,7 +279,6 @@ export function DesignSystemView(props: DesignSystemViewProps) {
             </div>
           )}
         </section>
-      </div>
     </div>
   );
 }

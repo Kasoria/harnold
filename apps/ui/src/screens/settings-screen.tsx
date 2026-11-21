@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
+import type { ClaudeAuthStatus, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api } from "@/api";
-import { Brain, Image as ImageIcon, Mic, SlidersHorizontal } from "lucide-react";
+import { Brain, Image as ImageIcon, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ClaudeConnectionPanel } from "@/components/claude-connection";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
@@ -12,7 +13,8 @@ import { FormField } from "@/components/form-field";
 import { safeStorage } from "@/lib/storage";
 import type { ThemePreference } from "@/hooks/use-theme";
 
-export type SettingsSection = "general" | "voice" | "images" | "memory";
+export type SettingsSection = "claude" | "general" | "voice" | "images" | "memory";
+export const settingsSectionNames: SettingsSection[] = ["claude", "general", "voice", "images", "memory"];
 
 type SettingsScreenProps = {
   section: SettingsSection;
@@ -22,10 +24,13 @@ type SettingsScreenProps = {
   onThemePreferenceChange: (themePreference: ThemePreference) => void;
   voiceSettings: VoiceSettingsView | null;
   onVoiceSettingsChange: (voiceSettings: VoiceSettingsView) => void;
+  claudeStatus: ClaudeAuthStatus | null;
+  onClaudeStatusChange: (claudeStatus: ClaudeAuthStatus) => void;
   onError: (unknownError: unknown) => void;
 };
 
 const settingsSections: { value: SettingsSection; label: string; description: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: "claude", label: "Claude", description: "Womit der Agent arbeitet: Claude-Konto oder API-Key.", icon: Sparkles },
   { value: "general", label: "Allgemein", description: "Darstellung und Verbindung zum Workspace.", icon: SlidersHorizontal },
   { value: "voice", label: "Voice", description: "Spracherkennung und Sprachausgabe für App und Channels.", icon: Mic },
   { value: "images", label: "Bilder", description: "Bild-Generierung im Canvas und für den Agent.", icon: ImageIcon },
@@ -195,7 +200,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
           <div key={activeSection.value} className="mx-auto max-w-xl animate-in px-6 py-6 fade-in duration-200">
             <h2 className="text-[15px] font-semibold">{activeSection.label}</h2>
             <p className="mt-0.5 mb-5 text-[12.5px] text-muted-foreground">{activeSection.description}</p>
-            {activeSection.value === "general" ? (
+            {activeSection.value === "claude" ? (
+              <ClaudeConnectionPanel status={props.claudeStatus} onStatusChange={props.onClaudeStatusChange} onError={props.onError} />
+            ) : activeSection.value === "general" ? (
           <div key="general" className="grid animate-in gap-5 fade-in duration-200">
             <div className="flex items-center justify-between gap-4">
               <span className="text-sm">Erscheinungsbild</span>

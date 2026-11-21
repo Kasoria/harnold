@@ -21,11 +21,11 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Oben: Dashboard.
 - Baum: **Projekt** (farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
-- Feature-Navigation: Tasks, Channels, Memory, Integrationen; unten Einstellungen. Aktiver Screen hervorgehoben.
+- Feature-Navigation: Tasks, Channels, Memory, Integrationen, Design Systems; unten Einstellungen. Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
 
 ### Feature-Screens
-- Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
+- Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Design Systems, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
 - Aufbau: Kopf (Titel, Beschreibung, Aktionen, ggf. Tabs) + Master-Detail (Liste links, Detail/Editor rechts) bzw. Abschnitts-Navigation bei Einstellungen.
 - Sheets/Modals/Inline nur für Erstellen/Bearbeiten **innerhalb** eines Screens, sparsam.
 
@@ -39,6 +39,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 ### Workspace
 - Header: Breadcrumb (Projekt › Session › Ansicht) + Icon-Aktionen rechts (Vollbild, Kommentare, Link, Neu laden, Extern öffnen, Schließen).
 - Ansichten: Canvas (Standard), Preview, Code, Dateien.
+- Erststart ohne Claude-Verbindung: Onboarding-Overlay (überspringbar).
 - **Canvas:** grauer Hintergrund, benannte Gruppen (Frames) mit Screens/Artifacts als Thumbnails, Zoom/Pan. Schwebende Werkzeugleiste unten: Auswahl, Hand, Text, Frame, Notiz, Stift, Rechteck.
 - Doppelklick auf Thumbnail → Preview; Kommentar an Element → Aufgabe im Chat.
 

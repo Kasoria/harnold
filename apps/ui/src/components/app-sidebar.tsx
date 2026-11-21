@@ -1,4 +1,4 @@
-import { Blocks, Brain, CalendarClock, ChevronRight, MessagesSquare, Moon, Plus, Settings, Sun, Trash2 } from "lucide-react";
+import { Blocks, Brain, CalendarClock, ChevronRight, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import type { Project, Session } from "@/types";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,7 @@ const featureScreens: { screen: ScreenName; label: string; icon: React.Component
   { screen: "channels", label: "Channels", icon: MessagesSquare },
   { screen: "memory", label: "Memory", icon: Brain },
   { screen: "integrations", label: "Integrationen", icon: Blocks },
+  { screen: "design", label: "Design Systems", icon: Palette },
 ];
 
 const activeRowClassName = "bg-foreground/[0.07] font-medium";

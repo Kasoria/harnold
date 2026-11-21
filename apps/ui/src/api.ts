@@ -1,4 +1,4 @@
-import type { ImageRequest, ImageSettings, ImageSettingsView, DesignSystemView, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryNoteRef, MemoryNoteSummary, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -60,10 +60,22 @@ export const api = {
     request<ImageSettingsView>("PUT", "/api/settings/images", { settings, secrets }),
   generateImages: (projectId: string, imageRequest: ImageRequest) =>
     request<{ paths: string[] }>("POST", `/api/projects/${projectId}/images`, imageRequest).then((responseBody) => responseBody.paths),
-  readDesignSystem: (projectId: string) => request<DesignSystemView>("GET", `/api/projects/${projectId}/design-system`),
-  saveDesignTokens: (projectId: string, tokens: TokenTree) =>
-    request<DesignSystemView>("PUT", `/api/projects/${projectId}/design-system/tokens`, { tokens }),
-  initializeDesignSystem: (projectId: string) => request<DesignSystemView>("POST", `/api/projects/${projectId}/design-system/init`),
+  listDesignSystems: () => request<DesignSystemSummary[]>("GET", "/api/design-systems"),
+  readDesignSystem: (designSystemId: string) => request<DesignSystemDetail>("GET", `/api/design-systems/${designSystemId}`),
+  createDesignSystem: (name: string, template: "starter" | "empty", links: DesignSystemLinkTarget[] = []) =>
+    request<DesignSystemDetail>("POST", "/api/design-systems", { name, template, links }),
+  renameDesignSystem: (designSystemId: string, name: string) => request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}`, { name }),
+  deleteDesignSystem: (designSystemId: string) => request<{ ok: true }>("DELETE", `/api/design-systems/${designSystemId}`),
+  saveDesignTokens: (designSystemId: string, tokens: TokenTree) =>
+    request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}/tokens`, { tokens }),
+  setDesignSystemLinks: (designSystemId: string, links: DesignSystemLinkTarget[]) =>
+    request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}/links`, { links }),
+  readClaudeStatus: (refresh = false) => request<ClaudeAuthStatus>("GET", `/api/claude/status${refresh ? "?refresh=1" : ""}`),
+  saveClaudeSettings: (mode: ClaudeAuthMode, apiKey?: string) => request<ClaudeAuthStatus>("PUT", "/api/claude/settings", { mode, apiKey }),
+  startClaudeLogin: (method: "claudeai" | "console") => request<{ url: string }>("POST", "/api/claude/login", { method }),
+  submitClaudeLoginCode: (code: string) => request<ClaudeAuthStatus>("POST", "/api/claude/login/code", { code }),
+  cancelClaudeLogin: () => request<{ ok: true }>("POST", "/api/claude/login/cancel"),
+  logoutClaude: () => request<ClaudeAuthStatus>("POST", "/api/claude/logout"),
   listMcpServers: () => request<McpServer[]>("GET", "/api/mcp-servers"),
   createMcpServer: (serverInput: McpServerInput) => request<McpServer>("POST", "/api/mcp-servers", serverInput),
   updateMcpServer: (serverId: string, serverInput: McpServerInput) => request<McpServer>("PUT", `/api/mcp-servers/${serverId}`, serverInput),
@@ -116,6 +128,8 @@ export const api = {
   readCanvas: (projectId: string) => request<CanvasDocument>("GET", `/api/projects/${projectId}/canvas`),
   writeCanvas: (projectId: string, canvasDocument: CanvasDocument) =>
     request("PUT", `/api/projects/${projectId}/canvas`, canvasDocument),
+  designSystemFileUrl: (designSystemId: string, filePath: string) =>
+    `${coreBaseUrl}/design-systems/${designSystemId}/${filePath.split("/").map(encodeURIComponent).join("/")}${accessToken ? `?token=${encodeURIComponent(accessToken)}` : ""}`,
   previewUrl: (projectId: string, filePath: string) =>
     `${coreBaseUrl}/preview/${projectId}/${filePath.split("/").map(encodeURIComponent).join("/")}${accessToken ? `?token=${encodeURIComponent(accessToken)}` : ""}`,
 };

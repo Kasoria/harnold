@@ -19,7 +19,9 @@ export type ServerEvent =
   | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
   | { type: "channels_changed" }
   | { type: "memory_changed"; projectId: string | null }
-  | { type: "integrations_changed" };
+  | { type: "integrations_changed" }
+  | { type: "design_systems_changed" }
+  | { type: "claude_auth_changed" };
 
 type Listener = (serverEvent: ServerEvent) => void;
 const listeners = new Set<Listener>();

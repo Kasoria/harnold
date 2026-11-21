@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { Channel, ChatItem, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -13,7 +13,9 @@ import { WorkspacePane } from "@/components/workspace/workspace-pane";
 import { NewProjectDialog } from "@/components/new-project-dialog";
 import type { SessionStatus } from "@/components/status-dot";
 import { routePath, useHashRoute } from "@/hooks/use-hash-route";
-import { SettingsScreen, type SettingsSection } from "@/screens/settings-screen";
+import { SettingsScreen, settingsSectionNames, type SettingsSection } from "@/screens/settings-screen";
+import { DesignSystemsScreen } from "@/screens/design-systems-screen";
+import { ClaudeOnboarding } from "@/components/claude-connection";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
 import { IntegrationsScreen, type IntegrationsTab } from "@/screens/integrations-screen";
@@ -44,6 +46,9 @@ export function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [memoryChangeCounter, setMemoryChangeCounter] = useState(0);
   const [integrationsChangeCounter, setIntegrationsChangeCounter] = useState(0);
+  const [designSystemsChangeCounter, setDesignSystemsChangeCounter] = useState(0);
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
+  const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
@@ -74,6 +79,13 @@ export function App() {
     void refreshTasks();
     void refreshChannels();
     api.readVoiceSettings().then(setVoiceSettings).catch(reportError);
+    api
+      .readClaudeStatus()
+      .then((loadedStatus) => {
+        setClaudeStatus(loadedStatus);
+        if (!loadedStatus.ready && !loadedStatus.cliError) setOnboardingVisible(true);
+      })
+      .catch(reportError);
   }, [refreshTasks, refreshChannels]);
 
   const refreshSessions = useCallback(
@@ -160,6 +172,12 @@ export function App() {
             return;
           case "integrations_changed":
             setIntegrationsChangeCounter((previous) => previous + 1);
+            return;
+          case "design_systems_changed":
+            setDesignSystemsChangeCounter((previous) => previous + 1);
+            return;
+          case "claude_auth_changed":
+            api.readClaudeStatus().then(setClaudeStatus).catch(() => undefined);
             return;
           case "task_run_finished":
             setToast({
@@ -259,6 +277,23 @@ export function App() {
     }
   };
 
+  /** From the design systems screen: work in the linked session, or in a new session of the linked project. */
+  const workOnDesignSystemWithAgent = async (target: DesignSystemLinkTarget, prompt: string, sendImmediately: boolean) => {
+    let targetProjectId: string | undefined;
+    let targetSessionId: string | undefined;
+    if (target.targetType === "session") {
+      targetSessionId = target.targetId;
+      targetProjectId = Object.entries(sessionsByProjectId).find(([, sessions]) => sessions.some((session) => session.id === target.targetId))?.[0];
+    } else {
+      targetProjectId = target.targetId;
+      targetSessionId = (await createSession(target.targetId))?.id;
+    }
+    if (!targetProjectId || !targetSessionId) return;
+    openSessionFromScreen(targetProjectId, targetSessionId);
+    if (sendImmediately) api.sendMessage(targetSessionId, prompt, "acceptEdits").catch(reportError);
+    else setComposerInsertion({ text: prompt, nonce: Date.now() });
+  };
+
   const openSessionFromScreen = (projectId: string, sessionId: string) => {
     setActiveProjectId(projectId);
     setActiveSessionId(sessionId);
@@ -323,10 +358,24 @@ export function App() {
             onError={reportError}
           />
         );
+      case "design":
+        return (
+          <DesignSystemsScreen
+            selection={route.itemId}
+            onSelect={(selection) => navigate(routePath("design", selection))}
+            projects={projects}
+            sessionsByProjectId={sessionsByProjectId}
+            designSystemsChangeCounter={designSystemsChangeCounter}
+            onWorkWithAgent={(target, prompt, sendImmediately) => void workOnDesignSystemWithAgent(target, prompt, sendImmediately)}
+            onError={reportError}
+          />
+        );
       case "settings":
         return (
           <SettingsScreen
-            section={(["general", "voice", "images", "memory"].includes(route.section ?? "") ? route.section : "general") as SettingsSection}
+            section={(settingsSectionNames.includes(route.section as SettingsSection) ? route.section : "claude") as SettingsSection}
+            claudeStatus={claudeStatus}
+            onClaudeStatusChange={setClaudeStatus}
             onSectionChange={(section) => navigate(routePath("settings", section))}
             onSaved={(message) => setToast({ message, tone: "info" })}
             themePreference={themePreference}
@@ -438,7 +487,6 @@ export function App() {
                 onImplementDesign={(filePath) =>
                   sendToAgent(`Setze den Entwurf @${filePath} im Projekt-Code um. Nutze vorhandene Struktur und das Design System.`, "acceptEdits")
                 }
-                onAskAgent={(prompt) => sendToAgent(prompt, "acceptEdits")}
                 onClose={() => setWorkspaceVisibility(false)}
                 onError={reportError}
               />
@@ -454,6 +502,9 @@ export function App() {
         </ResizablePanelGroup>
       </div>
 
+      {onboardingVisible && (
+        <ClaudeOnboarding status={claudeStatus} onStatusChange={setClaudeStatus} onError={reportError} onDismiss={() => setOnboardingVisible(false)} />
+      )}
       <NewProjectDialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen} onCreate={createProject} />
       {toast && (
         <div

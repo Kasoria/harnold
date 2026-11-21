@@ -14,7 +14,8 @@ import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unschedule
 import { channelStore, toPublicChannel } from "./channels/store.ts";
 import { channelManager } from "./channels/manager.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
-import { designSystem, handleDesignSystemFilesChanged } from "./design-system.ts";
+import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
+import { claudeAuth, claudeSettingsSchema } from "./claude-auth.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
@@ -112,7 +113,12 @@ app.put("/api/projects/:projectId/canvas", async (context) => {
 app.get("/preview/:projectId/*", (context) => {
   const project = requireProject(context.req.param("projectId"));
   const relativePath = decodeURIComponent(context.req.path.split("/").slice(3).join("/"));
-  let absolutePath = resolveInsideProject(project, relativePath);
+  let absolutePath: string;
+  if (relativePath.startsWith(virtualDesignSystemsPrefix)) {
+    // Linked design systems appear inside every project under _harnold/design-systems/<id>/
+    const [designSystemId, ...fileSegments] = relativePath.slice(virtualDesignSystemsPrefix.length).split("/");
+    absolutePath = designSystemStore.resolveFile(designSystemId, fileSegments.join("/"));
+  } else absolutePath = resolveInsideProject(project, relativePath);
   if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory()) absolutePath = path.join(absolutePath, "index.html");
   if (!fs.existsSync(absolutePath)) return context.text("Nicht gefunden", 404);
   const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
@@ -155,6 +161,7 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   if (agentRuntime.isRunning(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
+  await claudeAuth.assertReady();
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
   return context.json({ ok: true });
 });
@@ -322,17 +329,69 @@ app.post("/api/memory/reindex", async (context) => {
   return context.json({ ok: true });
 });
 
-// --- Design system ---
-app.get("/api/projects/:projectId/design-system", (context) => context.json(designSystem.read(requireProject(context.req.param("projectId")))));
+// --- Design systems ---
+const designSystemLinkSchema = z.object({ targetType: z.enum(["project", "session"]), targetId: z.string().min(1) });
 
-app.put("/api/projects/:projectId/design-system/tokens", async (context) => {
-  const body = z.object({ tokens: z.record(z.string(), z.unknown()) }).parse(await context.req.json());
-  return context.json(designSystem.writeTokens(requireProject(context.req.param("projectId")), body.tokens));
+app.get("/api/design-systems", (context) => context.json(designSystemStore.list()));
+
+app.post("/api/design-systems", async (context) => {
+  const body = z.object({ name: z.string().trim().min(1), template: z.enum(["starter", "empty"]).default("starter"), links: z.array(designSystemLinkSchema).default([]) }).parse(await context.req.json());
+  const createdSystem = designSystemStore.create(body.name, body.template);
+  return context.json(body.links.length ? designSystemStore.setLinks(createdSystem.id, body.links) : createdSystem);
 });
 
-app.post("/api/projects/:projectId/design-system/init", (context) =>
-  context.json(designSystem.initialize(requireProject(context.req.param("projectId")))),
-);
+app.get("/api/design-systems/:designSystemId", (context) => context.json(designSystemStore.get(context.req.param("designSystemId"))));
+
+app.put("/api/design-systems/:designSystemId", async (context) => {
+  const body = z.object({ name: z.string().trim().min(1) }).parse(await context.req.json());
+  return context.json(designSystemStore.rename(context.req.param("designSystemId"), body.name));
+});
+
+app.delete("/api/design-systems/:designSystemId", (context) => {
+  designSystemStore.remove(context.req.param("designSystemId"));
+  return context.json({ ok: true });
+});
+
+app.put("/api/design-systems/:designSystemId/tokens", async (context) => {
+  const body = z.object({ tokens: z.record(z.string(), z.unknown()) }).parse(await context.req.json());
+  return context.json(designSystemStore.writeTokens(context.req.param("designSystemId"), body.tokens));
+});
+
+app.put("/api/design-systems/:designSystemId/links", async (context) => {
+  const body = z.object({ links: z.array(designSystemLinkSchema) }).parse(await context.req.json());
+  return context.json(designSystemStore.setLinks(context.req.param("designSystemId"), body.links));
+});
+
+// Raw files (component thumbnails); components link ../tokens.css relatively.
+app.get("/design-systems/:designSystemId/*", (context) => {
+  const relativePath = decodeURIComponent(context.req.path.split("/").slice(3).join("/"));
+  const absolutePath = designSystemStore.resolveFile(context.req.param("designSystemId"), relativePath);
+  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) return context.text("Nicht gefunden", 404);
+  const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
+  return context.body(fs.readFileSync(absolutePath), 200, { "content-type": contentType, "cache-control": "no-store" });
+});
+
+// --- Claude connection ---
+app.get("/api/claude/status", async (context) => context.json(await claudeAuth.status(context.req.query("refresh") === "1")));
+
+app.put("/api/claude/settings", async (context) => context.json(await claudeAuth.save(claudeSettingsSchema.parse(await context.req.json()))));
+
+app.post("/api/claude/login", async (context) => {
+  const body = z.object({ method: z.enum(["claudeai", "console"]).default("claudeai") }).parse(await context.req.json().catch(() => ({})));
+  return context.json(await claudeAuth.startLogin(body.method));
+});
+
+app.post("/api/claude/login/code", async (context) => {
+  const body = z.object({ code: z.string().trim().min(1) }).parse(await context.req.json());
+  return context.json(await claudeAuth.submitLoginCode(body.code));
+});
+
+app.post("/api/claude/login/cancel", (context) => {
+  claudeAuth.cancelLogin();
+  return context.json({ ok: true });
+});
+
+app.post("/api/claude/logout", async (context) => context.json(await claudeAuth.logout()));
 
 // --- Image generation ---
 app.get("/api/settings/images", (context) => context.json(imageConfig.present()));
@@ -441,11 +500,8 @@ for (const project of projectStore.list()) watchProject(project);
 startScheduler();
 channelManager.startAll();
 startMemory();
-eventHub.subscribe((serverEvent) => {
-  if (serverEvent.type !== "files_changed") return;
-  const changedProject = projectStore.get(serverEvent.projectId);
-  if (changedProject) handleDesignSystemFilesChanged(changedProject, serverEvent.paths);
-});
+importLegacyProjectDesignSystems();
+watchDesignSystems();
 
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (address) => {
   console.log(`Harnold Core läuft auf http://${config.host}:${address.port}`);

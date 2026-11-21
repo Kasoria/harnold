@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 
 /** Top-level screens. "workspace" = chat + workspace of the active project. */
-export type ScreenName = "workspace" | "tasks" | "channels" | "memory" | "integrations" | "settings";
+export type ScreenName = "workspace" | "tasks" | "channels" | "memory" | "integrations" | "design" | "settings";
 export type HashRoute = { screen: ScreenName; section: string | null; itemId: string | null };
 
-const screenNames: ScreenName[] = ["workspace", "tasks", "channels", "memory", "integrations", "settings"];
+const screenNames: ScreenName[] = ["workspace", "tasks", "channels", "memory", "integrations", "design", "settings"];
 
 function parseHash(hash: string): HashRoute {
   const [screenSegment, ...restSegments] = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   const screen = screenNames.includes(screenSegment as ScreenName) ? (screenSegment as ScreenName) : "workspace";
   if (screen === "workspace") return { screen, section: null, itemId: null };
-  // tasks/<id>, channels/<id>, memory/<scope>/<path…>, integrations/<tab>/<id>, settings/<section>
+  // tasks/<id>, channels/<id>, design/<id>, memory/<scope>/<path…>, integrations/<tab>/<id>, settings/<section>
   if (screen === "integrations" || screen === "memory") return { screen, section: restSegments[0] || null, itemId: restSegments.slice(1).join("/") || null };
   if (screen === "settings") return { screen, section: restSegments[0] || null, itemId: null };
   return { screen, section: null, itemId: restSegments.join("/") || null };

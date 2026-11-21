@@ -26,7 +26,9 @@ export type ServerEvent =
   | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
   | { type: "channels_changed" }
   | { type: "memory_changed"; projectId: string | null }
-  | { type: "integrations_changed" };
+  | { type: "integrations_changed" }
+  | { type: "design_systems_changed" }
+  | { type: "claude_auth_changed" };
 
 export type CanvasElementType = "frame" | "artifact" | "note" | "text" | "rect" | "drawing";
 
@@ -154,6 +156,28 @@ export type DesignSystemView = {
   modeTokens: Record<string, FlatToken[]>;
   components: { name: string; path: string }[];
   error?: string;
+};
+export type DesignSystemLinkTarget = { targetType: "project" | "session"; targetId: string };
+export type DesignSystemSummary = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  tokenCount: number;
+  swatches: string[];
+  links: DesignSystemLinkTarget[];
+};
+export type DesignSystemDetail = DesignSystemView & { id: string; name: string; directory: string; links: DesignSystemLinkTarget[] };
+
+export type ClaudeAuthMode = "subscription" | "apiKey";
+export type ClaudeAuthStatus = {
+  mode: ClaudeAuthMode;
+  apiKeySet: boolean;
+  environmentApiKey: boolean;
+  account: { loggedIn: boolean; authMethod?: string; email?: string; orgName?: string; subscriptionType?: string; apiProvider?: string } | null;
+  cliError?: string;
+  loginPending: boolean;
+  ready: boolean;
 };
 
 export type ImageProvider = "none" | "gemini" | "openai";

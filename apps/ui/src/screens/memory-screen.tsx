@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { ExternalLink, FileText, Paperclip, Plus, Search, Settings2, Trash2 } from "lucide-react";
 import { api } from "@/api";
-import type { MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, Project } from "@/types";
+import type { Environment, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, Project } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,8 @@ export type MemorySelection = { scope: MemoryScope; path: string } | "new" | nul
 
 type MemoryScreenProps = {
   project: Project | null;
+  /** Environment of the project; its memory applies to all projects in it. */
+  environment: Environment | null;
   /** All projects, for the project selector (project memory belongs to one project). */
   projects: Project[];
   onProjectChange: (projectId: string) => void;
@@ -32,12 +34,18 @@ type MemoryScreenProps = {
 type ScopeFilter = "all" | MemoryScope;
 type EditorState = { noteRef: MemoryNoteRef | null; draftScope: MemoryScope; draftPath: string; content: string; savedContent: string };
 
-const scopeLabels: Record<MemoryScope, string> = { workspace: "Workspace", project: "Projekt" };
+const scopeLabels: Record<MemoryScope, string> = { workspace: "Workspace", environment: "Umgebung", project: "Projekt" };
+const scopeBadgeClassNames: Record<MemoryScope, string> = {
+  project: "bg-primary/10 text-foreground",
+  environment: "bg-primary/10 text-primary",
+  workspace: "bg-muted text-muted-foreground",
+};
 
-function ScopeBadge(props: { scope: MemoryScope }) {
+/** Environment badges show the environment's name. */
+function ScopeBadge(props: { scope: MemoryScope; environmentName?: string }) {
   return (
-    <span className={cn("shrink-0 rounded px-1.5 py-px text-[10.5px] font-medium", props.scope === "project" ? "bg-primary/10 text-foreground" : "bg-muted text-muted-foreground")}>
-      {scopeLabels[props.scope]}
+    <span className={cn("max-w-28 shrink-0 truncate rounded px-1.5 py-px text-[10.5px] font-medium", scopeBadgeClassNames[props.scope])}>
+      {props.scope === "environment" && props.environmentName ? props.environmentName : scopeLabels[props.scope]}
     </span>
   );
 }
@@ -72,6 +80,8 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const [editorMode, setEditorMode] = useState<"edit" | "preview">("edit");
   const [saving, setSaving] = useState(false);
   const searchRequestRef = useRef(0);
+  const environmentName = props.environment?.name;
+  const scopeLabelOf = (scope: MemoryScope) => (scope === "environment" && environmentName ? `Umgebung „${environmentName}“` : scopeLabels[scope]);
   const [memoryFileList, setMemoryFileList] = useState<MemoryFile[]>([]);
   const [openedFile, setOpenedFile] = useState<MemoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -89,6 +99,11 @@ export function MemoryScreen(props: MemoryScreenProps) {
     setOpenedFile(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, props.memoryChangeCounter]);
+
+  // Project without environment: the environment filter makes no sense there.
+  useEffect(() => {
+    if (!props.environment && scopeFilter === "environment") setScopeFilter("all");
+  }, [props.environment, scopeFilter]);
 
   // A note opened via route closes the file view.
   useEffect(() => {
@@ -119,7 +134,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
       return setEditor({ noteRef: null, draftScope: projectId ? "project" : "workspace", draftPath: "", content: "# \n", savedContent: "" });
     }
     if (editor?.noteRef && sameNote(editor.noteRef, selection)) return;
-    const noteRef: MemoryNoteRef = { scope: selection.scope, projectId: selection.scope === "project" ? projectId : null, path: selection.path };
+    const noteRef: MemoryNoteRef = { scope: selection.scope, projectId: selection.scope === "workspace" ? null : projectId, path: selection.path };
     api
       .readMemoryNote(noteRef)
       .catch((readError) => {
@@ -147,7 +162,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   );
 
   /** Upload target: the filtered scope, otherwise the project (if one is chosen). */
-  const uploadScope: MemoryScope = scopeFilter === "workspace" || !projectId ? "workspace" : "project";
+  const uploadScope: MemoryScope = scopeFilter === "workspace" || !projectId ? "workspace" : scopeFilter === "environment" && props.environment ? "environment" : "project";
   const uploadFiles = async (files: File[]) => {
     const memoryFilesToUpload = files.filter((file) => !file.name.toLowerCase().endsWith(".md"));
     if (!memoryFilesToUpload.length) return;
@@ -192,7 +207,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
     if (!editor) return;
     const noteRef: MemoryNoteRef = editor.noteRef ?? {
       scope: editor.draftScope,
-      projectId: editor.draftScope === "project" ? projectId : null,
+      projectId: editor.draftScope === "workspace" ? null : projectId,
       path: editor.draftPath.trim() || editor.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || "notiz",
     };
     setSaving(true);
@@ -218,6 +233,13 @@ export function MemoryScreen(props: MemoryScreenProps) {
     }
   };
 
+  /** HARNOLD.md per level: permanent instructions, loaded automatically into every turn. */
+  const instructionFiles = [
+    props.project && { scope: "project" as const, label: "Projekt-Anweisungen (HARNOLD.md)" },
+    props.project && props.environment && { scope: "environment" as const, label: `Umgebungs-Anweisungen „${props.environment.name}“` },
+    { scope: "workspace" as const, label: "Workspace-Anweisungen (HARNOLD.md)" },
+  ].filter(Boolean) as { scope: MemoryScope; label: string }[];
+
   const list = (
     <div className="flex h-full flex-col">
       <div className="grid gap-2 border-b p-2">
@@ -229,6 +251,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
           options={[
             { value: "all", label: "Alle" },
             { value: "project", label: "Projekt" },
+            ...(props.environment ? [{ value: "environment" as const, label: "Umgebung" }] : []),
             { value: "workspace", label: "Workspace" },
           ]}
           value={scopeFilter}
@@ -236,17 +259,18 @@ export function MemoryScreen(props: MemoryScreenProps) {
         />
       </div>
       <div className="flex-1 overflow-y-auto p-2">
-        {props.project && (
+        {instructionFiles.map((instructionFile) => (
           <button
+            key={instructionFile.scope}
             className={cn(
               "mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px] text-muted-foreground transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground",
-              editor?.noteRef?.path === "HARNOLD.md" && editor.noteRef.scope === "project" && "bg-foreground/[0.07] text-foreground",
+              editor?.noteRef?.path === "HARNOLD.md" && editor.noteRef.scope === instructionFile.scope && "bg-foreground/[0.07] text-foreground",
             )}
-            onClick={() => selectNote({ scope: "project", path: "HARNOLD.md" })}
+            onClick={() => selectNote({ scope: instructionFile.scope, path: "HARNOLD.md" })}
           >
-            <FileText className="size-3.5" /> Projekt-Anweisungen (HARNOLD.md)
+            <FileText className="size-3.5 shrink-0" /> <span className="truncate">{instructionFile.label}</span>
           </button>
-        )}
+        ))}
         {visibleNotes.length === 0 && (
           <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{searchHits ? "Keine Treffer." : "Noch keine Notizen."}</p>
         )}
@@ -265,7 +289,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[13px] font-medium">{noteSummary.title}</span>
-                  <ScopeBadge scope={noteSummary.scope} />
+                  <ScopeBadge scope={noteSummary.scope} environmentName={environmentName} />
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="truncate font-mono">{noteSummary.path}</span>
@@ -291,7 +315,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
                       <span className="truncate text-[13px] font-medium">{memoryFile.name}</span>
-                      <ScopeBadge scope={memoryFile.scope} />
+                      <ScopeBadge scope={memoryFile.scope} environmentName={environmentName} />
                     </span>
                     <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span>{formatFileSize(memoryFile.size)}</span>
@@ -311,7 +335,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
     <div key={`file:${openedFile.scope}:${openedFile.path}`} className="flex h-full animate-in flex-col fade-in duration-200">
       <div className="flex items-center gap-2 border-b px-4 py-2">
         <span className="truncate font-mono text-[12.5px]">{openedFile.path}</span>
-        <ScopeBadge scope={openedFile.scope} />
+        <ScopeBadge scope={openedFile.scope} environmentName={environmentName} />
         <a href={api.memoryFileUrl(openedFile)} target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground hover:text-foreground" aria-label="In neuem Tab öffnen">
           <ExternalLink className="size-3.5" />
         </a>
@@ -361,7 +385,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
         {editor.noteRef ? (
           <>
             <span className="truncate font-mono text-[12.5px]">{editor.noteRef.path}</span>
-            <ScopeBadge scope={editor.noteRef.scope} />
+            <ScopeBadge scope={editor.noteRef.scope} environmentName={environmentName} />
           </>
         ) : (
           <>
@@ -377,6 +401,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
               </SelectTrigger>
               <SelectContent>
                 {projectId && <SelectItem value="project">Projekt</SelectItem>}
+                {projectId && props.environment && <SelectItem value="environment">Umgebung</SelectItem>}
                 <SelectItem value="workspace">Workspace</SelectItem>
               </SelectContent>
             </Select>
@@ -470,7 +495,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
             variant="ghost"
             className="gap-1.5 text-muted-foreground"
             disabled={uploading}
-            title={`Landet im ${scopeLabels[uploadScope]}-Gedächtnis`}
+            title={`Landet im Gedächtnis: ${scopeLabelOf(uploadScope)}`}
             onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip className="size-3.5" /> {uploading ? "Lädt hoch …" : "Datei hinzufügen"}
@@ -503,7 +528,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
         {dragActive && (
           <div className="pointer-events-none absolute inset-2 z-30 flex animate-in flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-primary bg-primary/10 fade-in duration-150">
             <Paperclip className="size-6 text-primary" />
-            <p className="text-[14px] font-medium">Ins {scopeLabels[uploadScope]}-Gedächtnis ablegen</p>
+            <p className="text-[14px] font-medium">Ablegen im Gedächtnis: {scopeLabelOf(uploadScope)}</p>
             <p className="text-[12px] text-muted-foreground">PDFs, Bilder, Dokumente – der Agent liest sie bei Bedarf</p>
           </div>
         )}

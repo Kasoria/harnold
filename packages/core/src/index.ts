@@ -415,7 +415,7 @@ app.post("/api/voice/speak", async (context) => {
 });
 
 // --- Memory ---
-const noteRefSchema = z.object({ scope: z.enum(["workspace", "project"]), projectId: z.string().nullable().default(null), path: z.string().min(1) });
+const noteRefSchema = z.object({ scope: z.enum(["workspace", "environment", "project"]), projectId: z.string().nullable().default(null), path: z.string().min(1) });
 const readNoteRef = (context: { req: { query: (name: string) => string | undefined } }) =>
   noteRefSchema.parse({ scope: context.req.query("scope"), projectId: context.req.query("projectId") || null, path: context.req.query("path") });
 
@@ -446,7 +446,7 @@ app.delete("/api/memory/note", async (context) => {
 });
 
 // Files in memory (PDF, images, documents) – the agent sees them as a path list and reads them on demand.
-const memoryFileRefSchema = z.object({ scope: z.enum(["project", "workspace"]), projectId: z.string().nullable(), path: z.string().min(1) });
+const memoryFileRefSchema = z.object({ scope: z.enum(["project", "environment", "workspace"]), projectId: z.string().nullable(), path: z.string().min(1) });
 const memoryProjectOf = (projectId: string | null | undefined) => (projectId ? requireProject(projectId) : null);
 const readMemoryFileRef = (context: { req: { query: (name: string) => string | undefined } }) =>
   memoryFileRefSchema.parse({ scope: context.req.query("scope"), projectId: context.req.query("projectId") || null, path: context.req.query("path") });
@@ -454,7 +454,7 @@ const readMemoryFileRef = (context: { req: { query: (name: string) => string | u
 app.get("/api/memory/files", (context) => context.json(memoryFiles.list(memoryProjectOf(context.req.query("projectId")))));
 
 app.post("/api/memory/files", async (context) => {
-  const scope = z.enum(["project", "workspace"]).parse(context.req.query("scope"));
+  const scope = z.enum(["project", "environment", "workspace"]).parse(context.req.query("scope"));
   const project = memoryProjectOf(context.req.query("projectId"));
   const formBody = await context.req.parseBody({ all: true });
   const uploadedFiles = [formBody.files].flat().filter((entry): entry is File => entry instanceof File);

@@ -7,14 +7,16 @@ import { database, projectStore, type Project } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { settingsStore } from "./settings.ts";
 import { voiceConfig } from "./voice.ts";
+import { environmentStore } from "./environments.ts";
 
 /**
  * Memory = Markdown files (the truth) + a rebuildable SQLite index (FTS5, optional vectors).
  * Workspace memory: one folder per workspace (can be an external Obsidian vault).
+ * Environment memory: `<data dir>/environment-memory/<environment id>/`, shared by all projects of that environment.
  * Project memory: `<project>/memory/` plus `HARNOLD.md` in the project root.
  */
 
-export type MemoryScope = "workspace" | "project";
+export type MemoryScope = "workspace" | "environment" | "project";
 export type MemoryNoteRef = { scope: MemoryScope; projectId: string | null; path: string };
 export type MemoryNoteSummary = MemoryNoteRef & { title: string; modifiedAt: number };
 export type MemorySearchHit = MemoryNoteSummary & { snippet: string; score: number };
@@ -84,11 +86,28 @@ export const memoryConfig = {
 
 // --- Paths ---
 
-function rootDirectoryOf(scope: MemoryScope, project: Project | null): string {
-  if (scope === "workspace") return memoryConfig.workspaceDirectory();
+/** One memory folder; `ownerKey` is the index key (project id, environment id or "" for the workspace). */
+type MemoryRoot = { scope: MemoryScope; ownerKey: string; directory: string; project: Project | null };
+
+const environmentMemoryBaseDirectory = path.join(config.dataDirectory, "environment-memory");
+export const environmentMemoryDirectory = (environmentId: string) => path.join(environmentMemoryBaseDirectory, environmentId);
+const environmentRoot = (environmentId: string): MemoryRoot => ({ scope: "environment", ownerKey: environmentId, directory: environmentMemoryDirectory(environmentId), project: null });
+
+/** Environment memory is addressed via a project; it resolves to that project's environment. */
+function memoryRootFor(scope: MemoryScope, project: Project | null): MemoryRoot {
+  if (scope === "workspace") return { scope, ownerKey: "", directory: memoryConfig.workspaceDirectory(), project: null };
   if (!project) throw new Error("Projekt fehlt");
-  return path.join(project.path, "memory");
+  if (scope === "environment") {
+    const environment = environmentStore.forProject(project.id);
+    if (!environment) throw new Error("Projekt gehört zu keiner Umgebung");
+    return { ...environmentRoot(environment.id), project };
+  }
+  return { scope, ownerKey: project.id, directory: path.join(project.path, "memory"), project };
 }
+
+export const memoryRootDirectory = (scope: MemoryScope, project: Project | null) => memoryRootFor(scope, project).directory;
+const rootDirectoryOf = memoryRootDirectory;
+const environmentKeyOf = (projectId: string | null) => (projectId ? (environmentStore.forProject(projectId)?.id ?? "") : "");
 
 /** Normalizes a note path (adds .md) and refuses anything outside its memory root. */
 export function resolveNotePath(scope: MemoryScope, project: Project | null, notePath: string): { absolutePath: string; relativePath: string } {
@@ -172,9 +191,10 @@ type IndexedRow = { id: number; path: string; modified_at: number; content_hash:
 
 let embeddingWarningShown = false;
 
-async function indexRoot(scope: MemoryScope, project: Project | null): Promise<boolean> {
-  const projectKey = project?.id ?? "";
-  const rootDirectory = rootDirectoryOf(scope, project);
+async function indexRoot(memoryRoot: MemoryRoot): Promise<boolean> {
+  const { scope, project } = memoryRoot;
+  const projectKey = memoryRoot.ownerKey;
+  const rootDirectory = memoryRoot.directory;
   const notePaths = listMarkdownFiles(rootDirectory);
   if (scope === "project" && project && fs.existsSync(path.join(project.path, "HARNOLD.md"))) notePaths.push("HARNOLD.md");
 
@@ -240,24 +260,45 @@ async function indexRoot(scope: MemoryScope, project: Project | null): Promise<b
 /** Serializes reindex runs per root so watchers and writes don't race. */
 const reindexQueue = new Map<string, Promise<void>>();
 
-function queueReindex(scope: MemoryScope, project: Project | null): Promise<void> {
-  const queueKey = `${scope}:${project?.id ?? ""}`;
+function queueReindexRoot(memoryRoot: MemoryRoot): Promise<void> {
+  const queueKey = `${memoryRoot.scope}:${memoryRoot.ownerKey}`;
   const previousRun = reindexQueue.get(queueKey) ?? Promise.resolve();
   const nextRun = previousRun
-    .then(() => indexRoot(scope, project))
+    .then(() => indexRoot(memoryRoot))
     .then((changed) => {
-      if (changed) eventHub.publish({ type: "memory_changed", projectId: project?.id ?? null });
+      if (changed) eventHub.publish({ type: "memory_changed", projectId: memoryRoot.scope === "project" ? memoryRoot.ownerKey : null });
     })
     .catch((indexError) => console.warn("[memory] Index-Fehler:", indexError));
   reindexQueue.set(queueKey, nextRun);
   return nextRun;
 }
 
+const queueReindex = (scope: MemoryScope, project: Project | null) => queueReindexRoot(memoryRootFor(scope, project));
+
+/** Drops index rows of deleted environments. */
+function purgeDeletedEnvironments(): void {
+  const environmentIds = environmentStore.list().map((environment) => environment.id);
+  const placeholders = environmentIds.map(() => "?").join(", ");
+  const staleCondition = `scope = 'environment'${environmentIds.length ? ` AND project_id NOT IN (${placeholders})` : ""}`;
+  database.prepare(`DELETE FROM memory_fts WHERE rowid IN (SELECT id FROM memory_notes WHERE ${staleCondition})`).run(...environmentIds);
+  database.prepare(`DELETE FROM memory_notes WHERE ${staleCondition}`).run(...environmentIds);
+}
+
+/** SQL condition + parameters for a scope filter, seen from one project. */
+function scopeCondition(scopeFilter: MemoryScope | "all", projectId: string | null): { sql: string; parameters: string[] } {
+  const projectKey = projectId ?? "";
+  const environmentKey = environmentKeyOf(projectId);
+  if (scopeFilter === "workspace") return { sql: "n.scope = 'workspace'", parameters: [] };
+  if (scopeFilter === "project") return { sql: "(n.scope = 'project' AND n.project_id = ?)", parameters: [projectKey] };
+  if (scopeFilter === "environment") return { sql: "(n.scope = 'environment' AND n.project_id = ?)", parameters: [environmentKey] };
+  return { sql: "(n.scope = 'workspace' OR (n.scope = 'project' AND n.project_id = ?) OR (n.scope = 'environment' AND n.project_id = ?))", parameters: [projectKey, environmentKey] };
+}
+
 type NoteRow = { id: number; scope: MemoryScope; project_id: string; path: string; title: string; modified_at: number; embedding: Uint8Array | null; snippet?: string; rank?: number };
 
 const toSummary = (noteRow: NoteRow): MemoryNoteSummary => ({
   scope: noteRow.scope,
-  projectId: noteRow.project_id || null,
+  projectId: noteRow.scope === "project" ? noteRow.project_id : null,
   path: noteRow.path,
   title: noteRow.title,
   modifiedAt: noteRow.modified_at,
@@ -273,21 +314,25 @@ export const memoryIndex = {
   reindex: queueReindex,
 
   async reindexAll(): Promise<void> {
-    await Promise.all([queueReindex("workspace", null), ...projectStore.list().map((project) => queueReindex("project", project))]);
+    purgeDeletedEnvironments();
+    await Promise.all([
+      queueReindex("workspace", null),
+      ...environmentStore.list().map((environment) => queueReindexRoot(environmentRoot(environment.id))),
+      ...projectStore.list().map((project) => queueReindex("project", project)),
+    ]);
   },
 
   list(projectId: string | null): MemoryNoteSummary[] {
+    const condition = scopeCondition("all", projectId);
     const noteRows = database
-      .prepare("SELECT id, scope, project_id, path, title, modified_at FROM memory_notes WHERE scope = 'workspace' OR project_id = ? ORDER BY modified_at DESC")
-      .all(projectId ?? "") as unknown as NoteRow[];
+      .prepare(`SELECT n.id, n.scope, n.project_id, n.path, n.title, n.modified_at FROM memory_notes n WHERE ${condition.sql} ORDER BY n.modified_at DESC`)
+      .all(...condition.parameters) as unknown as NoteRow[];
     return noteRows.map(toSummary);
   },
 
   /** Hybrid search: FTS5 (bm25) + optional vector similarity, fused by reciprocal rank. */
   async search(searchText: string, projectId: string | null, scopeFilter: MemoryScope | "all" = "all", limit = 8): Promise<MemorySearchHit[]> {
-    const scopeCondition =
-      scopeFilter === "workspace" ? "n.scope = 'workspace'" : scopeFilter === "project" ? "n.project_id = ?" : "(n.scope = 'workspace' OR n.project_id = ?)";
-    const scopeParameters = scopeFilter === "workspace" ? [] : [projectId ?? ""];
+    const { sql: scopeSql, parameters: scopeParameters } = scopeCondition(scopeFilter, projectId);
     const ftsQuery = toFtsQuery(searchText);
     const fusedScores = new Map<number, { noteRow: NoteRow; score: number; snippet: string }>();
     const fusionConstant = 60;
@@ -297,7 +342,7 @@ export const memoryIndex = {
         .prepare(
           `SELECT n.id, n.scope, n.project_id, n.path, n.title, n.modified_at, snippet(memory_fts, 1, '**', '**', '…', 24) AS snippet, bm25(memory_fts, 5.0, 1.0) AS rank
            FROM memory_fts JOIN memory_notes n ON n.id = memory_fts.rowid
-           WHERE memory_fts MATCH ? AND ${scopeCondition} ORDER BY rank LIMIT 40`,
+           WHERE memory_fts MATCH ? AND ${scopeSql} ORDER BY rank LIMIT 40`,
         )
         .all(ftsQuery, ...scopeParameters) as unknown as NoteRow[];
       ftsRows.forEach((noteRow, rankIndex) => fusedScores.set(noteRow.id, { noteRow, score: 1 / (fusionConstant + rankIndex), snippet: noteRow.snippet ?? "" }));
@@ -311,7 +356,7 @@ export const memoryIndex = {
     }
     if (queryEmbedding) {
       const vectorRows = database
-        .prepare(`SELECT n.id, n.scope, n.project_id, n.path, n.title, n.modified_at, n.embedding, substr(n.body, 1, 240) AS snippet FROM memory_notes n WHERE n.embedding IS NOT NULL AND n.embedding_model = ? AND ${scopeCondition}`)
+        .prepare(`SELECT n.id, n.scope, n.project_id, n.path, n.title, n.modified_at, n.embedding, substr(n.body, 1, 240) AS snippet FROM memory_notes n WHERE n.embedding IS NOT NULL AND n.embedding_model = ? AND ${scopeSql}`)
         .all(queryEmbedding.model, ...scopeParameters) as unknown as NoteRow[];
       vectorRows
         .map((noteRow) => ({ noteRow, similarity: cosineSimilarity(queryEmbedding.vector, blobToVector(noteRow.embedding!)) }))
@@ -375,6 +420,15 @@ export const memoryNotes = {
     const sections: string[] = [];
     const workspaceInstructions = path.join(memoryConfig.workspaceDirectory(), "HARNOLD.md");
     if (fs.existsSync(workspaceInstructions)) sections.push(`## Workspace-Memory: HARNOLD.md\n${fs.readFileSync(workspaceInstructions, "utf8").slice(0, 8_000)}`);
+    const environment = environmentStore.forProject(project.id);
+    if (environment) {
+      const environmentInstructions = path.join(environmentMemoryDirectory(environment.id), "HARNOLD.md");
+      sections.push(
+        fs.existsSync(environmentInstructions)
+          ? `## Umgebung „${environment.name}“: HARNOLD.md\n${fs.readFileSync(environmentInstructions, "utf8").slice(0, 8_000)}`
+          : `Memory-Ebene "environment" = Umgebung „${environment.name}“ (gilt für alle ihre Projekte).`,
+      );
+    }
     const projectInstructions = path.join(project.path, "HARNOLD.md");
     if (fs.existsSync(projectInstructions)) sections.push(`## Projekt: HARNOLD.md\n${fs.readFileSync(projectInstructions, "utf8").slice(0, 8_000)}`);
     const noteSummaries = memoryIndex.list(project.id).filter((noteSummary) => noteSummary.path !== "HARNOLD.md").slice(0, 60);
@@ -407,6 +461,29 @@ export function watchWorkspaceMemory(): void {
   }
 }
 
+let environmentWatcher: fs.FSWatcher | undefined;
+const environmentDebounceTimers = new Map<string, NodeJS.Timeout>();
+
+function watchEnvironmentMemory(): void {
+  fs.mkdirSync(environmentMemoryBaseDirectory, { recursive: true });
+  try {
+    environmentWatcher = fs.watch(environmentMemoryBaseDirectory, { recursive: true }, (_eventType, changedName) => {
+      const changedPath = changedName?.toString().split(path.sep).join("/");
+      if (!changedPath?.toLowerCase().endsWith(".md")) return;
+      const environmentId = changedPath.split("/")[0];
+      clearTimeout(environmentDebounceTimers.get(environmentId));
+      environmentDebounceTimers.set(
+        environmentId,
+        setTimeout(() => {
+          if (environmentStore.list().some((environment) => environment.id === environmentId)) void queueReindexRoot(environmentRoot(environmentId));
+        }, 400),
+      );
+    });
+  } catch (watchError) {
+    console.warn("[memory] watch failed:", watchError);
+  }
+}
+
 const projectDebounceTimers = new Map<string, NodeJS.Timeout>();
 
 /** Called from the project file watcher's events. */
@@ -424,8 +501,14 @@ export function handleProjectFilesChanged(projectId: string, changedPaths: strin
 
 export function startMemory(): void {
   watchWorkspaceMemory();
+  if (!environmentWatcher) watchEnvironmentMemory();
   eventHub.subscribe((serverEvent) => {
     if (serverEvent.type === "files_changed") handleProjectFilesChanged(serverEvent.projectId, serverEvent.paths);
+    if (serverEvent.type === "environments_changed") {
+      purgeDeletedEnvironments();
+      for (const environment of environmentStore.list()) void queueReindexRoot(environmentRoot(environment.id));
+      eventHub.publish({ type: "memory_changed", projectId: null });
+    }
   });
   void memoryIndex.reindexAll();
 }

@@ -8,18 +8,18 @@ export const memoryToolNames = ["memory_search", "memory_read", "memory_write", 
 
 export const memoryInstructions = `
 Langzeit-Gedächtnis (Tools ${memoryServerName}):
-- Zwei Ebenen: "workspace" (projektübergreifend: Nutzer, Vorlieben, allgemeine Fakten) und "project" (dieses Projekt, liegt in memory/).
+- Ebenen: "workspace" (projektübergreifend: Nutzer, Vorlieben, allgemeine Fakten), "environment" (alle Projekte der Umgebung, z. B. ein Kunde – nur wenn das Projekt einer Umgebung angehört) und "project" (dieses Projekt, liegt in memory/).
 - Bei Fragen, die Vorwissen brauchen, zuerst memory_search nutzen.
 - Speichern, wenn der Nutzer darum bittet oder dauerhaft relevante Fakten/Entscheidungen entstehen: memory_write. Eine Notiz pro Thema, sprechender Dateiname (z. B. entscheidungen/datenbank.md), Markdown mit # Titel, Obsidian-kompatibel ([[Wikilinks]] erlaubt). Vorhandene Notiz lieber ergänzen als duplizieren.
-- HARNOLD.md (Projekt-Root bzw. Workspace-Memory) enthält dauerhafte Anweisungen und wird automatisch geladen.
+- HARNOLD.md (Projekt-Root, Umgebungs- bzw. Workspace-Memory) enthält dauerhafte Anweisungen und wird automatisch geladen.
 `.trim();
 
-const scopeSchema = z.enum(["workspace", "project"]);
+const scopeSchema = z.enum(["workspace", "environment", "project"]);
 const textResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
 
 /** In-process MCP server giving the agent read/write access to Harnold memory. */
 export function createMemoryServer(project: Project) {
-  const noteRef = (scope: MemoryScope, notePath: string) => ({ scope, projectId: scope === "project" ? project.id : null, path: notePath });
+  const noteRef = (scope: MemoryScope, notePath: string) => ({ scope, projectId: scope === "workspace" ? null : project.id, path: notePath });
 
   return createSdkMcpServer({
     name: memoryServerName,
@@ -28,7 +28,7 @@ export function createMemoryServer(project: Project) {
       tool(
         "memory_search",
         "Durchsucht das Gedächtnis (Volltext + semantisch). Liefert Pfade, Titel und Ausschnitte.",
-        { query: z.string().describe("Suchbegriffe oder Frage"), scope: z.enum(["all", "workspace", "project"]).optional(), limit: z.number().int().min(1).max(20).optional() },
+        { query: z.string().describe("Suchbegriffe oder Frage"), scope: z.enum(["all", "workspace", "environment", "project"]).optional(), limit: z.number().int().min(1).max(20).optional() },
         async ({ query, scope, limit }) => {
           const searchHits = await memoryIndex.search(query, project.id, scope ?? "all", limit ?? 8);
           if (!searchHits.length) return textResult("Keine Treffer.");

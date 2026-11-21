@@ -3,7 +3,7 @@ import { query, type PermissionMode, type PermissionResult, type SDKMessage, typ
 import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload } from "./db.ts";
 import { contentBlocksFor } from "./attachments.ts";
 import { eventHub } from "./events.ts";
-import { memoryConfig, memoryNotes } from "./memory.ts";
+import { environmentMemoryDirectory, memoryConfig, memoryNotes } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
 import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
@@ -176,6 +176,7 @@ export const agentRuntime = {
     try {
       const integrationOptions = agentIntegrationOptions(project);
       const pluginOptions = agentPluginOptions();
+      const projectEnvironment = environmentStore.forProject(project.id);
       const agentStream = query({
         prompt: promptFor(project, pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text, attachments),
         options: {
@@ -183,7 +184,8 @@ export const agentRuntime = {
           // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
           env: agentSetup.env,
           // All design systems are open to the agent (it may create/link one mid-turn).
-          additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory()],
+          // Plus workspace and environment memory, so the agent can read files stored there.
+          additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : [])],
           ...(pendingFork?.mode === "resume"
             ? { resume: pendingFork.agentSessionId, resumeSessionAt: pendingFork.resumeAt, forkSession: true }
             : { resume: session.agentSessionId ?? undefined }),

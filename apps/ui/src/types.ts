@@ -134,7 +134,7 @@ export type VoiceSettingsView = VoiceSettings & {
   ttsReady: boolean;
 };
 
-export type MemoryScope = "workspace" | "project";
+export type MemoryScope = "workspace" | "environment" | "project";
 export type MemoryNoteRef = { scope: MemoryScope; projectId: string | null; path: string };
 export type MemoryNoteSummary = MemoryNoteRef & { title: string; modifiedAt: number };
 export type MemoryFile = MemoryNoteRef & { name: string; size: number; mimeType: string; modifiedAt: number };

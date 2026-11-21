@@ -23,7 +23,7 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Darunter: **Heute** – Startansicht bei frischem Öffnen. Nur: wartende Freigaben (direkt erlauben/ablehnen), laufende Sessions, Task-Ergebnisse der letzten 24 h, 3 Sessions zum Weitermachen. Leere Bereiche entfallen.
 - Baum: **Projekt** (Emoji-Icon oder farbiges Buchstaben-Avatar) → **Bereich** (optional, z. B. iOS/Web) → **Session**.
 - Session-Zeile: Status-Punkt (grau = idle, grün = aktiv, rot = Fehler/wartet), Name, Aktionen nur bei Hover.
-- Memory: Projektauswahl oben; Liste mit Notizen und Gruppe „Dateien“. „Datei hinzufügen“ oder Drag & Drop legt Dateien unter `memory/dateien/` (Projekt bzw. Workspace je nach Filter) ab; der Agent bekommt sie als Pfadliste und liest sie bei Bedarf. Vorschau: Bilder inline, PDF/Text im Frame.
+- Memory: Projektauswahl oben; drei Ebenen Projekt · Umgebung (alle Projekte einer Umgebung, Badge mit Umgebungsname) · Workspace, je mit HARNOLD.md-Anweisungen oben in der Liste. Liste mit Notizen und Gruppe „Dateien“. „Datei hinzufügen“ oder Drag & Drop legt Dateien unter `dateien/` der gefilterten Ebene ab (Standard: Projekt); Umgebungs-Screen hat Button „Kontext“ dorthin; der Agent bekommt sie als Pfadliste und liest sie bei Bedarf. Vorschau: Bilder inline, PDF/Text im Frame.
 - Feature-Navigation: Heute, Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
 

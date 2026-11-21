@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Project } from "./db.ts";
-import { memoryConfig, type MemoryScope } from "./memory.ts";
+import { memoryRootDirectory, type MemoryScope } from "./memory.ts";
+import { environmentStore } from "./environments.ts";
 import { mimeTypeOf } from "./attachments.ts";
 
 /**
@@ -15,11 +16,7 @@ const uploadDirectoryName = "dateien";
 const skippedDirectoryNames = new Set([".obsidian", ".trash", ".git", "node_modules", ".harnold"]);
 const isNoteFile = (fileName: string) => fileName.toLowerCase().endsWith(".md");
 
-function rootOf(scope: MemoryScope, project: Project | null): string {
-  if (scope === "workspace") return memoryConfig.workspaceDirectory();
-  if (!project) throw new Error("Projekt fehlt");
-  return path.join(project.path, "memory");
-}
+const rootOf = memoryRootDirectory;
 
 function resolveInside(rootDirectory: string, relativePath: string): string {
   const resolvedRoot = path.resolve(rootDirectory);
@@ -48,13 +45,14 @@ function listScope(scope: MemoryScope, project: Project | null): MemoryFile[] {
   return walkFiles(rootDirectory).map((relativePath) => {
     const fileStats = fs.statSync(path.join(rootDirectory, relativePath));
     const name = path.basename(relativePath);
-    return { scope, projectId: scope === "project" ? project!.id : null, path: relativePath, name, size: fileStats.size, mimeType: mimeTypeOf(name, ""), modifiedAt: fileStats.mtimeMs };
+    return { scope, projectId: scope === "workspace" ? null : project!.id, path: relativePath, name, size: fileStats.size, mimeType: mimeTypeOf(name, ""), modifiedAt: fileStats.mtimeMs };
   });
 }
 
 export const memoryFiles = {
   list(project: Project | null): MemoryFile[] {
-    return [...(project ? listScope("project", project) : []), ...listScope("workspace", null)].sort((first, second) => second.modifiedAt - first.modifiedAt);
+    const hasEnvironment = Boolean(project && environmentStore.forProject(project.id));
+    return [...(project ? listScope("project", project) : []), ...(hasEnvironment ? listScope("environment", project) : []), ...listScope("workspace", null)].sort((first, second) => second.modifiedAt - first.modifiedAt);
   },
 
   /** Saves into `dateien/` of the memory folder; an existing name gets a numbered suffix. */
@@ -86,7 +84,7 @@ export const memoryFiles = {
   contextFor(project: Project): string {
     const files = memoryFiles.list(project).slice(0, 60);
     if (!files.length) return "";
-    const lines = files.map((memoryFile) => `- [${memoryFile.scope}] ${path.join(rootOf(memoryFile.scope, memoryFile.scope === "project" ? project : null), memoryFile.path)}`);
+    const lines = files.map((memoryFile) => `- [${memoryFile.scope}] ${path.join(rootOf(memoryFile.scope, memoryFile.scope === "workspace" ? null : project), memoryFile.path)}`);
     return `## Dateien im Gedächtnis (bei Bedarf mit Read öffnen – PDFs und Bilder liest Read direkt)\n${lines.join("\n")}`;
   },
 };

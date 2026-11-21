@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Download, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { BookOpen, CheckCircle2, CircleAlert, Download, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "@/api";
 import type { ClaudeAuthStatus, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentProvider, EnvironmentVariable, Project } from "@/types";
 import { SegmentedControl } from "@/components/segmented-control";
@@ -21,6 +21,8 @@ type EnvironmentsScreenProps = {
   environments: Environment[];
   projects: Project[];
   onEnvironmentsChange: () => void;
+  /** Opens the environment's memory (notes + files shared by all its projects). */
+  onOpenMemory: (environment: Environment) => void;
   onSaved: (message: string) => void;
   onError: (unknownError: unknown) => void;
 };
@@ -74,6 +76,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
               workspaceDefaultModel={props.workspaceDefaultModel}
               allEnvironments={props.environments}
               projects={props.projects}
+              onOpenMemory={props.onOpenMemory}
               onSaved={(savedEnvironment) => {
                 props.onEnvironmentsChange();
                 props.onSelect(savedEnvironment.id);
@@ -139,6 +142,7 @@ function EnvironmentEditor(props: {
   workspaceDefaultModel: string;
   allEnvironments: Environment[];
   projects: Project[];
+  onOpenMemory: (environment: Environment) => void;
   onSaved: (savedEnvironment: Environment) => void;
   onDeleted: () => void;
   onCancel: () => void;
@@ -227,6 +231,16 @@ function EnvironmentEditor(props: {
       actions={
         existing && (
           <>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 gap-1.5 px-2 text-[12px]"
+              disabled={!existing.projectIds.length}
+              title={existing.projectIds.length ? "Notizen und Dateien für alle Projekte dieser Umgebung" : "Erst ein Projekt zuordnen"}
+              onClick={() => props.onOpenMemory(existing)}
+            >
+              <BookOpen className="size-3.5" /> Kontext
+            </Button>
             <Button size="sm" variant="secondary" className="h-7 gap-1.5 px-2 text-[12px]" disabled={checking || !existing.accounts.some((account) => props.providers.find((provider) => provider.id === account.provider)?.checkable)} onClick={() => void checkAccounts()}>
               {checking ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />} Konten prüfen
             </Button>

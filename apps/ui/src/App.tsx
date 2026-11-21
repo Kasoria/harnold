@@ -481,15 +481,17 @@ export function App() {
           />
         );
       case "memory": {
+        const memoryProject = projects.find((project) => project.id === memoryProjectId) ?? activeProject;
         const memorySelection: MemorySelection =
           route.section === "new"
             ? "new"
-            : (route.section === "workspace" || route.section === "project") && route.itemId
+            : (route.section === "workspace" || route.section === "environment" || route.section === "project") && route.itemId
               ? { scope: route.section, path: route.itemId }
               : null;
         return (
           <MemoryScreen
-            project={projects.find((project) => project.id === memoryProjectId) ?? activeProject}
+            project={memoryProject}
+            environment={memoryProject ? (environments.find((environment) => environment.projectIds.includes(memoryProject.id)) ?? null) : null}
             projects={projects}
             onProjectChange={(projectId) => {
               setMemoryProjectId(projectId);
@@ -537,6 +539,10 @@ export function App() {
             workspaceDefaultModel={defaultModel}
             projects={projects.filter((project) => project.kind !== "quick")}
             onEnvironmentsChange={() => void refreshEnvironments()}
+            onOpenMemory={(environment) => {
+              setMemoryProjectId(environment.projectIds[0]);
+              navigate(`${routePath("memory", "environment")}/HARNOLD.md`);
+            }}
             onSaved={(message) => setToast({ message, tone: "info" })}
             onError={reportError}
           />

@@ -1,0 +1,453 @@
+import fs from "node:fs";
+import path from "node:path";
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
+import { z } from "zod";
+import { config } from "./config.ts";
+import { chatItemStore, projectStore, sessionStore } from "./db.ts";
+import { eventHub } from "./events.ts";
+import { agentRuntime } from "./agent.ts";
+import { readFileTree, resolveInsideProject, unwatchProject, watchProject } from "./files.ts";
+import { canvasDocumentSchema, readCanvas, writeCanvas } from "./canvas.ts";
+import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unscheduleTask } from "./tasks.ts";
+import { channelStore, toPublicChannel } from "./channels/store.ts";
+import { channelManager } from "./channels/manager.ts";
+import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
+import { designSystem, handleDesignSystemFilesChanged } from "./design-system.ts";
+import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
+import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
+import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
+
+const app = new Hono();
+const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
+const mimeTypesByExtension: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".md": "text/markdown; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff2": "font/woff2",
+};
+
+// --- Auth (only active when HARNOLD_TOKEN is set) ---
+app.use("*", async (context, next) => {
+  if (!config.accessToken) return next();
+  const bearerToken = context.req.header("authorization")?.replace(/^Bearer /, "");
+  const queryToken = context.req.query("token");
+  if (bearerToken === config.accessToken || queryToken === config.accessToken) return next();
+  return context.json({ error: "Nicht autorisiert" }, 401);
+});
+
+app.onError((requestError, context) => context.json({ error: requestError.message }, 400));
+
+const requireProject = (projectId: string) => {
+  const project = projectStore.get(projectId);
+  if (!project) throw new Error("Projekt nicht gefunden");
+  return project;
+};
+
+// --- Projects ---
+app.get("/api/projects", (context) => context.json(projectStore.list()));
+
+app.post("/api/projects", async (context) => {
+  const body = z
+    .object({ name: z.string().min(1), path: z.string().optional() })
+    .parse(await context.req.json());
+  const folderName = body.name.trim().replace(/[^\w.-]+/g, "-").toLowerCase();
+  const projectPath = path.resolve(body.path?.trim() || path.join(config.projectsDirectory, folderName));
+  fs.mkdirSync(projectPath, { recursive: true });
+  const project = projectStore.create(body.name.trim(), projectPath);
+  watchProject(project);
+  void memoryIndex.reindex("project", project);
+  return context.json(project);
+});
+
+app.delete("/api/projects/:projectId", (context) => {
+  // Removes only Harnold's record; the folder on disk stays untouched.
+  unwatchProject(context.req.param("projectId"));
+  projectStore.remove(context.req.param("projectId"));
+  return context.json({ ok: true });
+});
+
+// --- Files ---
+app.get("/api/projects/:projectId/tree", (context) =>
+  context.json(readFileTree(requireProject(context.req.param("projectId")))),
+);
+
+app.get("/api/projects/:projectId/file", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const absolutePath = resolveInsideProject(project, context.req.query("path") ?? "");
+  return context.json({ content: fs.readFileSync(absolutePath, "utf8") });
+});
+
+app.put("/api/projects/:projectId/file", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const body = z.object({ path: z.string().min(1), content: z.string() }).parse(await context.req.json());
+  const absolutePath = resolveInsideProject(project, body.path);
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, body.content);
+  return context.json({ ok: true });
+});
+
+// --- Canvas ---
+app.get("/api/projects/:projectId/canvas", (context) => context.json(readCanvas(requireProject(context.req.param("projectId")))));
+
+app.put("/api/projects/:projectId/canvas", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  writeCanvas(project, canvasDocumentSchema.parse(await context.req.json()));
+  return context.json({ ok: true });
+});
+
+// Live preview: serves project files as-is so HTML artifacts render with their relative assets.
+app.get("/preview/:projectId/*", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const relativePath = decodeURIComponent(context.req.path.split("/").slice(3).join("/"));
+  let absolutePath = resolveInsideProject(project, relativePath);
+  if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory()) absolutePath = path.join(absolutePath, "index.html");
+  if (!fs.existsSync(absolutePath)) return context.text("Nicht gefunden", 404);
+  const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
+  return context.body(fs.readFileSync(absolutePath), 200, { "content-type": contentType, "cache-control": "no-store" });
+});
+
+// --- Sessions ---
+app.get("/api/projects/:projectId/sessions", (context) =>
+  context.json(
+    sessionStore
+      .listByProject(context.req.param("projectId"))
+      .map((session) => ({ ...session, running: agentRuntime.isRunning(session.id) })),
+  ),
+);
+
+app.post("/api/projects/:projectId/sessions", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const session = sessionStore.create(project.id, "Neue Session");
+  eventHub.publish({ type: "sessions_changed", projectId: project.id });
+  return context.json(session);
+});
+
+app.delete("/api/sessions/:sessionId", (context) => {
+  const session = sessionStore.get(context.req.param("sessionId"));
+  if (session) {
+    agentRuntime.interrupt(session.id);
+    sessionStore.remove(session.id);
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+  }
+  return context.json({ ok: true });
+});
+
+app.get("/api/sessions/:sessionId/items", (context) => context.json(chatItemStore.list(context.req.param("sessionId"))));
+
+const permissionModeSchema = z.enum(["default", "acceptEdits", "bypassPermissions", "plan"]);
+
+app.post("/api/sessions/:sessionId/messages", async (context) => {
+  const body = z
+    .object({ text: z.string().min(1), permissionMode: permissionModeSchema.default("default"), model: z.string().optional() })
+    .parse(await context.req.json());
+  const sessionId = context.req.param("sessionId");
+  if (agentRuntime.isRunning(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
+  void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
+  return context.json({ ok: true });
+});
+
+app.post("/api/sessions/:sessionId/interrupt", (context) => {
+  agentRuntime.interrupt(context.req.param("sessionId"));
+  return context.json({ ok: true });
+});
+
+app.post("/api/permissions/:requestId", async (context) => {
+  const body = z.object({ allow: z.boolean() }).parse(await context.req.json());
+  return context.json({ ok: agentRuntime.resolvePermission(context.req.param("requestId"), body.allow) });
+});
+
+// --- Tasks ---
+const taskInputSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  prompt: z.string().min(1),
+  schedule: z.string().min(1),
+  enabled: z.boolean(),
+  permissionMode: permissionModeSchema,
+  model: z.string().nullable(),
+  notifyChannelId: z.string().nullable(),
+  notifyChatId: z.string().nullable(),
+});
+
+const presentTask = (task: ReturnType<typeof taskStore.list>[number]) => ({
+  ...task,
+  nextRunAt: nextRunOf(task),
+  lastRun: taskStore.lastRun(task.id) ?? null,
+});
+
+app.get("/api/tasks", (context) => context.json(taskStore.list().map(presentTask)));
+
+app.post("/api/tasks", async (context) => {
+  const task = taskStore.save(taskInputSchema.parse(await context.req.json()));
+  scheduleTask(task);
+  eventHub.publish({ type: "tasks_changed" });
+  return context.json(presentTask(task));
+});
+
+app.put("/api/tasks/:taskId", async (context) => {
+  const taskId = context.req.param("taskId");
+  if (!taskStore.get(taskId)) throw new Error("Task nicht gefunden");
+  const task = taskStore.save(taskInputSchema.parse(await context.req.json()), taskId);
+  scheduleTask(task);
+  eventHub.publish({ type: "tasks_changed" });
+  return context.json(presentTask(task));
+});
+
+app.delete("/api/tasks/:taskId", (context) => {
+  unscheduleTask(context.req.param("taskId"));
+  taskStore.remove(context.req.param("taskId"));
+  eventHub.publish({ type: "tasks_changed" });
+  return context.json({ ok: true });
+});
+
+app.post("/api/tasks/:taskId/run", (context) => {
+  void runTask(context.req.param("taskId")).catch((runError) => console.error("[tasks]", runError));
+  return context.json({ ok: true });
+});
+
+app.get("/api/tasks/:taskId/runs", (context) => context.json(taskStore.listRuns(context.req.param("taskId"))));
+
+// --- Channels ---
+const channelInputSchema = z.object({
+  type: z.enum(["telegram", "discord", "slack", "email"]),
+  name: z.string().min(1),
+  projectId: z.string().min(1),
+  enabled: z.boolean(),
+  permissionMode: permissionModeSchema,
+  allowedSenders: z.array(z.string()),
+  voiceReplies: z.enum(["off", "voice", "always"]).default("voice"),
+  settings: z.record(z.string(), z.string()),
+  secrets: z.record(z.string(), z.string().optional()),
+});
+
+const presentChannel = (channel: ReturnType<typeof channelStore.list>[number]) => ({
+  ...toPublicChannel(channel),
+  status: channelManager.statusOf(channel.id),
+});
+
+app.get("/api/channels", (context) => context.json(channelStore.list().map(presentChannel)));
+
+app.post("/api/channels", async (context) => {
+  const channel = channelStore.save(channelInputSchema.parse(await context.req.json()));
+  await channelManager.start(channel.id);
+  return context.json(presentChannel(channel));
+});
+
+app.put("/api/channels/:channelId", async (context) => {
+  const channelId = context.req.param("channelId");
+  if (!channelStore.get(channelId)) throw new Error("Channel nicht gefunden");
+  const channel = channelStore.save(channelInputSchema.parse(await context.req.json()), channelId);
+  await channelManager.start(channel.id);
+  return context.json(presentChannel(channel));
+});
+
+app.delete("/api/channels/:channelId", async (context) => {
+  await channelManager.stop(context.req.param("channelId"));
+  channelStore.remove(context.req.param("channelId"));
+  eventHub.publish({ type: "channels_changed" });
+  return context.json({ ok: true });
+});
+
+// --- Voice ---
+app.get("/api/settings/voice", (context) => context.json(voiceConfig.present()));
+
+app.put("/api/settings/voice", async (context) => {
+  const body = z
+    .object({ settings: voiceSettingsSchema, secrets: z.record(z.enum(voiceSecretKeys), z.string().optional()) })
+    .parse(await context.req.json());
+  voiceConfig.save(body.settings, body.secrets);
+  return context.json(voiceConfig.present());
+});
+
+app.post("/api/voice/transcribe", async (context) => {
+  const mimeType = context.req.header("content-type") ?? "audio/webm";
+  const audioData = Buffer.from(await context.req.arrayBuffer());
+  if (!audioData.length) throw new Error("Keine Audiodaten empfangen");
+  if (audioData.length > 25 * 1024 * 1024) throw new Error("Aufnahme zu lang (max. 25 MB)");
+  return context.json({ text: await transcribe({ data: audioData, mimeType }) });
+});
+
+app.post("/api/voice/speak", async (context) => {
+  const body = z.object({ text: z.string().min(1) }).parse(await context.req.json());
+  const audioClip = await synthesize(body.text);
+  return context.body(new Uint8Array(audioClip.data), 200, { "content-type": audioClip.mimeType, "cache-control": "no-store" });
+});
+
+// --- Memory ---
+const noteRefSchema = z.object({ scope: z.enum(["workspace", "project"]), projectId: z.string().nullable().default(null), path: z.string().min(1) });
+const readNoteRef = (context: { req: { query: (name: string) => string | undefined } }) =>
+  noteRefSchema.parse({ scope: context.req.query("scope"), projectId: context.req.query("projectId") || null, path: context.req.query("path") });
+
+app.get("/api/settings/memory", (context) => context.json(memoryConfig.present()));
+
+app.put("/api/settings/memory", async (context) => {
+  const body = z.object({ settings: memorySettingsSchema, openaiApiKey: z.string().optional() }).parse(await context.req.json());
+  memoryConfig.save(body.settings, body.openaiApiKey);
+  return context.json(memoryConfig.present());
+});
+
+app.get("/api/memory/notes", (context) => context.json(memoryIndex.list(context.req.query("projectId") || null)));
+
+app.get("/api/memory/search", async (context) =>
+  context.json(await memoryIndex.search(context.req.query("q") ?? "", context.req.query("projectId") || null, "all", 30)),
+);
+
+app.get("/api/memory/note", (context) => context.json({ content: memoryNotes.read(readNoteRef(context)) }));
+
+app.put("/api/memory/note", async (context) => {
+  const body = noteRefSchema.extend({ content: z.string() }).parse(await context.req.json());
+  return context.json({ path: await memoryNotes.write(body, body.content) });
+});
+
+app.delete("/api/memory/note", async (context) => {
+  await memoryNotes.remove(readNoteRef(context));
+  return context.json({ ok: true });
+});
+
+app.post("/api/memory/reindex", async (context) => {
+  await memoryIndex.reindexAll();
+  return context.json({ ok: true });
+});
+
+// --- Design system ---
+app.get("/api/projects/:projectId/design-system", (context) => context.json(designSystem.read(requireProject(context.req.param("projectId")))));
+
+app.put("/api/projects/:projectId/design-system/tokens", async (context) => {
+  const body = z.object({ tokens: z.record(z.string(), z.unknown()) }).parse(await context.req.json());
+  return context.json(designSystem.writeTokens(requireProject(context.req.param("projectId")), body.tokens));
+});
+
+app.post("/api/projects/:projectId/design-system/init", (context) =>
+  context.json(designSystem.initialize(requireProject(context.req.param("projectId")))),
+);
+
+// --- Image generation ---
+app.get("/api/settings/images", (context) => context.json(imageConfig.present()));
+
+app.put("/api/settings/images", async (context) => {
+  const body = z
+    .object({ settings: imageSettingsSchema, secrets: z.record(z.enum(imageSecretKeys), z.string().optional()) })
+    .parse(await context.req.json());
+  imageConfig.save(body.settings, body.secrets);
+  return context.json(imageConfig.present());
+});
+
+app.post("/api/projects/:projectId/images", async (context) => {
+  const imageRequest = imageRequestSchema.parse(await context.req.json());
+  return context.json({ paths: await generateImages(requireProject(context.req.param("projectId")), imageRequest) });
+});
+
+// --- Integrations ---
+app.get("/api/mcp-servers", (context) => context.json(mcpServerStore.list().map(toPublicMcpServer)));
+
+app.post("/api/mcp-servers", async (context) => {
+  const serverInput = mcpServerInputSchema.parse(await context.req.json());
+  return context.json(toPublicMcpServer(mcpServerStore.save(serverInput)));
+});
+
+app.put("/api/mcp-servers/:serverId", async (context) => {
+  const serverInput = mcpServerInputSchema.parse(await context.req.json());
+  return context.json(toPublicMcpServer(mcpServerStore.save(serverInput, context.req.param("serverId"))));
+});
+
+app.delete("/api/mcp-servers/:serverId", (context) => {
+  mcpServerStore.remove(context.req.param("serverId"));
+  return context.json({ ok: true });
+});
+
+app.post("/api/mcp-servers/:serverId/test", async (context) => {
+  const server = mcpServerStore.get(context.req.param("serverId"));
+  if (!server) throw new Error("Server nicht gefunden");
+  return context.json(await testMcpServer(server));
+});
+
+const skillScopeSchema = z.enum(["user", "project"]);
+const projectForSkill = (scope: "user" | "project", projectId: string | undefined | null) => (scope === "project" ? requireProject(projectId ?? "") : null);
+
+app.get("/api/skills", (context) => {
+  const projectId = context.req.query("projectId");
+  return context.json(skillStore.list(projectId ? requireProject(projectId) : null));
+});
+
+app.post("/api/skills", async (context) => {
+  const body = z
+    .object({ scope: skillScopeSchema, projectId: z.string().nullable(), name: z.string(), description: z.string().min(1), instructions: z.string() })
+    .parse(await context.req.json());
+  skillStore.create(body.scope, projectForSkill(body.scope, body.projectId), body.name, body.description, body.instructions);
+  return context.json({ ok: true });
+});
+
+app.get("/api/skills/file", (context) => {
+  const scope = skillScopeSchema.parse(context.req.query("scope"));
+  return context.json({ content: skillStore.read(scope, projectForSkill(scope, context.req.query("projectId")), context.req.query("path") ?? "") });
+});
+
+app.put("/api/skills/file", async (context) => {
+  const body = z.object({ scope: skillScopeSchema, projectId: z.string().nullable(), path: z.string(), content: z.string() }).parse(await context.req.json());
+  skillStore.write(body.scope, projectForSkill(body.scope, body.projectId), body.path, body.content);
+  return context.json({ ok: true });
+});
+
+app.put("/api/skills/:skillName/enabled", async (context) => {
+  const body = z.object({ enabled: z.boolean() }).parse(await context.req.json());
+  skillStore.setEnabled(context.req.param("skillName"), body.enabled);
+  return context.json({ ok: true });
+});
+
+// --- Live events ---
+app.get(
+  "/ws",
+  upgradeWebSocket(() => {
+    let unsubscribe: (() => void) | undefined;
+    return {
+      onOpen(_openEvent, socket) {
+        unsubscribe = eventHub.subscribe((serverEvent) => socket.send(JSON.stringify(serverEvent)));
+      },
+      onClose() {
+        unsubscribe?.();
+      },
+    };
+  }),
+);
+
+// Server mode: serve the built UI (apps/ui/dist) from the same origin.
+const uiDistDirectory = process.env.HARNOLD_UI_DIR ?? path.resolve(import.meta.dirname, "../../../apps/ui/dist");
+if (fs.existsSync(uiDistDirectory)) {
+  app.get("*", (context) => {
+    const requestedPath = path.resolve(uiDistDirectory, "." + context.req.path);
+    const isInsideUi = requestedPath.startsWith(uiDistDirectory + path.sep);
+    const filePath = isInsideUi && fs.existsSync(requestedPath) && fs.statSync(requestedPath).isFile()
+      ? requestedPath
+      : path.join(uiDistDirectory, "index.html");
+    const contentType = mimeTypesByExtension[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
+    return context.body(fs.readFileSync(filePath), 200, { "content-type": contentType });
+  });
+}
+
+for (const project of projectStore.list()) watchProject(project);
+startScheduler();
+channelManager.startAll();
+startMemory();
+eventHub.subscribe((serverEvent) => {
+  if (serverEvent.type !== "files_changed") return;
+  const changedProject = projectStore.get(serverEvent.projectId);
+  if (changedProject) handleDesignSystemFilesChanged(changedProject, serverEvent.paths);
+});
+
+const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (address) => {
+  console.log(`Harnold Core läuft auf http://${config.host}:${address.port}`);
+});
+injectWebSocket(server);

@@ -1,0 +1,35 @@
+import type { ChatItem } from "./db.ts";
+
+/** Everything the core pushes to connected clients. */
+export type ServerEvent =
+  | { type: "chat_item"; sessionId: string; chatItem: ChatItem }
+  | { type: "text_delta"; sessionId: string; text: string }
+  | { type: "turn_state"; sessionId: string; running: boolean }
+  | {
+      type: "permission_request";
+      sessionId: string;
+      requestId: string;
+      toolName: string;
+      input: unknown;
+    }
+  | { type: "permission_resolved"; sessionId: string; requestId: string }
+  | { type: "files_changed"; projectId: string; paths: string[] }
+  | { type: "sessions_changed"; projectId: string }
+  | { type: "tasks_changed" }
+  | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
+  | { type: "channels_changed" }
+  | { type: "memory_changed"; projectId: string | null }
+  | { type: "integrations_changed" };
+
+type Listener = (serverEvent: ServerEvent) => void;
+const listeners = new Set<Listener>();
+
+export const eventHub = {
+  subscribe(listener: Listener): () => void {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  },
+  publish(serverEvent: ServerEvent): void {
+    for (const listener of listeners) listener(serverEvent);
+  },
+};

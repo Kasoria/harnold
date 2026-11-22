@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Loader2, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
-import type { AgentCommand, Attachment, PermissionMode } from "@/types";
+import type { AgentCommand, Attachment, PermissionMode, TeamAgent } from "@/types";
 import { AttachmentChip } from "./attachment-views";
 import { api } from "@/api";
 import { cn, isActionEnter } from "@/lib/utils";
@@ -53,6 +53,8 @@ type ComposerProps = {
   onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
   onInterrupt: () => void;
   onError: (unknownError: unknown) => void;
+  /** Team members of the project; "@" lists them, a mention hands the message to them. */
+  teamAgents?: TeamAgent[];
   /** Left side of the row under the input (e.g. project quick select). */
   footerStart?: React.ReactNode;
 };
@@ -82,6 +84,9 @@ export function Composer(props: ComposerProps) {
   const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [caretPosition, setCaretPosition] = useState(0);
+  const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
+  const [mentionMenuDismissed, setMentionMenuDismissed] = useState(false);
 
   const addFiles = (files: File[]) => {
     for (const file of files) {
@@ -138,6 +143,31 @@ export function Composer(props: ComposerProps) {
   useEffect(() => {
     if (commandQuery === null) setCommandMenuDismissed(false);
   }, [commandQuery]);
+
+  // "@Na|" before the caret (at start or after a space) opens the team list.
+  const mentionMatch = props.teamAgents?.length ? /(^|\s)@([^\s@]*)$/.exec(composerText.slice(0, caretPosition)) : null;
+  const mentionQuery = mentionMatch ? mentionMatch[2].toLowerCase() : null;
+  const matchingTeamAgents = useMemo(
+    () => (mentionQuery === null ? [] : (props.teamAgents ?? []).filter((agent) => agent.name.toLowerCase().includes(mentionQuery) || agent.role.toLowerCase().includes(mentionQuery))),
+    [mentionQuery, props.teamAgents],
+  );
+  const mentionMenuOpen = mentionQuery !== null && !mentionMenuDismissed && matchingTeamAgents.length > 0;
+  useEffect(() => setHighlightedMentionIndex(0), [mentionQuery]);
+  useEffect(() => {
+    if (mentionQuery === null) setMentionMenuDismissed(false);
+  }, [mentionQuery]);
+
+  const chooseMention = (agent: TeamAgent) => {
+    const queryStart = caretPosition - (mentionMatch?.[2].length ?? 0) - 1;
+    const nextText = `${composerText.slice(0, queryStart)}@${agent.name} ${composerText.slice(caretPosition)}`;
+    const nextCaret = queryStart + agent.name.length + 2;
+    setComposerText(nextText);
+    setCaretPosition(nextCaret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
 
   useEffect(() => safeStorage.setItem("harnold.permissionMode", permissionMode), [permissionMode]);
   useEffect(() => safeStorage.setItem("harnold.model", model), [model]);
@@ -278,6 +308,29 @@ export function Composer(props: ComposerProps) {
             ))}
           </div>
         )}
+        {mentionMenuOpen && (
+          <div
+            role="listbox"
+            className="absolute right-0 bottom-full left-0 z-20 mb-2 max-h-72 animate-in overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg fade-in slide-in-from-bottom-1 duration-150"
+          >
+            {matchingTeamAgents.map((agent, agentIndex) => (
+              <button
+                key={agent.id}
+                role="option"
+                aria-selected={agentIndex === highlightedMentionIndex}
+                className={cn("flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px]", agentIndex === highlightedMentionIndex && "bg-accent")}
+                onMouseEnter={() => setHighlightedMentionIndex(agentIndex)}
+                onMouseDown={(mouseEvent) => {
+                  mouseEvent.preventDefault();
+                  chooseMention(agent);
+                }}
+              >
+                <span className="shrink-0 font-medium">@{agent.name}</span>
+                {agent.role && <span className="truncate text-[12px] text-muted-foreground">{agent.role}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {commandMenuOpen && matchingCommands.length > 0 && (
           <div
             role="listbox"
@@ -341,7 +394,11 @@ export function Composer(props: ComposerProps) {
               value={composerText}
               placeholder={transcribing ? t("Transkribiere …") : props.placeholder}
               disabled={transcribing}
-              onChange={(changeEvent) => setComposerText(changeEvent.target.value)}
+              onChange={(changeEvent) => {
+                setComposerText(changeEvent.target.value);
+                setCaretPosition(changeEvent.target.selectionStart ?? changeEvent.target.value.length);
+              }}
+              onSelect={(selectEvent) => setCaretPosition(selectEvent.currentTarget.selectionStart ?? 0)}
               onPaste={(clipboardEvent) => {
                 const pastedFiles = [...clipboardEvent.clipboardData.files];
                 if (!pastedFiles.length) return;
@@ -349,6 +406,24 @@ export function Composer(props: ComposerProps) {
                 addFiles(pastedFiles);
               }}
               onKeyDown={(keyboardEvent) => {
+                if (mentionMenuOpen) {
+                  if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
+                    keyboardEvent.preventDefault();
+                    const step = keyboardEvent.key === "ArrowDown" ? 1 : -1;
+                    setHighlightedMentionIndex((previous) => (previous + step + matchingTeamAgents.length) % matchingTeamAgents.length);
+                    return;
+                  }
+                  if ((keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
+                    keyboardEvent.preventDefault();
+                    chooseMention(matchingTeamAgents[highlightedMentionIndex] ?? matchingTeamAgents[0]);
+                    return;
+                  }
+                  if (keyboardEvent.key === "Escape") {
+                    keyboardEvent.preventDefault();
+                    setMentionMenuDismissed(true);
+                    return;
+                  }
+                }
                 if (commandMenuOpen && matchingCommands.length > 0) {
                   if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
                     keyboardEvent.preventDefault();

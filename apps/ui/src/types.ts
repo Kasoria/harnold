@@ -95,6 +95,10 @@ export type TaskInput = {
   enabled: boolean;
   permissionMode: PermissionMode;
   model: string | null;
+  /** Team member that runs the task (null = default agent). */
+  agentId: string | null;
+  /** "new": own session per run; "continue": all runs in one session. */
+  sessionMode: "new" | "continue";
   notifyChannelId: string | null;
   notifyChatId: string | null;
 };

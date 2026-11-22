@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight, Play, Plus, Trash2 } from "lucide-react";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
-import type { Channel, Project, Task, TaskInput, TaskRun } from "@/types";
+import type { Channel, Project, Task, TaskInput, TaskRun, TeamAgent } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +28,7 @@ export function describeSchedule(schedule: string): string {
 
 type TasksScreenProps = {
   inheritedModelFor: (projectId: string) => InheritedModel;
+  teamForProject: (projectId: string) => TeamAgent[];
   selectedTaskId: string | "new" | null;
   onSelectTask: (taskId: string | "new" | null) => void;
   tasks: Task[];
@@ -47,6 +48,8 @@ function emptyTaskInput(projectId: string): TaskInput {
     enabled: true,
     permissionMode: "acceptEdits",
     model: null,
+    agentId: null,
+    sessionMode: "new",
     notifyChannelId: null,
     notifyChatId: null,
   };
@@ -54,6 +57,7 @@ function emptyTaskInput(projectId: string): TaskInput {
 
 function TaskEditor(props: {
   inheritedModelFor: (projectId: string) => InheritedModel;
+  teamForProject: (projectId: string) => TeamAgent[];
   task: Task | null;
   initialInput: TaskInput;
   projects: Project[];
@@ -70,6 +74,11 @@ function TaskEditor(props: {
   const [saving, setSaving] = useState(false);
 
   const updateInput = (changes: Partial<TaskInput>) => setTaskInput((previous) => ({ ...previous, ...changes }));
+  const projectTeam = props.teamForProject(taskInput.projectId);
+  // A member of another environment's team doesn't exist in the newly chosen project.
+  useEffect(() => {
+    if (taskInput.agentId && !projectTeam.some((agent) => agent.id === taskInput.agentId)) updateInput({ agentId: null });
+  }, [taskInput.projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (props.task) api.listTaskRuns(props.task.id).then(setTaskRuns).catch(props.onError);
@@ -170,6 +179,36 @@ function TaskEditor(props: {
           <ModelSelect className="w-full" value={taskInput.model ?? ""} onChange={(model) => updateInput({ model: model || null })} inherited={props.inheritedModelFor(taskInput.projectId)} />
         </FormField>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label={t("Agent")}>
+          <Select value={taskInput.agentId ?? "default"} onValueChange={(value) => updateInput({ agentId: value === "default" ? null : value })}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">{t("Harnold (Standard)")}</SelectItem>
+              {projectTeam.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {agent.name}
+                  {agent.role && <span className="text-muted-foreground"> · {agent.role}</span>}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+        <FormField label={t("Session")}>
+          <Select value={taskInput.sessionMode} onValueChange={(value) => updateInput({ sessionMode: value as TaskInput["sessionMode"] })}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new">{t("Neue Session je Lauf")}</SelectItem>
+              <SelectItem value="continue">{t("Immer dieselbe Session")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </FormField>
+      </div>
+      {taskInput.sessionMode === "continue" && <p className="-mt-2 text-[12px] text-muted-foreground">{t("Der Agent sieht frühere Läufe und kann daran anknüpfen.")}</p>}
       <FormField label={t("Ergebnis zusätzlich senden an")}>
         <div className="flex gap-2">
           <Select
@@ -266,6 +305,7 @@ export function TasksScreen(props: TasksScreenProps) {
         initialInput={emptyTaskInput(defaultProjectId)}
         projects={props.projects}
         inheritedModelFor={props.inheritedModelFor}
+        teamForProject={props.teamForProject}
         channels={props.channels}
         onSaved={(savedTaskId) => props.onSelectTask(savedTaskId ?? null)}
         onCancel={() => props.onSelectTask(null)}
@@ -297,11 +337,14 @@ export function TasksScreen(props: TasksScreenProps) {
           enabled: selectedTask.enabled,
           permissionMode: selectedTask.permissionMode,
           model: selectedTask.model,
+          agentId: selectedTask.agentId,
+          sessionMode: selectedTask.sessionMode,
           notifyChannelId: selectedTask.notifyChannelId,
           notifyChatId: selectedTask.notifyChatId,
         }}
         projects={props.projects}
         inheritedModelFor={props.inheritedModelFor}
+        teamForProject={props.teamForProject}
         channels={props.channels}
         onSaved={(savedTaskId) => props.onSelectTask(savedTaskId === null ? null : selectedTask.id)}
         onCancel={() => props.onSelectTask(null)}

@@ -15,7 +15,7 @@ import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNam
 import { agentCommands } from "./slash-commands.ts";
 import { agentPluginOptions } from "./plugins.ts";
 import { recordClaudeMcpServers } from "./mcp-discovery.ts";
-import { teamContextFor, teamStore } from "./agents.ts";
+import { mentionHintFor, teamContextFor, teamStore } from "./agents.ts";
 import { t } from "./i18n.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
@@ -183,7 +183,7 @@ export const agentRuntime = {
       const pluginOptions = agentPluginOptions();
       const projectEnvironment = environmentStore.forProject(project.id);
       const agentStream = query({
-        prompt: promptFor(project, pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text, attachments),
+        prompt: promptFor(project, `${pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text}${mentionHintFor(project.id, text, session.agentId)}`, attachments),
         options: {
           pathToClaudeCodeExecutable: claudeExecutablePath,
           cwd: project.path,

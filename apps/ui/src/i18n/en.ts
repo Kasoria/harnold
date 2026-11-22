@@ -555,4 +555,8 @@ export const englishTexts: Record<string, string> = {
   "Update verfügbar": "Update available",
   "Update": "Update",
   "Update auf {0}": "Update to {0}",
+  "Agent": "Agent",
+  "Neue Session je Lauf": "New session per run",
+  "Immer dieselbe Session": "Always the same session",
+  "Der Agent sieht frühere Läufe und kann daran anknüpfen.": "The agent sees earlier runs and can build on them.",
 };

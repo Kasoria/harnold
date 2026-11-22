@@ -356,6 +356,8 @@ const taskInputSchema = z.object({
   enabled: z.boolean(),
   permissionMode: permissionModeSchema,
   model: z.string().nullable(),
+  agentId: z.string().nullable().default(null),
+  sessionMode: z.enum(["new", "continue"]).default("new"),
   notifyChannelId: z.string().nullable(),
   notifyChatId: z.string().nullable(),
 });

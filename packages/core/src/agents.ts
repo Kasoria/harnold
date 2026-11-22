@@ -104,6 +104,28 @@ export function teamContextFor(project: Project, agentId: string | null): string
   return parts.join("\n\n");
 }
 
+const escapeForRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Team members addressed with @Name in a user message (not the session's own agent). */
+export function mentionedTeamAgents(projectId: string, text: string, ownAgentId: string | null): TeamAgent[] {
+  if (!text.includes("@")) return [];
+  return teamStore
+    .forProject(projectId)
+    .filter((agent) => agent.id !== ownAgentId && new RegExp(`(^|[^\\p{L}\\p{N}_])@${escapeForRegex(agent.name)}(?![\\p{L}\\p{N}_])`, "iu").test(text));
+}
+
+/** Added to the prompt (not the stored message) so the agent hands mentioned members the request via team_ask. */
+export function mentionHintFor(projectId: string, text: string, ownAgentId: string | null): string {
+  const mentioned = mentionedTeamAgents(projectId, text, ownAgentId);
+  if (!mentioned.length) return "";
+  const names = mentioned.map((agent) => agent.name).join(", ");
+  return (
+    `\n\n[Harnold: Der Nutzer spricht hier ${mentioned.length > 1 ? "die Teammitglieder" : "das Teammitglied"} ${names} direkt an (@-Erwähnung). ` +
+    `Gib die Nachricht mit team_ask an ${mentioned.length > 1 ? "jedes von ihnen" : names} weiter – samt allem nötigen Kontext aus dieser Unterhaltung – ` +
+    `und gib die Antwort${mentioned.length > 1 ? "en" : ""} vollständig und mit Namen wieder. Ergänze nur, wenn es hilft.]`
+  );
+}
+
 // ---------------------------------------------------------------- Agent-to-agent messages
 
 /** How deep a chain of team_ask calls currently is, per running session (stops loops). */

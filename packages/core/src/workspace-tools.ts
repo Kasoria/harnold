@@ -16,7 +16,7 @@ import { environmentStore } from "./environments.ts";
 import { environmentProviders } from "./environment-providers.ts";
 import { sessionActions } from "./session-actions.ts";
 import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./setup-tools.ts";
-import { createTeamTools, teamToolNames } from "./agents.ts";
+import { createTeamTools, teamStore, teamToolNames } from "./agents.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -383,7 +383,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
       ),
       tool(
         "task_save",
-        "Legt einen Task an oder ändert ihn (mit taskId). Ein Task startet zum Zeitplan (Cron, z. B. \"0 8 * * 1-5\") eine neue Session mit dem Prompt.",
+        "Legt einen Task an oder ändert ihn (mit taskId). Ein Task startet zum Zeitplan (Cron, z. B. \"0 8 * * 1-5\") den Prompt – in einer neuen Session je Lauf oder fortlaufend in derselben (sessionMode). agentName: Teammitglied, das ihn ausführt (leer = Standard-Agent).",
         {
           taskId: z.string().optional(),
           name: z.string().min(1),
@@ -392,12 +392,21 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           projectId: z.string().optional().describe("Standard: aktuelles Projekt"),
           enabled: z.boolean().optional(),
           permissionMode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan"]).optional(),
+          agentName: z.string().nullable().optional().describe("Name aus team_list; null = Standard-Agent"),
+          sessionMode: z.enum(["new", "continue"]).optional().describe("new: neue Session je Lauf, continue: immer dieselbe Session"),
         },
-        safely(({ taskId, name, prompt, schedule, projectId, enabled, permissionMode }) => {
+        safely(({ taskId, name, prompt, schedule, projectId, enabled, permissionMode, agentName, sessionMode }) => {
           const existingTask = taskId ? taskStore.get(taskId) : undefined;
           if (taskId && !existingTask) return errorResult("Task nicht gefunden");
           const targetProjectId = projectId ?? existingTask?.projectId ?? project.id;
           if (!projectStore.get(targetProjectId)) return errorResult("Projekt nicht gefunden");
+          let agentId = existingTask?.agentId ?? null;
+          if (agentName === null || agentName === "") agentId = null;
+          else if (agentName) {
+            const teamAgent = teamStore.forProject(targetProjectId).find((agent) => agent.name.toLowerCase() === agentName.trim().toLowerCase());
+            if (!teamAgent) return errorResult(`Kein Teammitglied „${agentName}“ in diesem Projekt`);
+            agentId = teamAgent.id;
+          }
           const savedTask = taskStore.save(
             {
               projectId: targetProjectId,
@@ -407,6 +416,8 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
               enabled: enabled ?? existingTask?.enabled ?? true,
               permissionMode: permissionMode ?? existingTask?.permissionMode ?? "acceptEdits",
               model: existingTask?.model ?? null,
+              agentId,
+              sessionMode: sessionMode ?? existingTask?.sessionMode ?? "new",
               notifyChannelId: existingTask?.notifyChannelId ?? null,
               notifyChatId: existingTask?.notifyChatId ?? null,
             },

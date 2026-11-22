@@ -588,6 +588,7 @@ export function App() {
             tasks={tasks}
             projects={projects}
             inheritedModelFor={inheritedModelFor}
+            teamForProject={teamForProject}
             channels={channels}
             defaultProjectId={activeProjectId}
             onOpenSession={openSessionFromScreen}

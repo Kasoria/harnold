@@ -4,6 +4,7 @@ import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import { database, projectStore, sessionStore } from "./db.ts";
 import { agentRuntime } from "./agent.ts";
 import { eventHub } from "./events.ts";
+import { teamStore } from "./agents.ts";
 import { currentLanguage, t } from "./i18n.ts";
 
 database.exec(`
@@ -31,6 +32,13 @@ database.exec(`
   );
   CREATE INDEX IF NOT EXISTS task_runs_by_task ON task_runs(task_id, started_at);
 `);
+const taskColumns = new Set((database.prepare("PRAGMA table_info(tasks)").all() as { name: string }[]).map((column) => column.name));
+if (!taskColumns.has("agent_id")) database.exec("ALTER TABLE tasks ADD COLUMN agent_id TEXT");
+if (!taskColumns.has("session_mode")) database.exec("ALTER TABLE tasks ADD COLUMN session_mode TEXT NOT NULL DEFAULT 'new'");
+if (!taskColumns.has("continued_session_id")) database.exec("ALTER TABLE tasks ADD COLUMN continued_session_id TEXT");
+
+/** "new": every run gets its own session; "continue": all runs in one session, so the agent knows earlier runs. */
+export type TaskSessionMode = "new" | "continue";
 
 export type Task = {
   id: string;
@@ -41,6 +49,9 @@ export type Task = {
   enabled: boolean;
   permissionMode: PermissionMode;
   model: string | null;
+  /** Team member that runs the task (null = default agent). */
+  agentId: string | null;
+  sessionMode: TaskSessionMode;
   notifyChannelId: string | null;
   notifyChatId: string | null;
   createdAt: number;
@@ -69,6 +80,8 @@ const mapTask = (row: Row): Task => ({
   enabled: Boolean(row.enabled),
   permissionMode: String(row.permission_mode) as PermissionMode,
   model: row.model ? String(row.model) : null,
+  agentId: row.agent_id ? String(row.agent_id) : null,
+  sessionMode: row.session_mode === "continue" ? "continue" : "new",
   notifyChannelId: row.notify_channel_id ? String(row.notify_channel_id) : null,
   notifyChatId: row.notify_chat_id ? String(row.notify_chat_id) : null,
   createdAt: Number(row.created_at),
@@ -106,13 +119,14 @@ export const taskStore = {
     const task: Task = { ...taskInput, id: existing?.id ?? randomUUID(), createdAt: existing?.createdAt ?? Date.now() };
     database
       .prepare(
-        `INSERT INTO tasks (id, project_id, name, prompt, schedule, enabled, permission_mode, model, notify_channel_id, notify_chat_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (id, project_id, name, prompt, schedule, enabled, permission_mode, model, agent_id, session_mode, notify_channel_id, notify_chat_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id, name = excluded.name, prompt = excluded.prompt,
            schedule = excluded.schedule, enabled = excluded.enabled, permission_mode = excluded.permission_mode, model = excluded.model,
+           agent_id = excluded.agent_id, session_mode = excluded.session_mode,
            notify_channel_id = excluded.notify_channel_id, notify_chat_id = excluded.notify_chat_id`,
       )
-      .run(task.id, task.projectId, task.name, task.prompt, task.schedule, task.enabled ? 1 : 0, task.permissionMode, task.model, task.notifyChannelId, task.notifyChatId, task.createdAt);
+      .run(task.id, task.projectId, task.name, task.prompt, task.schedule, task.enabled ? 1 : 0, task.permissionMode, task.model, task.agentId, task.sessionMode, task.notifyChannelId, task.notifyChatId, task.createdAt);
     return task;
   },
   remove(taskId: string): void {
@@ -140,13 +154,32 @@ export function setTaskRunNotifier(notifier: RunNotifier): void {
 
 const scheduledJobs = new Map<string, Cron>();
 
+/** New session per run, or the task's ongoing session (recreated if it was deleted or moved to another project). */
+function sessionForRun(task: Task, startedAt: number) {
+  // A deleted team member falls back to the default agent.
+  const agentId = task.agentId && teamStore.get(task.agentId) ? task.agentId : null;
+  if (task.sessionMode === "continue") {
+    const continuedRow = database.prepare("SELECT continued_session_id FROM tasks WHERE id = ?").get(task.id) as { continued_session_id: string | null } | undefined;
+    const continuedSession = continuedRow?.continued_session_id ? sessionStore.get(continuedRow.continued_session_id) : undefined;
+    if (continuedSession && continuedSession.projectId === task.projectId) {
+      if (continuedSession.agentId !== agentId) sessionStore.update(continuedSession.id, { agentId: agentId, agentSessionId: null });
+      return continuedSession;
+    }
+    const newSession = sessionStore.create(task.projectId, `Task · ${task.name}`, undefined, agentId);
+    database.prepare("UPDATE tasks SET continued_session_id = ? WHERE id = ?").run(newSession.id, task.id);
+    return newSession;
+  }
+  const runTime = new Date(startedAt).toLocaleString(currentLanguage() === "en" ? "en-US" : "de-DE", { dateStyle: "short", timeStyle: "short" });
+  return sessionStore.create(task.projectId, `Task · ${task.name} · ${runTime}`, undefined, agentId);
+}
+
 export async function runTask(taskId: string): Promise<TaskRun> {
   const task = taskStore.get(taskId);
   if (!task) throw new Error(t("Task nicht gefunden"));
   if (!projectStore.get(task.projectId)) throw new Error(t("Projekt des Tasks existiert nicht mehr"));
 
   const startedAt = Date.now();
-  const session = sessionStore.create(task.projectId, `Task · ${task.name} · ${new Date(startedAt).toLocaleString(currentLanguage() === "en" ? "en-US" : "de-DE", { dateStyle: "short", timeStyle: "short" })}`);
+  const session = sessionForRun(task, startedAt);
   eventHub.publish({ type: "sessions_changed", projectId: task.projectId });
 
   const taskRun: TaskRun = { id: randomUUID(), taskId, sessionId: session.id, startedAt, finishedAt: null, status: "running", summary: null };

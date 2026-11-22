@@ -483,6 +483,7 @@ export function ChatPane(props: ChatPaneProps) {
             projectId={props.project.id}
             onSessionCommand={runSessionCommand}
             onSend={props.onSend}
+            teamAgents={props.teamAgents}
             onInterrupt={props.onInterrupt}
             onError={props.onError}
             footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}

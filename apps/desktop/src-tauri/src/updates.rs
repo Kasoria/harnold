@@ -41,6 +41,30 @@ async fn tokio_sleep(duration: Duration) {
     let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(duration)).await;
 }
 
+#[derive(serde::Serialize)]
+pub struct AvailableUpdate {
+    version: String,
+    notes: Option<String>,
+}
+
+/// Settings → "Nach Updates suchen": returns the newer version, if any.
+#[tauri::command]
+pub async fn check_for_update(app: AppHandle) -> Result<Option<AvailableUpdate>, String> {
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let update = updater.check().await.map_err(|error| error.to_string())?;
+    Ok(update.map(|update| AvailableUpdate { version: update.version.clone(), notes: update.body.clone() }))
+}
+
+/// Downloads, installs and restarts; only returns on error.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let Some(update) = updater.check().await.map_err(|error| error.to_string())? else { return Err("No update available".into()) };
+    update.download_and_install(|_chunk_length, _content_length| {}, || {}).await.map_err(|error| error.to_string())?;
+    crate::stop_core(&app);
+    app.restart();
+}
+
 async fn check_and_offer(app: &AppHandle) -> Result<(), String> {
     let updater = app.updater().map_err(|error| error.to_string())?;
     let Some(update) = updater.check().await.map_err(|error| error.to_string())? else { return Ok(()) };

@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FormField } from "@/components/form-field";
 import { safeStorage } from "@/lib/storage";
 import type { ThemePreference } from "@/hooks/use-theme";
+import { AppVersionSetting } from "@/screens/settings/app-version-setting";
 import { currentLanguage, languages, setLanguage, t, type Language } from "@/lib/i18n";
 
 export type SettingsSection = "claude" | "general" | "voice" | "images" | "memory";
@@ -257,6 +258,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
               </Select>
             </div>
             <QuickChatAutoDeleteSetting onSaved={props.onSaved} onError={props.onError} />
+            <AppVersionSetting />
 
             <div className="grid gap-2">
               <span className="text-sm">{t("Workspace")}</span>

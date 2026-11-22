@@ -171,6 +171,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(CoreProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![updates::check_for_update, updates::install_update])
         .setup(|app| {
             let app_handle = app.handle().clone();
             updates::start_update_checks(app_handle.clone());

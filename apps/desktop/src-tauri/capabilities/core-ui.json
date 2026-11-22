@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "core-ui",
+  "description": "The UI is served by the local Core; it may call the app's own commands (version, updates).",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:4327", "http://127.0.0.1:4327/*"] },
+  "permissions": ["core:default"]
+}

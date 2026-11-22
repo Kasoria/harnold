@@ -4,6 +4,7 @@ import type { Project } from "./db.ts";
 import { memoryRootDirectory, type MemoryScope } from "./memory.ts";
 import { environmentStore } from "./environments.ts";
 import { mimeTypeOf } from "./attachments.ts";
+import { resolveInsideRoot } from "./paths.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -20,10 +21,7 @@ const isNoteFile = (fileName: string) => fileName.toLowerCase().endsWith(".md");
 const rootOf = memoryRootDirectory;
 
 function resolveInside(rootDirectory: string, relativePath: string): string {
-  const resolvedRoot = path.resolve(rootDirectory);
-  const absolutePath = path.resolve(resolvedRoot, relativePath.replace(/^\/+/, ""));
-  if (!absolutePath.startsWith(resolvedRoot + path.sep)) throw new Error(t("Pfad liegt außerhalb des Memory-Ordners"));
-  return absolutePath;
+  return resolveInsideRoot(rootDirectory, relativePath, new Error(t("Pfad liegt außerhalb des Memory-Ordners")));
 }
 
 function walkFiles(rootDirectory: string, relativeDirectory = ""): string[] {

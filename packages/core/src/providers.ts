@@ -175,7 +175,9 @@ export async function discoverProviderModels(input: { protocol: ProviderProtocol
   } else if (input.apiKey) headers.authorization = `Bearer ${input.apiKey}`;
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(t("Modelle nicht abrufbar ({0})", response.status));
-  const body = (await response.json()) as { data?: { id?: string }[]; models?: { name?: string }[] };
+  // The response body never reaches the user – only a hint about what was found at the address.
+  const body = (await response.json().catch(() => null)) as { data?: { id?: string }[]; models?: { name?: string }[] } | null;
+  if (!body) throw new Error(t("Der Endpunkt antwortet nicht mit JSON"));
   const ids = (body.data ?? []).flatMap((entry) => (entry.id ? [entry.id] : []));
   // Some servers (Gemini native) answer with { models: [{ name: "models/…" }] }.
   const namedIds = (body.models ?? []).flatMap((entry) => (entry.name ? [entry.name.replace(/^models\//, "")] : []));

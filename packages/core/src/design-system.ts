@@ -5,6 +5,7 @@ import { config } from "./config.ts";
 import { database, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { settingsStore } from "./settings.ts";
+import { resolveInsideRoot } from "./paths.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -318,13 +319,10 @@ export const designSystemStore = {
     }
   },
 
-  /** Absolute path of a file inside a system (guards against traversal). */
+  /** Absolute path of a file inside a system (guards against traversal and symlinks). */
   resolveFile(designSystemId: string, relativePath: string): string {
     requireRow(designSystemId);
-    const directory = directoryOf(designSystemId);
-    const absolutePath = path.resolve(directory, relativePath);
-    if (absolutePath !== directory && !absolutePath.startsWith(directory + path.sep)) throw new Error(t("Pfad außerhalb des Design Systems"));
-    return absolutePath;
+    return resolveInsideRoot(directoryOf(designSystemId), relativePath, new Error(t("Pfad außerhalb des Design Systems")));
   },
 
   /** Compact summary for the agent's system prompt (empty when nothing is linked). */

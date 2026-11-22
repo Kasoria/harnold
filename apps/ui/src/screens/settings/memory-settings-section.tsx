@@ -57,7 +57,14 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
         <Input value={settingsDraft.workspaceDirectory || settingsView.resolvedWorkspaceDirectory} onChange={(changeEvent) => updateDraft({ workspaceDirectory: changeEvent.target.value })} />
       </FormField>
 
-      <FormField label={t("Semantische Suche")}>
+      <FormField
+        label={t("Semantische Suche")}
+        hint={
+          settingsDraft.embeddingProvider === "openai"
+            ? t("Die Notizinhalte gehen dafür an OpenAI. Für lokale Suche ohne Datenabfluss: Ollama.")
+            : undefined
+        }
+      >
         <Select value={settingsDraft.embeddingProvider} onValueChange={(value) => updateDraft({ embeddingProvider: value as EmbeddingProvider, embeddingModel: defaultEmbeddingModels[value as EmbeddingProvider] ?? "" })}>
           <SelectTrigger className="w-full">
             <SelectValue />

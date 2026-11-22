@@ -54,6 +54,8 @@ export const englishTexts: Record<string, string> = {
   "Name „{0}“ ist bereits vergeben": "Name “{0}” is already taken",
   "Neue Session gestartet.": "New session started.",
   "Nicht autorisiert": "Not authorized",
+  "Unbekannter Fehler": "Unknown error",
+  "Der Endpunkt antwortet nicht mit JSON": "The endpoint did not answer with JSON",
   "Ungültige URL": "Invalid URL",
   "Nur http(s)-URLs sind erlaubt": "Only http(s) URLs are allowed",
   "Adresse nicht erlaubt (privates Netzwerk)": "Address not allowed (private network)",

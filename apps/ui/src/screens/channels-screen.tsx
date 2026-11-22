@@ -167,7 +167,11 @@ function ChannelEditor(props: {
       </div>
       <FormField
         label={t("Erlaubte Absender")}
-        hint={channelInput.type === "email" ? undefined : t("Unbekannte Absender erhalten ihre ID als Antwort.")}
+        hint={
+          channelInput.type === "email"
+            ? t("E-Mail-Adressen lassen sich fälschen. Harnold verwirft Mails, deren SPF/DKIM/DMARC-Prüfung fehlschlägt – ohne diese Header im Kopf der Mail bleibt ein Restrisiko.")
+            : t("Unbekannte Absender erhalten ihre ID als Antwort.")
+        }
       >
         <Textarea rows={3} className="font-mono text-[12.5px]" value={allowedSendersText} onChange={(event) => setAllowedSendersText(event.target.value)} />
       </FormField>

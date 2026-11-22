@@ -73,19 +73,27 @@ app.use("*", (context, next) => runWithLanguage(parseLanguage(context.req.header
 // that are same-origin (localhost family) may pass; non-browser clients (curl, agent programs,
 // Node's fetch) send no Origin/Sec-Fetch-Site header and stay allowed – the access token remains
 // the gate for those. This middleware also covers the /ws WebSocket handshake.
+// A local Core is only reachable through a loopback name. DNS rebinding makes the browser talk to
+// 127.0.0.1 while the Host header still says the attacker's domain – so the Host has to be checked too.
+const isLoopbackHostname = (hostname: string) => hostname === "::1" || hostname === "localhost" || /^127\./.test(hostname);
+const boundToLoopbackOnly = isLoopbackHostname(config.host.toLowerCase());
+
 function isTrustedBrowserRequest(context: { req: { header: (name: string) => string | undefined } }): boolean {
-  const origin = context.req.header("origin");
-  if (origin) {
-    try {
-      const host = new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-      if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1" && host !== config.host.toLowerCase()) return false;
-    } catch {
-      return false;
-    }
-  }
   const fetchSite = context.req.header("sec-fetch-site");
   if (fetchSite === "cross-site") return false;
-  return true;
+  const hostHeader = (context.req.header("host") ?? "").toLowerCase().replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  if (boundToLoopbackOnly && hostHeader && !isLoopbackHostname(hostHeader)) return false;
+  const origin = context.req.header("origin");
+  if (!origin) return true; // not sent by browsers for same-origin GETs and by non-browser clients
+  let originUrl: URL;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return false;
+  }
+  // Same origin as the request itself (also correct behind a reverse proxy in server mode).
+  if (originUrl.host.toLowerCase() === (context.req.header("host") ?? "").toLowerCase()) return true;
+  return isLoopbackHostname(originUrl.hostname.replace(/^\[|\]$/g, "").toLowerCase());
 }
 
 app.use("*", async (context, next) => {
@@ -103,7 +111,27 @@ app.use("*", async (context, next) => {
   return context.json({ error: t("Nicht autorisiert") }, 401);
 });
 
-app.onError((requestError, context) => context.json({ error: requestError.message }, 400));
+// Errors: the full error goes to the log; the client gets the message with filesystem paths
+// removed (a stack trace or an absolute path helps an attacker, not the user).
+const redactPaths = (message: string): string => {
+  // Absolute paths, and the home-relative form they turn into below, say nothing to the user.
+  return message
+    .split(os.homedir()).join("~")
+    .replace(/(?:^|[\s("'`=])((?:~|\/)[\w.@+-]*(?:\/[\w.@+-]+)+)/g, (_match, pathLike: string) => (pathLike.includes("/node_modules/") ? " node_modules/…" : " …"))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 400);
+};
+
+app.onError((requestError, context) => {
+  console.error("[api]", requestError);
+  // Validation errors are about the request itself – field names are safe and useful.
+  if (requestError instanceof z.ZodError) {
+    const issues = requestError.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`).join("; ");
+    return context.json({ error: redactPaths(issues) }, 400);
+  }
+  return context.json({ error: redactPaths(requestError.message) || t("Unbekannter Fehler") }, 400);
+});
 
 const requireProject = (projectId: string) => {
   const project = projectStore.get(projectId);
@@ -183,13 +211,15 @@ app.put("/api/projects/:projectId/canvas", async (context) => {
 app.get("/preview/:projectId/*", (context) => {
   const project = requireProject(context.req.param("projectId"));
   const relativePath = decodeURIComponent(context.req.path.split("/").slice(3).join("/"));
-  let absolutePath: string;
-  if (relativePath.startsWith(virtualDesignSystemsPrefix)) {
+  // Both resolvers follow no symlinks: resolving the file (not just the folder) is what makes this safe.
+  const resolvePreviewPath = (previewPath: string): string => {
+    if (!previewPath.startsWith(virtualDesignSystemsPrefix)) return resolveInsideProject(project, previewPath);
     // Linked design systems appear inside every project under _harnold/design-systems/<id>/
-    const [designSystemId, ...fileSegments] = relativePath.slice(virtualDesignSystemsPrefix.length).split("/");
-    absolutePath = designSystemStore.resolveFile(designSystemId, fileSegments.join("/"));
-  } else absolutePath = resolveInsideProject(project, relativePath);
-  if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory()) absolutePath = path.join(absolutePath, "index.html");
+    const [designSystemId, ...fileSegments] = previewPath.slice(virtualDesignSystemsPrefix.length).split("/");
+    return designSystemStore.resolveFile(designSystemId, fileSegments.join("/"));
+  };
+  let absolutePath = resolvePreviewPath(relativePath);
+  if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory()) absolutePath = resolvePreviewPath(`${relativePath.replace(/\/+$/, "")}/index.html`);
   if (!fs.existsSync(absolutePath)) return context.text("Nicht gefunden", 404);
   const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
   return context.body(fs.readFileSync(absolutePath), 200, { "content-type": contentType, "cache-control": "no-store" });

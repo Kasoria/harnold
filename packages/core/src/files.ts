@@ -2,20 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { eventHub } from "./events.ts";
 import type { Project } from "./db.ts";
+import { resolveInsideRoot } from "./paths.ts";
 import { t } from "./i18n.ts";
 
 const ignoredNames = new Set(["node_modules", ".git", "dist", ".next", ".DS_Store", ".turbo"]);
 
 export type FileNode = { name: string; path: string; type: "file" | "directory"; children?: FileNode[] };
 
-/** Resolves a project-relative path and refuses anything outside the project. */
+/** Resolves a project-relative path and refuses anything outside the project (symlinks included). */
 export function resolveInsideProject(project: Project, relativePath: string): string {
-  const absolutePath = path.resolve(project.path, relativePath.replace(/^\/+/, ""));
-  const projectRoot = path.resolve(project.path);
-  if (absolutePath !== projectRoot && !absolutePath.startsWith(projectRoot + path.sep)) {
-    throw new Error(t("Pfad liegt außerhalb des Projekts"));
-  }
-  return absolutePath;
+  return resolveInsideRoot(project.path, relativePath, new Error(t("Pfad liegt außerhalb des Projekts")));
 }
 
 export function readFileTree(project: Project, relativeDirectory = "", depthLimit = 8): FileNode[] {

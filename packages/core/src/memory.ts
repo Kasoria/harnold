@@ -8,6 +8,7 @@ import { eventHub } from "./events.ts";
 import { settingsStore } from "./settings.ts";
 import { voiceConfig } from "./voice.ts";
 import { environmentStore } from "./environments.ts";
+import { resolveInsideRoot } from "./paths.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -110,15 +111,14 @@ export const memoryRootDirectory = (scope: MemoryScope, project: Project | null)
 const rootDirectoryOf = memoryRootDirectory;
 const environmentKeyOf = (projectId: string | null) => (projectId ? (environmentStore.forProject(projectId)?.id ?? "") : "");
 
-/** Normalizes a note path (adds .md) and refuses anything outside its memory root. */
+/** Normalizes a note path (adds .md) and refuses anything outside its memory root (symlinks included). */
 export function resolveNotePath(scope: MemoryScope, project: Project | null, notePath: string): { absolutePath: string; relativePath: string } {
   let relativePath = notePath.trim().replace(/\\/g, "/").replace(/^\/+/, "");
   if (scope === "project" && relativePath === "HARNOLD.md" && project) return { absolutePath: path.join(project.path, "HARNOLD.md"), relativePath };
   if (!relativePath) throw new Error(t("Pfad fehlt"));
   if (!relativePath.toLowerCase().endsWith(".md")) relativePath += ".md";
   const rootDirectory = path.resolve(rootDirectoryOf(scope, project));
-  const absolutePath = path.resolve(rootDirectory, relativePath);
-  if (!absolutePath.startsWith(rootDirectory + path.sep)) throw new Error(t("Pfad liegt außerhalb des Memory-Ordners"));
+  const absolutePath = resolveInsideRoot(rootDirectory, relativePath, new Error(t("Pfad liegt außerhalb des Memory-Ordners")));
   return { absolutePath, relativePath: path.relative(rootDirectory, absolutePath).split(path.sep).join("/") };
 }
 

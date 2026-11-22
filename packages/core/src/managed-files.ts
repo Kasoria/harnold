@@ -6,6 +6,7 @@ import { environmentStore } from "./environments.ts";
 import { environmentMemoryDirectory, memoryConfig, type MemoryScope } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
 import { mimeTypeOf } from "./attachments.ts";
+import { resolveInsideRoot } from "./paths.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -76,9 +77,7 @@ function rootDirectoryOf(scope: MemoryScope, ownerId: string): string {
 export function resolveManagedFile(fileId: string): string {
   const [scope, ownerId, relativePath] = fileId.split("|");
   if (!["project", "environment", "workspace"].includes(scope) || !relativePath) throw new Error(t("Ungültige Datei"));
-  const rootDirectory = path.resolve(rootDirectoryOf(scope as MemoryScope, ownerId));
-  const absolutePath = path.resolve(rootDirectory, relativePath);
-  if (!absolutePath.startsWith(rootDirectory + path.sep)) throw new Error(t("Pfad liegt außerhalb"));
+  const absolutePath = resolveInsideRoot(rootDirectoryOf(scope as MemoryScope, ownerId), relativePath, new Error(t("Pfad liegt außerhalb")));
   if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) throw new Error(t("Datei nicht gefunden"));
   return absolutePath;
 }

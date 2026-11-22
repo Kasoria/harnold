@@ -15,6 +15,7 @@ PRD: `docs/PRD.md` · UI-Richtung: `docs/UI.md` (verbindlich für alle Screens)
 - Wenn sich genug angesammelt hat: Release vorschlagen und auf Ja warten (nie ungefragt veröffentlichen).
 - Ablauf: pushen, dann `pnpm --filter @harnold/desktop release <x.y.z> "Was ist neu"` (Version erhöhen, Notes kurz auf Deutsch), danach Versions-Commit pushen.
 - Signatur-Key: `~/.tauri/harnold.key` – nie ins Repo.
+- macOS-Codesignatur: Das Release signiert mit fester Identität (Developer ID, sonst Apple Development aus dem Schlüsselbund; `HARNOLD_SIGNING_IDENTITY=none` schaltet ab). Ohne feste Signatur erkennt macOS nach jedem Update die Ordner-Freigaben (TCC) nicht wieder und fragt neu.
 - Versionen nach SemVer (`MAJOR.MINOR.PATCH`):
   - PATCH: nur Fehlerbehebungen.
   - MINOR: neue Funktionen; PATCH beginnt wieder bei 0.

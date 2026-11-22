@@ -64,6 +64,8 @@ type ComposerProps = {
   /** Local folders added to this chat; without onAddDirectory the option is hidden (no session yet). */
   directories?: string[];
   onAddDirectory?: () => void;
+  /** Unlocks a folder for every session of the project (memory level "project"). */
+  onAddProjectFolder?: () => void;
   onRemoveDirectory?: (directory: string) => void;
 };
 
@@ -491,6 +493,11 @@ export function Composer(props: ComposerProps) {
                 <DropdownMenuItem onSelect={() => props.onAddDirectory?.()}>
                   <FolderPlus className="size-4" /> {t("Ordner hinzufügen")}
                 </DropdownMenuItem>
+                {props.onAddProjectFolder && (
+                  <DropdownMenuItem onSelect={() => props.onAddProjectFolder?.()}>
+                    <Folder className="size-4" /> {t("Ordner für das ganze Projekt")}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (

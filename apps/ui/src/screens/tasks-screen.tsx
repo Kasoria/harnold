@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { InlineMarkdown } from "@/components/inline-markdown";
+import { FolderChips } from "@/components/folder-chips";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
 import type { Channel, Project, Task, TaskInput, TaskRun, TeamAgent } from "@/types";
@@ -47,6 +48,7 @@ function emptyTaskInput(projectId: string): TaskInput {
     sessionMode: "new",
     cleanupAfterDays: null,
     contextResetRuns: null,
+    directories: [],
     notifyChannelId: null,
     notifyChatId: null,
   };
@@ -139,6 +141,17 @@ function TaskEditor(props: {
       </FormField>
       <FormField label={t("Zeitplan")}>
         <ScheduleEditor value={taskInput.schedule} onChange={(schedule) => updateInput({ schedule })} />
+      </FormField>
+      <FormField
+        label={t("Ordner")}
+        hint={t("Zusätzlich zum Projektordner und den Ordnern, die für das ganze Projekt freigegeben sind. Jeder Lauf bekommt sie automatisch.")}
+      >
+        <FolderChips
+          folders={taskInput.directories.map((folderPath) => ({ path: folderPath }))}
+          addTitle={t("Ordner für diesen Task hinzufügen")}
+          onAdd={(folderPath) => updateInput({ directories: [...taskInput.directories, folderPath] })}
+          onRemove={(folderPath) => updateInput({ directories: taskInput.directories.filter((existing) => existing !== folderPath) })}
+        />
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label={t("Rechte")}>
@@ -358,6 +371,7 @@ export function TasksScreen(props: TasksScreenProps) {
           sessionMode: selectedTask.sessionMode,
           cleanupAfterDays: selectedTask.cleanupAfterDays,
           contextResetRuns: selectedTask.contextResetRuns,
+          directories: selectedTask.directories ?? [],
           notifyChannelId: selectedTask.notifyChannelId,
           notifyChatId: selectedTask.notifyChatId,
         }}

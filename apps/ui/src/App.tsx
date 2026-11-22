@@ -270,6 +270,10 @@ export function App() {
           case "memory_changed":
             setMemoryChangeCounter((previous) => previous + 1);
             return;
+          case "folders_changed":
+            // Folders with access live in the memory levels – reload the memory screen.
+            setMemoryChangeCounter((previous) => previous + 1);
+            return;
           case "integrations_changed":
             setIntegrationsChangeCounter((previous) => previous + 1);
             return;

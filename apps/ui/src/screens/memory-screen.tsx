@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { ExternalLink, FileText, Loader2, Paperclip, Plus, Search, Settings2, Trash2 } from "lucide-react";
 import { api } from "@/api";
-import type { Environment, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, Project } from "@/types";
+import type { ContextFolders, Environment, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, Project } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
+import { FolderChips } from "@/components/folder-chips";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 import { toast } from "@/lib/toast";
 
@@ -87,6 +88,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const environmentName = props.environment?.name;
   const scopeLabelOf = (scope: MemoryScope) => (scope === "environment" && environmentName ? t("Umgebung „{0}“", environmentName) : scopeLabels[scope]);
   const [memoryFileList, setMemoryFileList] = useState<MemoryFile[]>([]);
+  const [folderContext, setFolderContext] = useState<ContextFolders>({ project: [], environment: [], workspace: [] });
   const [openedFile, setOpenedFile] = useState<MemoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -98,6 +100,27 @@ export function MemoryScreen(props: MemoryScreenProps) {
   }, [projectId, props.memoryChangeCounter, onError]);
 
   const reloadMemoryFiles = () => api.listMemoryFiles(projectId).then(setMemoryFileList).catch(onError);
+  useEffect(() => {
+    api.listFolders(projectId).then(setFolderContext).catch(onError);
+  }, [projectId, props.memoryChangeCounter, onError]);
+
+  /** Folders with access are stored per memory level; adding one unlocks it for that level (and every session below). */
+  const addFolder = async (scope: MemoryScope, folderPath: string) => {
+    try {
+      await api.addFolder(scope, folderPath, projectId);
+      setFolderContext(await api.listFolders(projectId));
+    } catch (folderError) {
+      onError(folderError);
+    }
+  };
+  const removeFolder = async (scope: MemoryScope, folderPath: string) => {
+    try {
+      await api.removeFolder(scope, folderPath, projectId);
+      setFolderContext(await api.listFolders(projectId));
+    } catch (folderError) {
+      onError(folderError);
+    }
+  };
   useEffect(() => {
     void reloadMemoryFiles();
     setOpenedFile(null);
@@ -247,6 +270,15 @@ export function MemoryScreen(props: MemoryScreenProps) {
     { scope: "workspace" as const, label: t("Workspace-Anweisungen (HARNOLD.md)") },
   ].filter(Boolean) as { scope: MemoryScope; label: string }[];
 
+  /** Folders of the levels in view (project → environment → workspace). */
+  const visibleFolders = [
+    ...(scopeFilter === "all" || scopeFilter === "project" ? folderContext.project.map((folder) => ({ ...folder, scope: "project" as const })) : []),
+    ...(scopeFilter === "all" || scopeFilter === "environment" ? folderContext.environment.map((folder) => ({ ...folder, scope: "environment" as const })) : []),
+    ...(scopeFilter === "all" || scopeFilter === "workspace" ? folderContext.workspace.map((folder) => ({ ...folder, scope: "workspace" as const })) : []),
+  ];
+  /** New folders go to the level in view, otherwise to the project. */
+  const addScope: MemoryScope = scopeFilter === "workspace" ? "workspace" : scopeFilter === "environment" && props.environment ? "environment" : projectId ? "project" : "workspace";
+
   const list = (
     <div className="flex h-full flex-col">
       <div className="grid gap-2 border-b p-2">
@@ -264,6 +296,21 @@ export function MemoryScreen(props: MemoryScreenProps) {
           value={scopeFilter}
           onValueChange={setScopeFilter}
         />
+        <div>
+          <div className="mb-1 flex items-center gap-1.5 px-0.5 text-[11px] font-medium text-muted-foreground">
+            {t("Ordner mit Zugriff")}
+            <span className="font-normal">{t("· gelten für jede Session")}</span>
+          </div>
+          <FolderChips
+            folders={visibleFolders}
+            addTitle={t("Ordner mit Zugriff hinzufügen")}
+            onAdd={(folderPath) => addFolder(addScope, folderPath)}
+            onRemove={(folderPath) => {
+              const folder = visibleFolders.find((candidate) => candidate.path === folderPath);
+              if (folder?.scope) return removeFolder(folder.scope, folderPath);
+            }}
+          />
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {instructionFiles.map((instructionFile) => (

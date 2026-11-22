@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { signingIdentity } from "./signing.ts";
 
 const releaseRepository = "Kasoria/harnold";
 const desktopDirectory = path.resolve(import.meta.dirname, "..");
@@ -50,7 +51,15 @@ const architecture = process.arch === "arm64" ? "aarch64" : "x86_64";
 setVersions();
 // Updater artifacts only for releases, so a plain build:app works without the key.
 run("npm", ["run", "prepare-bundle"]);
-run("npx", ["tauri", "build", "--config", JSON.stringify({ bundle: { createUpdaterArtifacts: true } })], { CI: "true", ...signingEnvironment() });
+// Feste Signatur: sonst verliert macOS bei jedem Update die Ordner-Freigaben und fragt wieder nach.
+const identity = signingIdentity();
+if (identity) console.log(`> Signatur: ${identity}`);
+else console.warn("! Keine Signatur-Identität gefunden – macOS fragt nach jedem Update erneut nach Ordner-Zugriffen.");
+run(
+  "npx",
+  ["tauri", "build", "--config", JSON.stringify({ bundle: { createUpdaterArtifacts: true, ...(identity ? { macOS: { signingIdentity: identity } } : {}) } })],
+  { CI: "true", ...signingEnvironment() },
+);
 
 const updateArchive = path.join(bundleDirectory, "macos/Harnold.app.tar.gz");
 const releaseDirectory = path.join(bundleDirectory, "release");

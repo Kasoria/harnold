@@ -75,6 +75,7 @@ Heute: Artifact erstellen → teilen → Claude Code öffnen → Ordner wählen 
 - **Entscheidung:** Markdown-Dateien sind die Wahrheit (`memory/`, Obsidian-kompatibel, externer Vault anbindbar). Daneben ein SQLite-Index (Volltext + Vektoren), jederzeit aus den Dateien neu aufbaubar.
 - Begründung: lesbar, git-fähig, portabel; Index sorgt für schnelle Suche und skaliert.
 - Ebenen: Workspace-Memory (Nutzer) + Projekt-Memory (`HARNOLD.md`, kompatibel mit `CLAUDE.md`).
+- **Ordner mit Zugriff** je Ebene (Projekt, Umgebung, Workspace): einmal freigegeben, gelten sie für jede Session und jeden Task-Lauf dieses Projekts. Tasks können zusätzlich eigene Ordner bekommen.
 
 ## UI
 

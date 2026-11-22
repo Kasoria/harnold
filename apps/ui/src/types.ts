@@ -66,6 +66,7 @@ export type ServerEvent =
   | { type: "files_changed"; projectId: string; paths: string[] }
   | { type: "sessions_changed"; projectId: string }
   | { type: "tasks_changed" }
+  | { type: "folders_changed" }
   /** Task results changed (e.g. removed) – reload the today overview. */
   | { type: "today_changed" }
   | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
@@ -99,6 +100,19 @@ export type CanvasElement = {
 
 export type CanvasDocument = { version: 1; elements: CanvasElement[] };
 
+/** Folder Harnold may work in, on one memory level (project, environment, workspace). */
+export type ContextFolder = {
+  scope: MemoryScope;
+  /** Project id, environment id, or "" for the workspace. */
+  ownerId: string;
+  path: string;
+  label: string;
+  exists: boolean;
+  createdAt: number;
+};
+
+export type ContextFolders = { project: ContextFolder[]; environment: ContextFolder[]; workspace: ContextFolder[] };
+
 export type TaskRun = {
   id: string;
   taskId: string;
@@ -125,6 +139,8 @@ export type TaskInput = {
   cleanupAfterDays: number | null;
   /** "continue" mode, opt-in: fresh agent context after this many runs (history stays). */
   contextResetRuns: number | null;
+  /** Folders the runs may work in, besides the project folder and the project's folder context. */
+  directories: string[];
   notifyChannelId: string | null;
   notifyChatId: string | null;
 };

@@ -394,8 +394,9 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           permissionMode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan"]).optional(),
           agentName: z.string().nullable().optional().describe("Name aus team_list; null = Standard-Agent"),
           sessionMode: z.enum(["new", "continue"]).optional().describe("new: neue Session je Lauf, continue: immer dieselbe Session"),
+          directories: z.array(z.string()).optional().describe("Ordner, in denen die Läufe arbeiten dürfen (zusätzlich zum Projektordner)"),
         },
-        safely(({ taskId, name, prompt, schedule, projectId, enabled, permissionMode, agentName, sessionMode }) => {
+        safely(({ taskId, name, prompt, schedule, projectId, enabled, permissionMode, agentName, sessionMode, directories }) => {
           const existingTask = taskId ? taskStore.get(taskId) : undefined;
           if (taskId && !existingTask) return errorResult("Task nicht gefunden");
           const targetProjectId = projectId ?? existingTask?.projectId ?? project.id;
@@ -420,6 +421,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
               sessionMode: sessionMode ?? existingTask?.sessionMode ?? "new",
               cleanupAfterDays: existingTask?.cleanupAfterDays ?? null,
               contextResetRuns: existingTask?.contextResetRuns ?? null,
+              directories: directories ?? existingTask?.directories ?? [],
               notifyChannelId: existingTask?.notifyChannelId ?? null,
               notifyChatId: existingTask?.notifyChatId ?? null,
             },

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { agentMessageStore, type ChatItemPayload } from "../../db.ts";
 import { resolveInsideProject } from "../../files.ts";
 import { designSystemsDirectory } from "../../design-system.ts";
@@ -13,6 +14,8 @@ import { connectMcpTools, type McpToolHandle } from "./mcp-tools.ts";
 import type { PermissionMode, TurnEvent, TurnInput } from "../types.ts";
 import { parseNativeModel } from "./settings.ts";
 import { agentExtensions, type ExtensionSkill } from "../../agent-extensions.ts";
+import { folderStore } from "../../folders.ts";
+import { eventHub } from "../../events.ts";
 
 /** History is stored with image paths, not image bytes; bytes are read per request. */
 type StoredPart = ContentPart | { type: "image_file"; mimeType: string; path: string };
@@ -87,6 +90,18 @@ function trimmed(messages: StoredMessage[]): StoredMessage[] | null {
   }
   return result;
 }
+
+/** Path-like tool inputs – the value the agent wants to touch outside the allowed folders. */
+const pathArgumentsOf = (toolInput: Record<string, unknown>): string[] =>
+  ["file_path", "path", "directory", "folder", "cwd", "glob_path"]
+    .map((key) => toolInput[key])
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+
+/** Too broad to hand out: the whole disk or the entire home folder. */
+const isTooBroadFolder = (folderPath: string) => folderPath === "/" || folderPath === os.homedir();
+
+const isInside = (candidatePath: string, rootDirectory: string) =>
+  candidatePath === rootDirectory || candidatePath.startsWith(rootDirectory.endsWith("/") ? rootDirectory : `${rootDirectory}/`);
 
 type Verdict = "allow" | "ask" | "deny";
 function verdictFor(risk: ToolRisk, mode: PermissionMode): Verdict {
@@ -222,6 +237,22 @@ export async function* runNativeTurn(input: TurnInput): AsyncGenerator<TurnEvent
           ? "deny"
           : "ask";
     if (verdict === "deny") return { content: "Im Planungsmodus nicht erlaubt.", isError: true };
+    // A path outside the project (a customer folder, another repo …): ask once, then remember the folder.
+    const outsideFolder = nativeTool
+      ? pathArgumentsOf(call.input)
+          .map((candidatePath) => path.resolve(cwd, candidatePath))
+          .find((candidatePath) => !toolContext.allowedRoots.some((rootDirectory) => isInside(candidatePath, rootDirectory)))
+      : undefined;
+    const folderOfOutsidePath = outsideFolder && (fs.statSync(outsideFolder, { throwIfNoEntry: false })?.isDirectory() ? outsideFolder : path.dirname(outsideFolder));
+    if (outsideFolder && folderOfOutsidePath && !isTooBroadFolder(folderOfOutsidePath)) {
+      const folderToAllow = folderOfOutsidePath;
+      const decision = await input.requestPermission("FolderAccess", { path: folderToAllow }, input.signal);
+      if (decision.behavior === "deny") return { content: `Zugriff auf ${folderToAllow} nicht erlaubt.`, isError: true };
+      toolContext.allowedRoots.push(folderToAllow);
+      // Freigegeben ist gespeichert: der Ordner gehört ab jetzt zum Projekt-Kontext.
+      folderStore.add("project", input.project.id, folderToAllow);
+      eventHub.publish({ type: "folders_changed" });
+    }
     let toolInput = call.input;
     if (verdict === "ask") {
       const decision = await input.requestPermission(mcpTool?.qualifiedName ?? call.name, call.input, input.signal);

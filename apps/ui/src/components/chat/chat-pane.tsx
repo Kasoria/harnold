@@ -36,6 +36,7 @@ import type { InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
 import { api } from "@/api";
 import { pickFolder } from "@/lib/folder-picker";
+import { toast } from "@/lib/toast";
 
 type ChatPaneProps = {
   /** Team of this project; empty = no agent picker. */
@@ -136,6 +137,17 @@ export function ChatPane(props: ChatPaneProps) {
     if (!props.session) return;
     const directory = typedPath || (await pickFolder(t("Ordner zum Chat hinzufügen")).catch((pickError) => (props.onError(pickError), null)));
     if (directory) saveDirectories([...(props.session.directories ?? []), directory]);
+  };
+
+  /** A folder for the whole project: memory level "project", so every session and every task run sees it. */
+  const addProjectFolder = async () => {
+    if (!props.session) return;
+    const directory = await pickFolder(t("Ordner für das ganze Projekt freigeben")).catch((pickError) => (props.onError(pickError), null));
+    if (!directory) return;
+    await api
+      .addFolder("project", directory, props.session.projectId)
+      .then(() => toast.success(t("Ordner „{0}“ gehört jetzt zum Projekt", directory.split(/[\\/]/).filter(Boolean).at(-1) ?? directory)))
+      .catch(props.onError);
   };
 
   /** Slash commands Harnold handles itself; false = send to the agent. */
@@ -511,12 +523,23 @@ export function ChatPane(props: ChatPaneProps) {
               <div className="flex items-center gap-2 text-[13px]">
                 <ShieldAlert className="size-4 text-status-waiting" />
                 <span>
-                  <strong className="font-medium">{permissionRequest.toolName}</strong> {t("möchte ausgeführt werden")}
+                  {permissionRequest.toolName === "FolderAccess" ? (
+                    t("Zugriff auf einen Ordner außerhalb des Projekts")
+                  ) : (
+                    <>
+                      <strong className="font-medium">{permissionRequest.toolName}</strong> {t("möchte ausgeführt werden")}
+                    </>
+                  )}
                 </span>
               </div>
               <div className="mt-1.5 truncate font-mono text-[12px] text-muted-foreground">
-                {summarizeToolInput(permissionRequest.input) || JSON.stringify(permissionRequest.input).slice(0, 200)}
+                {permissionRequest.toolName === "FolderAccess"
+                  ? String((permissionRequest.input as { path?: string } | null)?.path ?? "")
+                  : summarizeToolInput(permissionRequest.input) || JSON.stringify(permissionRequest.input).slice(0, 200)}
               </div>
+              {permissionRequest.toolName === "FolderAccess" && (
+                <p className="mt-1 text-[11.5px] text-muted-foreground">{t("Erlauben merkt sich den Ordner für dieses Projekt – danach wird nicht wieder gefragt.")}</p>
+              )}
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => props.onAnswerPermission(permissionRequest.requestId, true)}>
                   {t("Erlauben")}
@@ -613,6 +636,7 @@ export function ChatPane(props: ChatPaneProps) {
             }
             directories={props.session?.directories}
             onAddDirectory={props.session ? () => void addDirectory() : undefined}
+            onAddProjectFolder={props.session ? () => void addProjectFolder() : undefined}
             onRemoveDirectory={(directory) => saveDirectories((props.session?.directories ?? []).filter((existing) => existing !== directory))}
             footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}
           />

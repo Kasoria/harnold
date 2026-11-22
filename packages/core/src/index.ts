@@ -16,6 +16,7 @@ import { agentExtensions } from "./agent-extensions.ts";
 import { readFileTree, resolveInsideProject, unwatchProject, watchProject } from "./files.ts";
 import { canvasDocumentSchema, readCanvas, writeCanvas } from "./canvas.ts";
 import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unscheduleTask } from "./tasks.ts";
+import { folderStore } from "./folders.ts";
 import { channelStore, toPublicChannel } from "./channels/store.ts";
 import { channelManager } from "./channels/manager.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
@@ -166,6 +167,7 @@ app.delete("/api/projects/:projectId", (context) => {
     taskStore.remove(task.id);
   }
   eventHub.publish({ type: "tasks_changed" });
+  folderStore.removeOwner("project", context.req.param("projectId"));
   projectStore.remove(context.req.param("projectId"));
   return context.json({ ok: true });
 });
@@ -327,6 +329,44 @@ app.patch("/api/sessions/:sessionId", async (context) => {
   return context.json({ ok: true, ...moveResult });
 });
 
+// --- Folders with access (memory levels) ---
+const folderScopeSchema = z.enum(["project", "environment", "workspace"]);
+
+/** Owner of a folder level: project id, environment id, or "" for the workspace. */
+function folderOwnerId(scope: "project" | "environment" | "workspace", projectId: string | null): string {
+  if (scope === "workspace") return "";
+  const project = requireProject(projectId ?? "");
+  if (scope === "project") return project.id;
+  const environment = environmentStore.forProject(project.id);
+  if (!environment) throw new Error(t("Projekt gehört zu keiner Umgebung"));
+  return environment.id;
+}
+
+function foldersForProject(projectId: string | null) {
+  const environment = projectId ? environmentStore.forProject(projectId) : undefined;
+  return {
+    project: projectId ? folderStore.list("project", projectId) : [],
+    environment: environment ? folderStore.list("environment", environment.id) : [],
+    workspace: folderStore.list("workspace", ""),
+  };
+}
+
+app.get("/api/folders", (context) => context.json(foldersForProject(context.req.query("projectId") || null)));
+
+app.post("/api/folders", async (context) => {
+  const body = z.object({ scope: folderScopeSchema, projectId: z.string().nullish(), path: z.string().trim().min(1) }).parse(await context.req.json());
+  const addedFolder = folderStore.add(body.scope, folderOwnerId(body.scope, body.projectId ?? null), body.path);
+  eventHub.publish({ type: "folders_changed" });
+  return context.json(addedFolder);
+});
+
+app.delete("/api/folders", (context) => {
+  const scope = folderScopeSchema.parse(context.req.query("scope"));
+  folderStore.remove(scope, folderOwnerId(scope, context.req.query("projectId") || null), context.req.query("path") ?? "");
+  eventHub.publish({ type: "folders_changed" });
+  return context.json({ ok: true });
+});
+
 app.post("/api/sessions/:sessionId/clear", (context) => {
   sessionActions.clear(context.req.param("sessionId"));
   return context.json({ ok: true });
@@ -468,6 +508,7 @@ const taskInputSchema = z.object({
   sessionMode: z.enum(["new", "continue"]).default("new"),
   cleanupAfterDays: z.number().int().min(1).max(3650).nullable().default(null),
   contextResetRuns: z.number().int().min(1).max(10000).nullable().default(null),
+  directories: z.array(z.string().trim().min(1)).max(20).default([]),
   notifyChannelId: z.string().nullable(),
   notifyChatId: z.string().nullable(),
 });
@@ -754,6 +795,7 @@ app.patch("/api/environments/:environmentId", async (context) => {
 app.delete("/api/environments/:environmentId", (context) => {
   for (const agent of teamStore.list().filter((candidate) => candidate.environmentId === context.req.param("environmentId"))) teamStore.remove(agent.id);
   environmentStore.remove(context.req.param("environmentId"));
+  folderStore.removeOwner("environment", context.req.param("environmentId"));
   return context.json({ ok: true });
 });
 app.post("/api/environments/:environmentId/check", async (context) => context.json(await environmentStore.checkAccounts(context.req.param("environmentId"))));

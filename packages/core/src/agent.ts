@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload } from "./db.ts";
+import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload, type Project, type Session } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { memoryNotes } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
@@ -8,15 +8,21 @@ import { environmentStore } from "./environments.ts";
 import { workspaceInstructions } from "./workspace-tools.ts";
 import { memoryInstructions } from "./memory-tools.ts";
 import { mediaInstructions } from "./media-tools.ts";
+import { folderStore } from "./folders.ts";
 import { mentionHintFor, teamContextFor, teamStore } from "./agents.ts";
 import { agentBackends } from "./backends/index.ts";
 import type { AgentBackend, PermissionDecision, PermissionMode, TurnContext, TurnEvent } from "./backends/types.ts";
 import type { AgentBackendId } from "./agent-backend-settings.ts";
 import { t } from "./i18n.ts";
 
-/** Tells the agent about the extra folders of this chat (all agent programs get access to them). */
-const chatDirectoriesContext = (directories: string[]) =>
-  directories.length ? `${t("Zusätzliche Ordner in diesem Chat (du darfst darin lesen und arbeiten):")}\n${directories.map((directory) => `- ${directory}`).join("\n")}` : "";
+/** Chat folders plus the project's folder context (memory levels) – every agent program gets access to them. */
+const sessionDirectories = (session: Session): string[] => [...new Set([...session.directories, ...folderStore.pathsForProject(session.projectId)])];
+
+/** Tells the agent which folders beyond the project folder it may work in. */
+const whereAllowedContext = (directories: string[], project: Project) =>
+  directories.length
+    ? `${t("Zusätzliche Ordner (du darfst darin lesen und arbeiten):")}\n${directories.map((directory) => `- ${directory}`).join("\n")}`
+    : `${t("Du arbeitest nur im Projektordner:")} ${project.path}`;
 
 export type { ContextBreakdown } from "./backends/types.ts";
 import type { ContextBreakdown } from "./backends/types.ts";
@@ -99,18 +105,20 @@ async function turnContextFor(sessionId: string, permissionMode: PermissionMode,
   const backend = agentBackends.get(backendId);
   const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
   const agentSetup = await environmentStore.agentSetupFor(project.id, backendId);
+  // Folders of the project's context (chat + memory levels) apply to every turn, whichever backend runs.
+  const directories = sessionDirectories(session);
   const fitting = (candidate?: string | null) => (candidate && modelFitsBackend(candidate, backendId) ? candidate : undefined);
   return {
     backend,
     context: {
       sessionId,
-      session,
+      session: { ...session, directories },
       project,
       teamAgentId: session.agentId,
       permissionMode,
       model: fitting(teamAgent?.model) || fitting(model) || fitting(agentSetup.model) || backend.defaultModel(),
       env: agentSetup.env,
-      systemPromptAppend: [harnoldSystemAppend(), chatDirectoriesContext(session.directories), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
+      systemPromptAppend: [harnoldSystemAppend(), whereAllowedContext(directories, project), folderStore.contextFor(project), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
         .filter(Boolean)
         .join("\n\n"),
     },

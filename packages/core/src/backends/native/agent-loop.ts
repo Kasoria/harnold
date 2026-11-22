@@ -149,7 +149,7 @@ export async function* runNativeTurn(input: TurnInput): AsyncGenerator<TurnEvent
   const projectEnvironment = environmentStore.forProject(input.project.id);
   const toolContext: NativeToolContext = {
     cwd,
-    allowedRoots: [cwd, designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : []), ...agentExtensions.readableRoots(input.project)],
+    allowedRoots: [cwd, designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : []), ...agentExtensions.readableRoots(input.project), ...input.session.directories],
     env: input.env,
     signal: input.signal,
     permissionMode: input.permissionMode,

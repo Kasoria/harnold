@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { CustomProvider } from "@/types";
+import type { AgentBackendId, CodexStatus, CustomProvider, ProvidersView } from "@/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
@@ -26,6 +26,14 @@ export const modelsForNative = (providers: Pick<CustomProvider, "id" | "name" | 
   providers.filter((provider) => provider.ready).flatMap((provider) => provider.models.map((model) => ({ value: `${provider.id}::${model}`, label: `${provider.name} · ${model}` })));
 /** One provider's models in the Harnold-Agent format. */
 export const nativeModelsOf = (provider: Pick<CustomProvider, "id" | "name" | "models" | "ready">): ModelOption[] => modelsForNative([{ ...provider, ready: true }]);
+
+/** Models one agent program offers: Codex's list, every provider for the Harnold-Agent, else Claude (or the active Anthropic provider). */
+export function modelsForBackend(backendId: AgentBackendId | undefined, providers: ProvidersView | null, codex: CodexStatus | null): ModelOption[] {
+  if (backendId === "codex") return modelsForCodex(codex?.models ?? []);
+  if (backendId === "native") return modelsForNative(providers?.providers ?? []);
+  const activeProvider = providers?.providers.find((provider) => provider.id === providers.activeId);
+  return modelsForProvider(activeProvider?.protocol === "anthropic" ? activeProvider : null);
+}
 
 // Models of the workspace's active provider – shared by every picker that doesn't bring its own list.
 let activeModels: ModelOption[] = claudeModels;

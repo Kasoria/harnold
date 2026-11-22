@@ -3,7 +3,6 @@ import type { AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, I
 import { api } from "@/api";
 import { Brain, Image as ImageIcon, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { AgentConnection } from "@/components/agent-connection";
-import { ModelSelect } from "@/components/model-select";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
@@ -229,19 +228,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
                   onCodexChange={props.onCodexChange}
                   onClaudeStatusChange={props.onClaudeStatusChange}
                   onProvidersChange={props.onProvidersChange}
+                  onDefaultModelChange={props.onDefaultModelChange}
                   onError={props.onError}
                 />
-                <FormField label={t("Modell")}>
-                  <ModelSelect
-                    value={props.defaultModel}
-                    onChange={(model) =>
-                      api
-                        .saveDefaultModel(model)
-                        .then(({ defaultModel }) => props.onDefaultModelChange(defaultModel))
-                        .catch(props.onError)
-                    }
-                  />
-                </FormField>
               </div>
             ) : activeSection.value === "general" ? (
           <div key="general" className="grid animate-in gap-5 fade-in duration-200">

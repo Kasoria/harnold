@@ -18,6 +18,8 @@ export type Session = {
   backendId?: AgentBackendId | null;
   /** Created by this task; shown as one row per task, not per run. */
   taskId: string | null;
+  /** Extra local folders the agent may use in this chat (absolute paths). */
+  directories?: string[];
 };
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
 

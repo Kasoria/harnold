@@ -18,7 +18,7 @@ import { DesignSystemsScreen } from "@/screens/design-systems-screen";
 import { EnvironmentsScreen } from "@/screens/environments-screen";
 import { TodayScreen } from "@/screens/today-screen";
 import { AgentOnboarding } from "@/components/agent-connection";
-import { modelsForCodex, modelsForNative, modelsForProvider, setActiveModels } from "@/components/model-select";
+import { modelsForBackend, setActiveModels } from "@/components/model-select";
 import { setAgentBackendsView } from "@/lib/agent-backends";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
@@ -325,15 +325,7 @@ export function App() {
 
   // The model pickers list the models of the active provider.
   useEffect(() => {
-    const activeProvider = providers?.providers.find((provider) => provider.id === providers.activeId);
-    const activeBackendId = agentBackends?.activeId;
-    setActiveModels(
-      activeBackendId === "codex"
-        ? modelsForCodex(codexStatus?.models ?? [])
-        : activeBackendId === "native"
-          ? modelsForNative(providers?.providers ?? [])
-          : modelsForProvider(activeProvider?.protocol === "anthropic" ? activeProvider : null),
-    );
+    setActiveModels(modelsForBackend(agentBackends?.activeId, providers, codexStatus));
     setAgentBackendsView(agentBackends);
   }, [providers, agentBackends, codexStatus]);
 

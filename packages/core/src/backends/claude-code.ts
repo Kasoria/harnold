@@ -131,7 +131,8 @@ async function sharedAgentOptions(context: TurnContext): Promise<Options> {
     env: context.env,
     // All design systems are open to the agent (it may create/link one mid-turn).
     // Plus workspace and environment memory, so the agent can read files stored there.
-    additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : [])],
+    // Plus the folders the user added to this chat.
+    additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : []), ...context.session.directories],
     model: context.model,
     thinking: { type: "adaptive", display: "summarized" },
     permissionMode,

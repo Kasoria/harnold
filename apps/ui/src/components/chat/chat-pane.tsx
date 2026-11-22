@@ -34,6 +34,8 @@ import { useSessionBackend } from "@/lib/agent-backends";
 import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
+import { api } from "@/api";
+import { pickFolder } from "@/lib/folder-picker";
 
 type ChatPaneProps = {
   /** Team of this project; empty = no agent picker. */
@@ -123,6 +125,15 @@ export function ChatPane(props: ChatPaneProps) {
     if (await confirmAction({ title: t("Kontext leeren?"), description: t("Verlauf und Agent-Kontext dieser Session werden zurückgesetzt."), confirmLabel: t("Leeren") })) props.onClearSession();
   };
 
+  const saveDirectories = (directories: string[]) => {
+    if (props.session) void api.updateSession(props.session.id, { directories }).catch(props.onError);
+  };
+  const addDirectory = async (typedPath?: string) => {
+    if (!props.session) return;
+    const directory = typedPath || (await pickFolder(t("Ordner zum Chat hinzufügen")).catch((pickError) => (props.onError(pickError), null)));
+    if (directory) saveDirectories([...(props.session.directories ?? []), directory]);
+  };
+
   /** Slash commands Harnold handles itself; false = send to the agent. */
   const runSessionCommand = (commandName: string, commandArguments: string): boolean => {
     switch (commandName) {
@@ -139,6 +150,9 @@ export function ChatPane(props: ChatPaneProps) {
         return true;
       case "move":
         if (props.session) setMoveDialogOpen(true);
+        return true;
+      case "add-dir":
+        void addDirectory(commandArguments || undefined);
         return true;
       default:
         return false;
@@ -542,6 +556,9 @@ export function ChatPane(props: ChatPaneProps) {
               />
               )
             }
+            directories={props.session?.directories}
+            onAddDirectory={props.session ? () => void addDirectory() : undefined}
+            onRemoveDirectory={(directory) => saveDirectories((props.session?.directories ?? []).filter((existing) => existing !== directory))}
             footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}
           />
         </div>

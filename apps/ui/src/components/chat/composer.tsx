@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Loader2, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
+import { ArrowUp, FileUp, Folder, FolderPlus, Loader2, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
 import type { AgentCommand, Attachment, PermissionMode, TeamAgent } from "@/types";
 import { AttachmentChip } from "./attachment-views";
 import { api } from "@/api";
@@ -7,6 +7,7 @@ import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
@@ -24,6 +25,7 @@ const harnoldCommands: ComposerCommand[] = [
   { name: "new", description: t("Neue Session"), argumentHint: "", source: "harnold" },
   { name: "rename", description: t("Session umbenennen"), argumentHint: "<Titel>", source: "harnold" },
   { name: "move", description: t("In anderes Projekt / andere Umgebung verschieben"), argumentHint: "", source: "harnold" },
+  { name: "add-dir", description: t("Lokalen Ordner zum Chat hinzufügen"), argumentHint: "[Pfad]", source: "harnold" },
   { name: "model", description: t("Modell wechseln"), argumentHint: "", source: "harnold" },
   { name: "plan", description: t("Plan-Modus an/aus"), argumentHint: "", source: "harnold" },
 ];
@@ -59,6 +61,10 @@ type ComposerProps = {
   footerStart?: React.ReactNode;
   /** Context window indicator; gets the model picked here (window size depends on it). */
   contextIndicator?: (model: string) => React.ReactNode;
+  /** Local folders added to this chat; without onAddDirectory the option is hidden (no session yet). */
+  directories?: string[];
+  onAddDirectory?: () => void;
+  onRemoveDirectory?: (directory: string) => void;
 };
 
 /** A file in the composer: uploads right away, is sent with the next message. */
@@ -298,6 +304,21 @@ export function Composer(props: ComposerProps) {
           "relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40",
         )}
       >
+        {(props.directories?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+            {props.directories?.map((directory) => (
+              <span key={directory} title={directory} className="flex max-w-64 items-center gap-1.5 rounded-md border bg-foreground/[0.03] py-0.5 pr-1 pl-2 text-[12px]">
+                <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{directory.split(/[\\/]/).filter(Boolean).at(-1) ?? directory}</span>
+                {props.onRemoveDirectory && (
+                  <button type="button" className="rounded p-0.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground" aria-label={t("Ordner entfernen")} onClick={() => props.onRemoveDirectory?.(directory)}>
+                    <X className="size-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         {pendingAttachments.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
             {pendingAttachments.map((pending) => (
@@ -373,9 +394,27 @@ export function Composer(props: ComposerProps) {
               changeEvent.target.value = "";
             }}
           />
-          <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label={t("Datei anhängen")} onClick={() => fileInputRef.current?.click()}>
-            <Paperclip className="size-4" />
-          </Button>
+          {props.onAddDirectory ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label={t("Hinzufügen")}>
+                  <Paperclip className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top">
+                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                  <FileUp className="size-4" /> {t("Datei anhängen")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => props.onAddDirectory?.()}>
+                  <FolderPlus className="size-4" /> {t("Ordner hinzufügen")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label={t("Datei anhängen")} onClick={() => fileInputRef.current?.click()}>
+              <Paperclip className="size-4" />
+            </Button>
+          )}
           {voiceRecorder.recording ? (
             <div className="flex min-h-8 flex-1 animate-in items-center gap-3 py-1.5 fade-in duration-200">
               <span className="relative flex size-2.5">

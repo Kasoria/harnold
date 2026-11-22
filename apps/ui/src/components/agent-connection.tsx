@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bot, CheckCircle2, ExternalLink, KeyRound, Loader2, LogIn, LogOut, Sparkles } from "lucide-react";
 import { api } from "@/api";
 import type { AgentBackendId, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView } from "@/types";
@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { AgentRuntimeSection } from "@/components/claude-connection";
 import { NativeProviders, ProviderConnection } from "@/components/provider-connection";
 import { HarnoldSymbol } from "@/components/harnold-logo";
+import { ModelSelect, modelsForBackend } from "@/components/model-select";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
@@ -22,6 +23,8 @@ export type AgentConnectionProps = {
   onCodexChange: (codex: CodexStatus) => void;
   onClaudeStatusChange: (status: ClaudeAuthStatus) => void;
   onProvidersChange: (providers: ProvidersView) => void;
+  /** The active agent's default model changed (settings keep it in sync). */
+  onDefaultModelChange?: (defaultModel: string) => void;
   onError: (unknownError: unknown) => void;
 };
 
@@ -171,10 +174,28 @@ export function AgentConnection(props: AgentConnectionProps) {
   const { backends, onBackendsChange, onError } = props;
   const [selectedId, setSelectedId] = useState<AgentBackendId | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!backends) return <div className="h-40" />;
+  const [shownModel, setShownModel] = useState<string | null>(null);
+  const shownId = selectedId ?? backends?.activeId;
 
-  const shownId = selectedId ?? backends.activeId;
+  useEffect(() => {
+    if (!shownId) return;
+    setShownModel(null);
+    api.readDefaultModel(shownId).then(({ defaultModel }) => setShownModel(defaultModel)).catch(onError);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- onError is a fresh function each render
+  }, [shownId]);
+
+  if (!backends || !shownId) return <div className="h-40" />;
   const shownBackend = backends.backends.find((backend) => backend.id === shownId);
+  const shownModels = modelsForBackend(shownId, props.providers, props.codex);
+
+  const saveModel = (model: string) =>
+    api
+      .saveDefaultModel(model, shownId)
+      .then(({ defaultModel }) => {
+        setShownModel(defaultModel);
+        if (shownId === backends.activeId) props.onDefaultModelChange?.(defaultModel);
+      })
+      .catch(onError);
 
   const activate = async (backendId: AgentBackendId) => {
     setBusy(true);
@@ -251,6 +272,12 @@ export function AgentConnection(props: AgentConnectionProps) {
           }}
           onError={onError}
         />
+      )}
+
+      {shownModel !== null && shownModels.length > 0 && (
+        <FormField label={t("Standardmodell von {0}", shownBackend?.name ?? "")}>
+          <ModelSelect models={shownModels} value={shownModel} onChange={(model) => void saveModel(model)} />
+        </FormField>
       )}
     </div>
   );

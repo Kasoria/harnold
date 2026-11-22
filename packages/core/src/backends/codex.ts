@@ -118,7 +118,7 @@ export const codexBackend: AgentBackend = {
       workingDirectory: input.project.path,
       skipGitRepoCheck: true,
       networkAccessEnabled: input.permissionMode === "bypassPermissions",
-      additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : [])],
+      additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : []), ...input.session.directories],
     };
     const thread = input.resumeSessionId ? codex.resumeThread(input.resumeSessionId, threadOptions) : codex.startThread(threadOptions);
 

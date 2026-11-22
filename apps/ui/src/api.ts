@@ -32,7 +32,7 @@ const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
   new URLSearchParams({ scope: noteRef.scope, projectId: noteRef.projectId ?? "", path: noteRef.path }).toString();
 
 export const api = {
-  updateSession: (sessionId: string, changes: { title?: string; projectId?: string }) => request<{ ok: true; deferred: boolean }>("PATCH", `/api/sessions/${sessionId}`, changes),
+  updateSession: (sessionId: string, changes: { title?: string; projectId?: string; directories?: string[] }) => request<{ ok: true; deferred: boolean }>("PATCH", `/api/sessions/${sessionId}`, changes),
   clearSession: (sessionId: string) => request<{ ok: true }>("POST", `/api/sessions/${sessionId}/clear`),
   listAgentCommands: (projectId: string) => request<AgentCommand[]>("GET", `/api/projects/${projectId}/commands`),
   readToday: () => request<TodayOverview>("GET", "/api/today"),
@@ -125,8 +125,9 @@ export const api = {
   /** environmentId: the own Claude login of that environment instead of the workspace one. */
   /** Language of Core messages (errors, channel replies). */
   saveLanguage: (language: string) => request<{ ok: true }>("PUT", "/api/settings/language", { language }),
-  readDefaultModel: () => request<{ defaultModel: string }>("GET", "/api/settings/model"),
-  saveDefaultModel: (defaultModel: string) => request<{ defaultModel: string }>("PUT", "/api/settings/model", { defaultModel }),
+  readDefaultModel: (backendId?: AgentBackendId) => request<{ defaultModel: string }>("GET", `/api/settings/model${backendId ? `?backend=${backendId}` : ""}`),
+  saveDefaultModel: (defaultModel: string, backendId?: AgentBackendId) =>
+    request<{ defaultModel: string }>("PUT", `/api/settings/model${backendId ? `?backend=${backendId}` : ""}`, { defaultModel }),
   readClaudeStatus: (refresh = false, environmentId?: string) =>
     request<ClaudeAuthStatus>("GET", `/api/claude/status?${new URLSearchParams({ ...(refresh ? { refresh: "1" } : {}), ...(environmentId ? { environmentId } : {}) })}`),
   downloadRuntime: (runtimeId: AgentRuntimeStatus["id"]) => request<{ ok: true }>("POST", `/api/runtimes/${runtimeId}/download`),

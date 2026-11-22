@@ -14,6 +14,10 @@ import type { AgentBackend, PermissionDecision, PermissionMode, TurnContext, Tur
 import type { AgentBackendId } from "./agent-backend-settings.ts";
 import { t } from "./i18n.ts";
 
+/** Tells the agent about the extra folders of this chat (all agent programs get access to them). */
+const chatDirectoriesContext = (directories: string[]) =>
+  directories.length ? `${t("Zusätzliche Ordner in diesem Chat (du darfst darin lesen und arbeiten):")}\n${directories.map((directory) => `- ${directory}`).join("\n")}` : "";
+
 export type { ContextBreakdown } from "./backends/types.ts";
 import type { ContextBreakdown } from "./backends/types.ts";
 
@@ -106,7 +110,7 @@ async function turnContextFor(sessionId: string, permissionMode: PermissionMode,
       permissionMode,
       model: fitting(teamAgent?.model) || fitting(model) || fitting(agentSetup.model) || backend.defaultModel(),
       env: agentSetup.env,
-      systemPromptAppend: [harnoldSystemAppend(), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
+      systemPromptAppend: [harnoldSystemAppend(), chatDirectoriesContext(session.directories), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
         .filter(Boolean)
         .join("\n\n"),
     },

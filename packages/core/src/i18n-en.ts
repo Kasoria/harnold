@@ -111,4 +111,6 @@ export const englishTexts: Record<string, string> = {
   "Unbekanntes Modell": "Unknown model",
   "Modelle nicht abrufbar ({0})": "Models not available ({0})",
   "Der Endpunkt nennt keine Modelle": "The endpoint lists no models",
+  "Ordner nicht gefunden: {0}": "Folder not found: {0}",
+  "Zusätzliche Ordner in diesem Chat (du darfst darin lesen und arbeiten):": "Additional folders in this chat (you may read and work in them):",
 };

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "core-ui",
-  "description": "The UI is served by the local Core; it may call the app's own commands (version, updates).",
+  "description": "The UI is served by the local Core; it may call the app's own commands (version, updates) and the folder picker.",
   "windows": [
     "main"
   ],
@@ -14,6 +14,7 @@
   "permissions": [
     "core:default",
     "allow-check-for-update",
-    "allow-install-update"
+    "allow-install-update",
+    "dialog:allow-open"
   ]
 }

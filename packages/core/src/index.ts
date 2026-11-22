@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { Hono } from "hono";
@@ -197,6 +198,15 @@ function emptyOrNewSession(projectId: string, agentId: string | null = null) {
   return session;
 }
 
+/** Folders added to a chat: absolute, existing, without duplicates (`~` = home). */
+function chatDirectories(requestedDirectories: string[]): string[] {
+  const resolved = requestedDirectories.map((directory) => path.resolve(directory.replace(/^~(?=$|\/)/, os.homedir())));
+  for (const directory of resolved) {
+    if (!fs.statSync(directory, { throwIfNoEntry: false })?.isDirectory()) throw new Error(t("Ordner nicht gefunden: {0}", directory));
+  }
+  return [...new Set(resolved)];
+}
+
 app.post("/api/projects/:projectId/sessions", async (context) => {
   const body = z.object({ agentId: z.string().nullish() }).parse(await context.req.json().catch(() => ({})));
   return context.json(emptyOrNewSession(requireProject(context.req.param("projectId")).id, body.agentId ?? null));
@@ -239,9 +249,17 @@ app.delete("/api/sessions/:sessionId", (context) => {
 });
 
 app.patch("/api/sessions/:sessionId", async (context) => {
-  const body = z.object({ title: z.string().min(1).optional(), projectId: z.string().optional(), agentId: z.string().nullable().optional() }).parse(await context.req.json());
+  const body = z
+    .object({ title: z.string().min(1).optional(), projectId: z.string().optional(), agentId: z.string().nullable().optional(), directories: z.array(z.string().trim().min(1)).max(20).optional() })
+    .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   if (body.title) sessionActions.rename(sessionId, body.title);
+  if (body.directories) {
+    const session = sessionStore.get(sessionId);
+    if (!session) throw new Error(t("Session nicht gefunden"));
+    sessionStore.update(sessionId, { directories: chatDirectories(body.directories) });
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+  }
   if (body.agentId !== undefined) {
     const session = sessionStore.get(sessionId);
     if (!session) throw new Error(t("Session nicht gefunden"));
@@ -699,10 +717,13 @@ app.put("/api/settings/language", async (context) => {
   return context.json({ language });
 });
 
-app.get("/api/settings/model", (context) => context.json({ defaultModel: agentModelSettings.read() }));
+/** Default model of one agent (`?backend=`), else of the active one. */
+const modelBackendOf = (backendQuery: string | undefined) => (isAgentBackendId(backendQuery) ? backendQuery : agentBackendSettings.read());
+app.get("/api/settings/model", (context) => context.json({ defaultModel: agentModelSettings.read(modelBackendOf(context.req.query("backend"))) }));
 app.put("/api/settings/model", async (context) => {
   const body = z.object({ defaultModel: z.string().trim().min(1) }).parse(await context.req.json());
-  return context.json({ defaultModel: agentModelSettings.write(body.defaultModel) });
+  const backendId = modelBackendOf(context.req.query("backend"));
+  return context.json({ defaultModel: agentModelSettings.write(body.defaultModel, backendId) });
 });
 
 app.put("/api/claude/settings", async (context) => context.json(await claudeAuth.save(claudeSettingsSchema.parse(await context.req.json()))));

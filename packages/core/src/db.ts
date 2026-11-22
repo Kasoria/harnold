@@ -42,6 +42,7 @@ addColumnIfMissing("sessions", "pending_fork", "TEXT");
 addColumnIfMissing("sessions", "agent_id", "TEXT");
 addColumnIfMissing("sessions", "task_id", "TEXT");
 addColumnIfMissing("sessions", "backend_id", "TEXT");
+addColumnIfMissing("sessions", "directories", "TEXT");
 // Conversation history of Harnold's own agent (other agent programs keep theirs themselves).
 database.exec(`
   CREATE TABLE IF NOT EXISTS agent_messages (
@@ -79,6 +80,8 @@ export type Session = {
   agentId: string | null;
   /** Set on sessions a task created; they are listed with the task, not as normal sessions. */
   taskId: string | null;
+  /** Extra local folders the agent may work in for this chat (absolute paths), besides the project folder. */
+  directories: string[];
   createdAt: number;
   updatedAt: number;
 };
@@ -134,6 +137,7 @@ const mapSession = (row: Row): Session => ({
   pendingFork: row.pending_fork ? (JSON.parse(String(row.pending_fork)) as PendingFork) : null,
   agentId: row.agent_id ? String(row.agent_id) : null,
   taskId: row.task_id ? String(row.task_id) : null,
+  directories: row.directories ? (JSON.parse(String(row.directories)) as string[]) : [],
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -186,6 +190,7 @@ export const sessionStore = {
     agentId: string | null = null,
   ): Session {
     const now = Date.now();
+    const directories = fork ? (sessionStore.get(fork.originSessionId)?.directories ?? []) : [];
     const session: Session = {
       id: randomUUID(),
       projectId,
@@ -198,26 +203,38 @@ export const sessionStore = {
       pendingFork: fork?.pendingFork ?? null,
       agentId,
       taskId: null,
+      directories,
       createdAt: now,
       updatedAt: now,
     };
     database
       .prepare(
-        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, directories, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(session.id, projectId, title, session.forkOriginSessionId, session.forkOriginItemId, session.pendingFork ? JSON.stringify(session.pendingFork) : null, agentId, now, now);
+      .run(
+        session.id,
+        projectId,
+        title,
+        session.forkOriginSessionId,
+        session.forkOriginItemId,
+        session.pendingFork ? JSON.stringify(session.pendingFork) : null,
+        agentId,
+        directories.length ? JSON.stringify(directories) : null,
+        now,
+        now,
+      );
     return session;
   },
   /** `agentSessionId: null` starts a fresh agent context on the next turn. */
   update(
     sessionId: string,
-    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null },
+    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null; directories?: string[] },
   ): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
     const pendingFork = changes.pendingFork === undefined ? current.pendingFork : changes.pendingFork;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, directories = ?, updated_at = ? WHERE id = ?")
       .run(
         changes.title ?? current.title,
         changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
@@ -226,6 +243,7 @@ export const sessionStore = {
         pendingFork ? JSON.stringify(pendingFork) : null,
         changes.agentId === undefined ? current.agentId : changes.agentId,
         changes.backendId === undefined ? current.backendId : changes.backendId,
+        (changes.directories ?? current.directories).length ? JSON.stringify(changes.directories ?? current.directories) : null,
         Date.now(),
         sessionId,
       );

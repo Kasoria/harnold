@@ -73,7 +73,7 @@ export function EmptyState(props: { title: string; description?: string; action?
 /** Detail pane wrapper with its own header line. */
 export function DetailPane(props: { title: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode; detailKey: string }) {
   return (
-    <div key={props.detailKey} className="mx-auto max-w-2xl animate-in px-6 py-5 fade-in slide-in-from-right-1 duration-200">
+    <div key={props.detailKey} className="mx-auto w-full max-w-2xl min-w-0 animate-in px-6 py-5 fade-in slide-in-from-right-1 duration-200">
       <div className="mb-4 flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[15px] font-semibold">{props.title}</h2>

@@ -289,6 +289,7 @@ export const environmentStore = {
     }
     const profile = claudeProfileForEnvironment(environment.id);
     const accountStatus = await claudeAuth.status(false, profile);
+    if (!accountStatus.runtime.found) throw new Error("Claude Code ist nicht installiert – Einstellungen → Claude");
     if (!accountStatus.ready && !accountStatus.cliError) throw new Error(`Umgebung „${environment.name}“: Claude-Konto nicht angemeldet – Umgebungen → ${environment.name}`);
     const env: NodeJS.ProcessEnv = { ...subscriptionEnvironment(profile), ...variables, CLAUDE_CONFIG_DIR: profile.configDirectory };
     delete env.ANTHROPIC_API_KEY;

@@ -8,7 +8,7 @@ import { memoryFiles } from "./memory-files.ts";
 import { agentIntegrationOptions } from "./integrations.ts";
 import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
 import { environmentStore } from "./environments.ts";
-import { agentModelSettings } from "./claude-auth.ts";
+import { agentModelSettings, claudeExecutable } from "./claude-auth.ts";
 import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
 import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
@@ -156,6 +156,7 @@ export const agentRuntime = {
     const project = projectStore.get(session.projectId);
     if (!project) throw new Error("Projekt nicht gefunden");
     if (runningTurns.has(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
+    const claudeExecutablePath = await claudeExecutable();
     const agentSetup = await environmentStore.agentSetupFor(project.id);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
@@ -180,6 +181,7 @@ export const agentRuntime = {
       const agentStream = query({
         prompt: promptFor(project, pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text, attachments),
         options: {
+          pathToClaudeCodeExecutable: claudeExecutablePath,
           cwd: project.path,
           // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
           env: agentSetup.env,

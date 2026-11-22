@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Harnold</title>
+    <style>
+      :root { --background: #ffffff; --foreground: #0b0d12; --muted: #6b7280; --primary: #0f4bf7; --danger: #dc2626; }
+      @media (prefers-color-scheme: dark) { :root { --background: #0b0d12; --foreground: #f3f4f6; --muted: #9ca3af; --danger: #f87171; } }
+      html, body { height: 100%; margin: 0; }
+      body { display: grid; place-items: center; background: var(--background); color: var(--foreground); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", sans-serif; -webkit-user-select: none; user-select: none; cursor: default; }
+      main { display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 480px; padding: 24px; text-align: center; }
+      svg { width: 64px; height: 64px; }
+      #status { color: var(--muted); }
+      #status::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+      @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+      #error { display: none; color: var(--danger); white-space: pre-wrap; -webkit-user-select: text; user-select: text; }
+      body.failed #status { display: none; }
+      body.failed #error { display: block; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg viewBox="0 0 256 256" aria-hidden="true"><rect width="256" height="256" rx="57.6" fill="#0F4BF7"/><g transform="translate(35.71 33.15) scale(0.721)" fill="#ffffff"><path d="M18 110 Q128 160 238 110" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round"/><rect x="42" y="36" width="64" height="184" rx="32" transform="rotate(10 74 128)"/><rect x="150" y="36" width="64" height="184" rx="32" transform="rotate(-10 182 128)"/></g></svg>
+      <div id="status">Harnold startet</div>
+      <div id="error"></div>
+    </main>
+    <script>
+      window.showCoreError = (message) => {
+        document.getElementById("error").textContent = message;
+        document.body.classList.add("failed");
+      };
+    </script>
+  </body>
+</html>

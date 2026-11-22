@@ -216,6 +216,21 @@ export type DesignSystemSummary = {
 };
 export type DesignSystemDetail = DesignSystemView & { id: string; name: string; directory: string; links: DesignSystemLinkTarget[] };
 
+export type AgentRuntimeStatus = {
+  id: "claude-code";
+  name: string;
+  found: boolean;
+  source?: "configured" | "bundled" | "downloaded" | "installed";
+  executablePath?: string;
+  version?: string;
+  recommendedVersion: string;
+  outdated: boolean;
+  tooOldPath?: string;
+  installHint: string;
+  installUrl: string;
+  download: { running: boolean; receivedBytes: number; totalBytes: number; error?: string };
+};
+
 export type ClaudeAuthMode = "subscription" | "apiKey";
 export type ClaudeAuthStatus = {
   mode: ClaudeAuthMode;
@@ -225,6 +240,7 @@ export type ClaudeAuthStatus = {
   cliError?: string;
   loginPending: boolean;
   ready: boolean;
+  runtime: AgentRuntimeStatus;
 };
 
 export type ImageProvider = "none" | "gemini" | "openai";

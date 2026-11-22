@@ -1,16 +1,16 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { config } from "./config.ts";
 import { z } from "zod";
 import { settingsStore } from "./settings.ts";
 import { eventHub } from "./events.ts";
+import { agentRuntimes, type AgentRuntimeStatus } from "./agent-runtimes.ts";
 
 /**
  * How the agent talks to Claude:
- * - "subscription": Claude login (Pro/Max/Team or Console) of the bundled Claude Code – shared with `claude` on this machine.
+ * - "subscription": Claude login (Pro/Max/Team or Console) of Claude Code – shared with `claude` on this machine.
  * - "apiKey": an Anthropic API key stored (encrypted) in Harnold.
  */
 export type ClaudeAuthMode = "subscription" | "apiKey";
@@ -30,6 +30,8 @@ export type ClaudeAuthStatus = {
   cliError?: string;
   loginPending: boolean;
   ready: boolean;
+  /** The Claude Code program on this machine (needed for both modes). */
+  runtime: AgentRuntimeStatus;
 };
 
 export const claudeSettingsSchema = z.object({
@@ -81,15 +83,11 @@ export const agentModelSettings = {
 };
 const secretsKey = "claude.secrets";
 
-/** The Claude Code binary bundled with the Agent SDK (falls back to `claude` on PATH). */
-function claudeExecutable(): string {
-  try {
-    const sdkRequire = createRequire(createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk"));
-    const packageJsonPath = sdkRequire.resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/package.json`);
-    return path.join(path.dirname(packageJsonPath), process.platform === "win32" ? "claude.exe" : "claude");
-  } catch {
-    return "claude";
-  }
+/** Claude Code to start (system install, SDK copy or Harnold download – see agent-runtimes). */
+export async function claudeExecutable(): Promise<string> {
+  const executablePath = await agentRuntimes.executable("claude-code");
+  if (!executablePath) throw new Error("Claude Code ist nicht installiert – Einstellungen → Claude");
+  return executablePath;
 }
 
 /** Env for Claude Code with this profile's login (never an API key). */
@@ -97,14 +95,16 @@ export function subscriptionEnvironment(profile: ClaudeProfile): NodeJS.ProcessE
   return profile.configDirectory ? { ...environmentWithoutApiKey(), CLAUDE_CONFIG_DIR: profile.configDirectory } : environmentWithoutApiKey();
 }
 
-const runClaude = (args: string[], profile: ClaudeProfile, timeoutMs = 15_000) =>
-  new Promise<string>((resolve, reject) => {
-    execFile(claudeExecutable(), args, { timeout: timeoutMs, env: subscriptionEnvironment(profile) }, (runError, standardOutput, standardError) => {
+const runClaude = async (args: string[], profile: ClaudeProfile, timeoutMs = 15_000) => {
+  const executablePath = await claudeExecutable();
+  return new Promise<string>((resolve, reject) => {
+    execFile(executablePath, args, { timeout: timeoutMs, env: subscriptionEnvironment(profile) }, (runError, standardOutput, standardError) => {
       // `auth status --json` exits non-zero when logged out but still prints the status.
       if (runError && !standardOutput.trim().startsWith("{")) reject(new Error(standardError.trim() || runError.message));
       else resolve(standardOutput);
     });
   });
+};
 
 function environmentWithoutApiKey(): NodeJS.ProcessEnv {
   const { ANTHROPIC_API_KEY: _removedApiKey, ...environment } = process.env;
@@ -158,9 +158,10 @@ export const claudeAuth = {
     const mode = isDefault ? readMode() : "subscription";
     const apiKeySet = isDefault && Boolean(readApiKey());
     const environmentApiKey = isDefault && Boolean(process.env.ANTHROPIC_API_KEY);
-    const { account, cliError } = await readAccount(profile, forceRefresh);
-    const ready = mode === "apiKey" ? apiKeySet || environmentApiKey : Boolean(account?.loggedIn);
-    return { mode, apiKeySet, environmentApiKey, account, cliError, loginPending: pendingLogins.has(profile.key), ready };
+    const runtime = await agentRuntimes.status("claude-code", forceRefresh);
+    const { account, cliError } = runtime.found ? await readAccount(profile, forceRefresh) : { account: null, cliError: undefined };
+    const credentialsReady = mode === "apiKey" ? apiKeySet || environmentApiKey : Boolean(account?.loggedIn);
+    return { mode, apiKeySet, environmentApiKey, account, cliError, loginPending: pendingLogins.has(profile.key), ready: runtime.found && credentialsReady, runtime };
   },
 
   async save(input: z.infer<typeof claudeSettingsSchema>): Promise<ClaudeAuthStatus> {
@@ -178,9 +179,9 @@ export const claudeAuth = {
   },
 
   /** Starts `claude auth login` and returns the sign-in URL. The page then shows a code for `submitLoginCode`. */
-  startLogin(method: "claudeai" | "console", profile: ClaudeProfile = defaultClaudeProfile): Promise<{ url: string }> {
+  async startLogin(method: "claudeai" | "console", profile: ClaudeProfile = defaultClaudeProfile): Promise<{ url: string }> {
     pendingLogins.get(profile.key)?.child.kill();
-    const child = spawn(claudeExecutable(), ["auth", "login", method === "console" ? "--console" : "--claudeai"], {
+    const child = spawn(await claudeExecutable(), ["auth", "login", method === "console" ? "--console" : "--claudeai"], {
       env: { ...subscriptionEnvironment(profile), BROWSER: "true" },
     });
     const loginState: PendingLogin = { child, output: "" };
@@ -239,6 +240,7 @@ export const claudeAuth = {
   /** Friendly error before a turn when nothing is connected. */
   async assertReady(): Promise<void> {
     const currentStatus = await claudeAuth.status();
+    if (!currentStatus.runtime.found) throw new Error("Claude Code ist nicht installiert – Einstellungen → Claude");
     // Unknown CLI state (status failed) is not a reason to block – the SDK reports real auth errors itself.
     if (!currentStatus.ready && !currentStatus.cliError) throw new Error("Claude ist nicht verbunden – Einstellungen → Claude");
   },

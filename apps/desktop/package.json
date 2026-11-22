@@ -1,0 +1,15 @@
+{
+  "name": "@harnold/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare-bundle": "node scripts/prepare-bundle.ts",
+    "dev": "node scripts/prepare-bundle.ts && tauri dev",
+    "build:app": "node scripts/prepare-bundle.ts && CI=true tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

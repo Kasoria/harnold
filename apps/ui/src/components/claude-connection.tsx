@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { CheckCircle2, ExternalLink, KeyRound, Loader2, LogIn, LogOut } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, KeyRound, Loader2, LogIn, LogOut, RefreshCw, TriangleAlert } from "lucide-react";
 import { api } from "@/api";
-import type { ClaudeAuthMode, ClaudeAuthStatus } from "@/types";
+import type { AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/segmented-control";
@@ -130,6 +130,99 @@ export function ClaudeAccountSection(props: ClaudeAccountSectionProps) {
   );
 }
 
+const megabytes = (byteCount: number) => `${Math.round(byteCount / 1_000_000)} MB`;
+const runtimeSourceLabels: Record<NonNullable<AgentRuntimeStatus["source"]>, string> = {
+  installed: "auf diesem Rechner installiert",
+  downloaded: "von Harnold geladen",
+  bundled: "aus der Harnold-Installation",
+  configured: "fest eingestellt",
+};
+
+/**
+ * The Claude Code program. Harnold uses an existing install; downloading one is the user's explicit choice.
+ * Returns the found-line when present, otherwise the choice (install yourself / download).
+ */
+function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onStatusChange: (status: ClaudeAuthStatus) => void; onError: (unknownError: unknown) => void }) {
+  const [checking, setChecking] = useState(false);
+  const { runtime, onStatusChange, onError } = props;
+
+  const recheck = async () => {
+    setChecking(true);
+    try {
+      onStatusChange(await api.readClaudeStatus(true));
+    } catch (checkError) {
+      onError(checkError);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  if (runtime.found) {
+    return (
+      <div className="grid gap-1 text-[12px] text-muted-foreground">
+        <span title={runtime.executablePath}>
+          {runtime.name} {runtime.version ?? ""} · {runtimeSourceLabels[runtime.source ?? "installed"]}
+        </span>
+        {runtime.outdated && (
+          <span>
+            Älter als empfohlen ({runtime.recommendedVersion}) – aktualisieren mit <code className="font-mono">claude update</code>
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  const { download } = runtime;
+  return (
+    <div className="grid animate-in gap-3 rounded-xl border px-4 py-4 fade-in duration-200">
+      <div className="flex items-start gap-2 text-[13px]">
+        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <p>
+          Harnold steuert {runtime.name}, das Programm ist auf diesem Rechner aber nicht gefunden
+          {runtime.tooOldPath ? ` (nur eine zu alte Version unter ${runtime.tooOldPath})` : ""}.
+        </p>
+      </div>
+      <div className="grid gap-1.5 text-[13px]">
+        <span className="font-medium">Selbst installieren (empfohlen)</span>
+        <code className="rounded-md bg-muted px-2 py-1.5 font-mono text-[12px] select-all">{runtime.installHint}</code>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" variant="ghost" className="h-7 gap-1.5 text-[12px]" disabled={checking} onClick={() => void recheck()}>
+            {checking ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Erneut prüfen
+          </Button>
+          <a href={runtime.installUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] text-muted-foreground underline underline-offset-2">
+            Anleitung <ExternalLink className="size-3" />
+          </a>
+        </div>
+      </div>
+      <div className="grid gap-1.5 text-[13px]">
+        <span className="font-medium">Oder von Harnold laden</span>
+        <span className="text-[12px] text-muted-foreground">Nur für Harnold, Version {runtime.recommendedVersion}. Download ca. 165 MB, belegt ca. 360 MB.</span>
+        {download.running ? (
+          <div className="grid gap-1">
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-primary transition-[width]"
+                style={{ width: download.totalBytes ? `${Math.min(100, (download.receivedBytes / download.totalBytes) * 100)}%` : "30%" }}
+              />
+            </div>
+            <span className="text-[12px] text-muted-foreground">
+              {megabytes(download.receivedBytes)}
+              {download.totalBytes ? ` von ${megabytes(download.totalBytes)}` : ""} geladen …
+            </span>
+          </div>
+        ) : (
+          <div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => api.downloadRuntime(runtime.id).catch(onError)}>
+              <Download className="size-3.5" /> {runtime.name} herunterladen
+            </Button>
+          </div>
+        )}
+        {download.error && <p className="text-[12px] text-destructive">Download fehlgeschlagen: {download.error}</p>}
+      </div>
+    </div>
+  );
+}
+
 /** Connect Harnold to Claude: Claude login (subscription / Console) or an API key. Used in settings and onboarding. */
 export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
   const [busy, setBusy] = useState(false);
@@ -150,6 +243,8 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
   };
 
   const changeMode = (mode: ClaudeAuthMode) => void run(async () => onStatusChange(await api.saveClaudeSettings(mode)));
+
+  if (!status.runtime.found) return <AgentRuntimeSection runtime={status.runtime} onStatusChange={onStatusChange} onError={onError} />;
 
   return (
     <div className="grid gap-5">
@@ -195,6 +290,7 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
           </div>
         </div>
       )}
+      <AgentRuntimeSection runtime={status.runtime} onStatusChange={onStatusChange} onError={onError} />
     </div>
   );
 }

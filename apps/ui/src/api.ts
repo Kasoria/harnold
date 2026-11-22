@@ -1,4 +1,4 @@
-import type { ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -113,6 +113,7 @@ export const api = {
   saveDefaultModel: (defaultModel: string) => request<{ defaultModel: string }>("PUT", "/api/settings/model", { defaultModel }),
   readClaudeStatus: (refresh = false, environmentId?: string) =>
     request<ClaudeAuthStatus>("GET", `/api/claude/status?${new URLSearchParams({ ...(refresh ? { refresh: "1" } : {}), ...(environmentId ? { environmentId } : {}) })}`),
+  downloadRuntime: (runtimeId: AgentRuntimeStatus["id"]) => request<{ ok: true }>("POST", `/api/runtimes/${runtimeId}/download`),
   saveClaudeSettings: (mode: ClaudeAuthMode, apiKey?: string) => request<ClaudeAuthStatus>("PUT", "/api/claude/settings", { mode, apiKey }),
   startClaudeLogin: (method: "claudeai" | "console", environmentId?: string) => request<{ url: string }>("POST", "/api/claude/login", { method, environmentId }),
   submitClaudeLoginCode: (code: string, environmentId?: string) => request<ClaudeAuthStatus>("POST", "/api/claude/login/code", { code, environmentId }),

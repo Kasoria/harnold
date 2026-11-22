@@ -6,6 +6,7 @@ Open-Source AI Agent Harness: Chat, Code und Design in einem Workspace. Lizenz: 
 
 - `packages/core` – Core (Node/TS): API, WebSocket, Agent-Runtime (Claude Agent SDK), SQLite
 - `apps/ui` – UI (React/Vite)
+- `apps/desktop` – Mac-App (Tauri), startet den Core als Sidecar
 - `docs/PRD.md` – Anforderungen
 
 ## Starten
@@ -18,6 +19,21 @@ pnpm dev:ui     # UI auf :5317
 
 Server-Modus: `pnpm --filter @harnold/ui build`, dann `pnpm --filter @harnold/core start` (liefert UI mit aus).
 
+## Desktop-App (macOS)
+
+```bash
+pnpm --filter @harnold/desktop build:app
+```
+
+Ergebnis: `apps/desktop/src-tauri/target/release/bundle/` (`.app`, `.dmg`). Voraussetzungen: Rust, pnpm. Das Skript lädt das offizielle Node-Binary (geprüft per SHASUMS256), bündelt den Core mit Prod-Abhängigkeiten und baut die UI.
+
+- Core läuft auf `127.0.0.1:4327` (Dev-Core auf 4317 kann parallel laufen), gleiche Daten in `~/.harnold`.
+- PATH kommt aus der Login-Shell, damit der Agent git, brew & Co. findet.
+- Fenster schließen = ausblenden, Core läuft weiter (Tasks, Channels). Beenden mit ⌘Q.
+- Agent-Programme (Claude Code …) sind nicht enthalten. Harnold nimmt das installierte (`PATH`, `~/.local/bin`) oder lädt es nur auf Klick nach `~/.harnold/runtimes/` (Einstellungen → Claude). Fester Pfad: `HARNOLD_CLAUDE_PATH`.
+- Log: `~/Library/Logs/com.harnold.desktop/core.log`
+- Noch unsigniert: beim ersten Start Rechtsklick → Öffnen.
+
 ## Konfiguration (env)
 
 | Variable | Standard | Zweck |
@@ -27,6 +43,7 @@ Server-Modus: `pnpm --filter @harnold/ui build`, dann `pnpm --filter @harnold/co
 | `HARNOLD_HOST` / `HARNOLD_PORT` | `127.0.0.1` / `4317` | Bind-Adresse |
 | `HARNOLD_TOKEN` | – | Zugriffstoken (Pflicht im Server-Betrieb) |
 | `HARNOLD_MODEL` | SDK-Standard | Modell |
+| `HARNOLD_CLAUDE_PATH` | automatisch | Fester Pfad zu Claude Code |
 
 Auth zu Claude: beim ersten Start Onboarding, sonst Einstellungen → Claude. Claude-Konto (Pro/Max/Team/Console, geteilt mit `claude` auf dem Rechner, Anmeldung per Code) oder API-Key (verschlüsselt gespeichert; Fallback `ANTHROPIC_API_KEY`).
 

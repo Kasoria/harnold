@@ -20,6 +20,7 @@ import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSyste
 import { environmentInputSchema, environmentStore } from "./environments.ts";
 import { presentProviders } from "./environment-providers.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
+import { agentRuntimes } from "./agent-runtimes.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
@@ -589,6 +590,11 @@ app.get("/api/claude/status", async (context) =>
   context.json(await claudeAuth.status(context.req.query("refresh") === "1", claudeProfileOf(context.req.query("environmentId")))),
 );
 
+app.post("/api/runtimes/:runtimeId/download", (context) => {
+  agentRuntimes.download(z.enum(["claude-code"]).parse(context.req.param("runtimeId")));
+  return context.json({ ok: true });
+});
+
 app.get("/api/settings/model", (context) => context.json({ defaultModel: agentModelSettings.read() }));
 app.put("/api/settings/model", async (context) => {
   const body = z.object({ defaultModel: z.string().trim().min(1) }).parse(await context.req.json());
@@ -752,3 +758,10 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
   console.log(`Harnold Core läuft auf http://${config.host}:${address.port}`);
 });
 injectWebSocket(server);
+
+// Desktop app: the app holds our stdin open; when it closes (quit, crash, kill), the Core ends too.
+if (process.env.HARNOLD_EXIT_WITH_PARENT === "1") {
+  process.stdin.on("end", () => process.exit(0));
+  process.stdin.on("error", () => process.exit(0));
+  process.stdin.resume();
+}

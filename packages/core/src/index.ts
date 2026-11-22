@@ -11,6 +11,7 @@ import { eventHub } from "./events.ts";
 import { agentRuntime } from "./agent.ts";
 import { sessionActions } from "./session-actions.ts";
 import { agentCommands } from "./slash-commands.ts";
+import { agentExtensions } from "./agent-extensions.ts";
 import { readFileTree, resolveInsideProject, unwatchProject, watchProject } from "./files.ts";
 import { canvasDocumentSchema, readCanvas, writeCanvas } from "./canvas.ts";
 import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unscheduleTask } from "./tasks.ts";
@@ -20,6 +21,11 @@ import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSche
 import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
 import { environmentInputSchema, environmentStore } from "./environments.ts";
 import { presentProviders } from "./environment-providers.ts";
+import { discoverProviderModels, providerInputSchema, providerStore } from "./providers.ts";
+import { agentBackends } from "./backends/index.ts";
+import { agentBackendSettings, isAgentBackendId } from "./agent-backend-settings.ts";
+import { codexAuth, codexSettings } from "./codex-auth.ts";
+import { harnoldMcp } from "./mcp-http.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { agentRuntimes } from "./agent-runtimes.ts";
 import { teamAgentInputSchema, teamStore } from "./agents.ts";
@@ -63,7 +69,8 @@ app.use("*", (context, next) => runWithLanguage(parseLanguage(context.req.header
 
 // --- Auth (only active when HARNOLD_TOKEN is set) ---
 app.use("*", async (context, next) => {
-  if (!config.accessToken) return next();
+  // /mcp/<token>/… is called by agent programs on this machine; the one-turn token in the URL is its secret.
+  if (!config.accessToken || context.req.path.startsWith("/mcp/")) return next();
   const bearerToken = context.req.header("authorization")?.replace(/^Bearer /, "");
   const queryToken = context.req.query("token");
   if (bearerToken === config.accessToken || queryToken === config.accessToken) return next();
@@ -252,7 +259,16 @@ app.post("/api/sessions/:sessionId/clear", (context) => {
   return context.json({ ok: true });
 });
 
-app.get("/api/projects/:projectId/commands", (context) => context.json(agentCommands.list(requireProject(context.req.param("projectId")))));
+app.get("/api/projects/:projectId/commands", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  // Harnold's own agent: the commands and skills it expands itself.
+  if (environmentStore.backendFor(project.id) === "native")
+    return context.json([
+      ...agentExtensions.commands(project).map(({ name, description, argumentHint }) => ({ name, description, argumentHint })),
+      ...agentExtensions.skills(project).map(({ name, description }) => ({ name, description, argumentHint: "" })),
+    ]);
+  return context.json(agentCommands.list(project));
+});
 
 app.get("/api/sessions/:sessionId/items", (context) => context.json(chatItemStore.list(context.req.param("sessionId"))));
 
@@ -281,7 +297,7 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
   if (!session) throw new Error(t("Session nicht gefunden"));
   // While a turn runs, the message waits in the queue and starts afterwards.
   if (agentRuntime.isRunning(sessionId)) return context.json({ ok: true, queued: agentRuntime.enqueue({ sessionId, ...body }) });
-  await environmentStore.agentSetupFor(session.projectId); // friendly error when Claude access is missing
+  await agentRuntime.assertReady(sessionId); // friendly error when the agent program is missing or not signed in
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
   return context.json({ ok: true });
 });
@@ -338,9 +354,10 @@ app.get("/api/today", (context) => {
   };
   const recentSessions = projectStore
     .list()
-    .flatMap((project) => sessionStore.listByProject(project.id).slice(0, 3))
+    // Task runs are shown as task results, not as chats to continue.
+    .flatMap((project) => sessionStore.listByProject(project.id).filter((session) => !session.taskId).slice(0, 3))
     .sort((first, second) => second.updatedAt - first.updatedAt)
-    .slice(0, 3)
+    .slice(0, 24)
     .map((session) => ({ ...sessionInfo(session.id)!, updatedAt: session.updatedAt }));
   return context.json({
     waiting: agentRuntime.listPendingPermissions().flatMap((pending) => {
@@ -689,6 +706,74 @@ app.put("/api/settings/model", async (context) => {
 });
 
 app.put("/api/claude/settings", async (context) => context.json(await claudeAuth.save(claudeSettingsSchema.parse(await context.req.json()))));
+
+// --- Agent programs (Claude Code, Codex, …) ---
+const codexSettingsSchema = z.object({ mode: z.enum(["login", "apiKey"]), apiKey: z.string().optional(), models: z.array(z.string()).optional() });
+const codexView = async (forceRefresh = false) => ({ ...(await codexAuth.status(forceRefresh)), models: codexSettings.models() });
+
+app.get("/api/agent-backends", async (context) => context.json(await agentBackends.view(context.req.query("refresh") === "1")));
+app.put("/api/agent-backends-active", async (context) => {
+  const { backendId } = z.object({ backendId: z.string() }).parse(await context.req.json());
+  if (!isAgentBackendId(backendId)) throw new Error(t("Unbekannter Agent"));
+  agentBackends.setActive(backendId);
+  // The default model belongs to the program: keep each one's own, but make sure the Claude side stays valid.
+  return context.json(await agentBackends.view());
+});
+app.get("/api/codex/status", async (context) => context.json(await codexView(context.req.query("refresh") === "1")));
+app.put("/api/codex/settings", async (context) => {
+  await codexAuth.save(codexSettingsSchema.parse(await context.req.json()));
+  return context.json(await codexView());
+});
+app.post("/api/codex/login", async (context) => context.json(await codexAuth.startLogin()));
+app.post("/api/codex/login/cancel", (context) => {
+  codexAuth.cancelLogin();
+  return context.json({ ok: true });
+});
+app.post("/api/codex/logout", async (context) => {
+  await codexAuth.logout();
+  return context.json(await codexView(true));
+});
+// Harnold's tools for agent programs that reach them over HTTP (see mcp-http.ts).
+app.all("/mcp/:token/:serverName", (context) => harnoldMcp.handle(context.req.param("token"), context.req.param("serverName"), context.req.raw));
+
+// --- Providers ---
+/** After a provider switch the default model must belong to it. */
+function alignDefaultModelWithProvider(): void {
+  if (agentBackendSettings.read() !== "claude-code") return;
+  const activeProvider = providerStore.active();
+  const currentModel = agentModelSettings.read();
+  if (activeProvider) {
+    if (!activeProvider.models.includes(currentModel) && activeProvider.models[0]) agentModelSettings.write(activeProvider.models[0]);
+  } else if (!currentModel.startsWith("claude-")) agentModelSettings.write("claude-opus-5-5");
+}
+app.get("/api/providers", (context) => context.json(providerStore.view()));
+app.post("/api/providers", async (context) => {
+  providerStore.create(providerInputSchema.parse(await context.req.json()));
+  return context.json(providerStore.view());
+});
+app.put("/api/providers/:providerId", async (context) => {
+  providerStore.update(context.req.param("providerId"), providerInputSchema.parse(await context.req.json()));
+  alignDefaultModelWithProvider();
+  return context.json(providerStore.view());
+});
+app.delete("/api/providers/:providerId", (context) => {
+  providerStore.remove(context.req.param("providerId"));
+  alignDefaultModelWithProvider();
+  return context.json(providerStore.view());
+});
+/** Model list of an endpoint; without a key the stored one of providerId is used. */
+app.post("/api/providers/discover-models", async (context) => {
+  const body = z
+    .object({ protocol: z.enum(["anthropic", "openai"]), baseUrl: z.string().trim().url(), apiKey: z.string().optional(), providerId: z.string().optional() })
+    .parse(await context.req.json());
+  const apiKey = body.apiKey?.trim() || (body.providerId ? providerStore.apiKeyOf(body.providerId) : "");
+  return context.json({ models: await discoverProviderModels({ protocol: body.protocol, baseUrl: body.baseUrl, apiKey }) });
+});
+app.put("/api/providers-active", async (context) => {
+  providerStore.setActive(z.object({ providerId: z.string().min(1) }).parse(await context.req.json()).providerId);
+  alignDefaultModelWithProvider();
+  return context.json(providerStore.view());
+});
 
 app.post("/api/claude/login", async (context) => {
   const body = z

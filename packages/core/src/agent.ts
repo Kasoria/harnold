@@ -1,29 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { query, type PermissionMode, type ModelUsage, type Options, type PermissionResult, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload } from "./db.ts";
-import { contentBlocksFor } from "./attachments.ts";
 import { eventHub } from "./events.ts";
-import { environmentMemoryDirectory, memoryConfig, memoryNotes } from "./memory.ts";
+import { memoryNotes } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
-import { agentIntegrationOptions } from "./integrations.ts";
-import { designSystemsDirectory, designSystemStore } from "./design-system.ts";
+import { designSystemStore } from "./design-system.ts";
 import { environmentStore } from "./environments.ts";
-import { agentModelSettings, claudeExecutable } from "./claude-auth.ts";
-import { createMediaServer, mediaInstructions, mediaServerName } from "./media-tools.ts";
-import { createWorkspaceServer, workspaceInstructions, workspaceServerName, workspaceToolNames } from "./workspace-tools.ts";
-import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
-import { agentCommands } from "./slash-commands.ts";
-import { agentPluginOptions } from "./plugins.ts";
-import { recordClaudeMcpServers } from "./mcp-discovery.ts";
+import { workspaceInstructions } from "./workspace-tools.ts";
+import { memoryInstructions } from "./memory-tools.ts";
+import { mediaInstructions } from "./media-tools.ts";
 import { mentionHintFor, teamContextFor, teamStore } from "./agents.ts";
+import { agentBackends } from "./backends/index.ts";
+import type { AgentBackend, PermissionDecision, PermissionMode, TurnContext, TurnEvent } from "./backends/types.ts";
+import type { AgentBackendId } from "./agent-backend-settings.ts";
 import { t } from "./i18n.ts";
+
+export type { ContextBreakdown } from "./backends/types.ts";
+import type { ContextBreakdown } from "./backends/types.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
 /** A message sent while a turn runs; it starts once the current turn is done. */
 export type QueuedMessage = Omit<TurnRequest, "sessionId"> & { id: string; createdAt: string };
 
-const harnoldSystemAppend = `
+/** Built on demand: the tool modules import this one, so their texts don't exist yet while modules load. */
+const harnoldSystemAppend = () => `
 Du läufst in Harnold, einem Workspace, in dem Chat, Code und Design im selben Projektordner liegen.
 - Visuelle Entwürfe (Artifacts) als eigenständige HTML-Dateien unter design/ anlegen (z. B. design/hero.html). Sie werden dem Nutzer sofort live angezeigt.
 - Ist ein Design System verknüpft, steht es unten (Pfad, Tokens, Einbindung).
@@ -37,60 +37,13 @@ ${memoryInstructions}
 ${mediaInstructions}
 `.trim();
 
-type PendingPermission = { sessionId: string; toolName: string; input: unknown; resolve: (permissionResult: PermissionResult) => void };
+type PendingPermission = { sessionId: string; toolName: string; input: unknown; resolve: (decision: PermissionDecision) => void };
 
 const runningTurns = new Map<string, AbortController>();
 const pendingPermissions = new Map<string, PendingPermission>();
 /** Actions that must wait until a session's turn is over (e.g. moving it to another project). */
 const afterTurnActions = new Map<string, (() => void)[]>();
 const queuedMessagesBySession = new Map<string, QueuedMessage[]>();
-/** Live query per running turn (asked for the context breakdown mid-turn). */
-const activeQueries = new Map<string, Query>();
-const contextMeasurementsInFlight = new Map<string, Promise<ContextBreakdown>>();
-
-/** What fills the context window, by category (like /context). */
-export type ContextBreakdown = {
-  model: string;
-  totalTokens: number;
-  maxTokens: number;
-  percentage: number;
-  categories: { id?: string; name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" }[];
-};
-
-function toContextBreakdown(usage: SDKControlGetContextUsageResponse): ContextBreakdown {
-  return {
-    model: usage.model,
-    totalTokens: usage.totalTokens,
-    maxTokens: usage.maxTokens,
-    percentage: usage.percentage,
-    categories: usage.categories.map((category) => ({ id: category.id, name: category.name, tokens: category.tokens, kind: category.kind })),
-  };
-}
-
-/** Without a running turn: start the CLI on the session without a prompt, ask, close (no model call, ~1 s). */
-async function measureIdleContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
-  const session = sessionStore.get(sessionId);
-  if (!session) throw new Error(t("Session nicht gefunden"));
-  let releaseInput: () => void = () => undefined;
-  const inputDone = new Promise<void>((resolve) => (releaseInput = resolve));
-  const abortController = new AbortController();
-  const timeoutHandle = setTimeout(() => abortController.abort(), 60_000);
-  const idleQuery = query({
-    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
-      await inputDone;
-    })(),
-    options: { ...(await sharedAgentOptions(sessionId, "default", model)), resume: session.agentSessionId ?? undefined, persistSession: Boolean(session.agentSessionId), abortController },
-  });
-  try {
-    return toContextBreakdown(await idleQuery.getContextUsage({ detail: "full" }));
-  } finally {
-    clearTimeout(timeoutHandle);
-    releaseInput();
-    void (async () => {
-      for await (const _idleMessage of idleQuery);
-    })().catch(() => undefined);
-  }
-}
 /** Stopped by the user: the queue waits instead of starting the next message. */
 const queuePausedSessionIds = new Set<string>();
 
@@ -115,160 +68,78 @@ function persistAndPublish(sessionId: string, payload: ChatItemPayload) {
   return chatItem;
 }
 
-/** Per-turn bookkeeping: the last main-thread transcript entry is the fork point for edits of later messages. */
-type TurnTracking = { lastChainUuid?: string; contextTokens?: number; model?: string };
-
-function stringifyToolResultContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((block) => (block && typeof block === "object" && "text" in block ? String(block.text) : "[nicht-Text-Inhalt]"))
-      .join("\n");
-  }
-  return JSON.stringify(content);
+/** Models that clearly belong to another agent program are not sent to this one. */
+function modelFitsBackend(model: string, backendId: AgentBackendId): boolean {
+  // Harnold's own agent addresses models as "providerId::modelId".
+  if (backendId === "native") return model.includes("::");
+  if (model.includes("::")) return false;
+  const looksLikeClaude = model.startsWith("claude-");
+  const looksLikeCodex = model === "codex-default" || /^(gpt-|o\d|codex-)/.test(model);
+  return backendId === "codex" ? !looksLikeClaude : !looksLikeCodex;
 }
 
-/** Window size of the main model (the one that answered last); other entries are subagents/helpers. */
-function contextWindowOf(modelUsage: Record<string, ModelUsage> | undefined, model: string | undefined): number | undefined {
-  const usageEntries = Object.entries(modelUsage ?? {});
-  const mainEntry = usageEntries.find(([modelName]) => model && (modelName === model || modelName.startsWith(model) || model.startsWith(modelName)));
-  return mainEntry?.[1].contextWindow ?? (usageEntries.length ? Math.max(...usageEntries.map(([, usage]) => usage.contextWindow)) : undefined);
+/** Backend of this conversation: the one it started with, or – for a fresh context – the environment's/active one. */
+function backendIdFor(sessionId: string): AgentBackendId {
+  const session = sessionStore.get(sessionId);
+  if (!session) throw new Error(t("Session nicht gefunden"));
+  return session.agentSessionId ? ((session.backendId as AgentBackendId | null) ?? "claude-code") : environmentStore.backendFor(session.projectId);
 }
 
-/** Maps one SDK message onto Harnold chat items / live events. */
-function handleAgentMessage(sessionId: string, projectId: string, agentMessage: SDKMessage, turnTracking: TurnTracking): void {
-  if ((agentMessage.type === "assistant" || agentMessage.type === "user") && !agentMessage.parent_tool_use_id && agentMessage.uuid) {
-    turnTracking.lastChainUuid = agentMessage.uuid;
-  }
-  switch (agentMessage.type) {
-    case "system":
-      if (agentMessage.subtype === "init") sessionStore.update(sessionId, { agentSessionId: agentMessage.session_id, pendingFork: null });
-      else if (agentMessage.subtype === "compact_boundary") {
-        const { pre_tokens: tokensBefore, post_tokens: tokensAfter } = agentMessage.compact_metadata;
-        const tokenText = (tokenCount: number) => `${Math.round(tokenCount / 1000)}k`;
-        persistAndPublish(sessionId, { kind: "notice", text: `Kontext komprimiert${tokensAfter ? ` · ${tokenText(tokensBefore)} → ${tokenText(tokensAfter)} Tokens` : ` · vorher ${tokenText(tokensBefore)} Tokens`}` });
-        if (tokensAfter) {
-          turnTracking.contextTokens = tokensAfter;
-          eventHub.publish({ type: "context_size", sessionId, tokens: tokensAfter });
-        }
-      } else if (agentMessage.subtype === "commands_changed") agentCommands.remember(projectId, agentMessage.commands);
-      return;
-    case "stream_event": {
-      if (agentMessage.parent_tool_use_id) return;
-      const streamEvent = agentMessage.event;
-      if (streamEvent.type === "message_start") {
-        const requestUsage = streamEvent.message.usage;
-        turnTracking.contextTokens = requestUsage.input_tokens + (requestUsage.cache_creation_input_tokens ?? 0) + (requestUsage.cache_read_input_tokens ?? 0);
-        turnTracking.model = streamEvent.message.model;
-        eventHub.publish({ type: "context_size", sessionId, tokens: turnTracking.contextTokens });
-      } else if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "text_delta") {
-        eventHub.publish({ type: "text_delta", sessionId, text: streamEvent.delta.text });
-      } else if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "thinking_delta") {
-        eventHub.publish({ type: "thinking_delta", sessionId, text: streamEvent.delta.thinking });
-      }
-      return;
-    }
-    case "assistant": {
-      if (agentMessage.parent_tool_use_id) return;
-      for (const contentBlock of agentMessage.message.content) {
-        if (contentBlock.type === "thinking" && contentBlock.thinking.trim()) {
-          persistAndPublish(sessionId, { kind: "thinking", text: contentBlock.thinking });
-        } else if (contentBlock.type === "text" && contentBlock.text.trim()) {
-          persistAndPublish(sessionId, { kind: "assistant_text", text: contentBlock.text });
-        } else if (contentBlock.type === "tool_use") {
-          persistAndPublish(sessionId, {
-            kind: "tool_use",
-            toolUseId: contentBlock.id,
-            toolName: contentBlock.name,
-            input: contentBlock.input,
-          });
-        }
-      }
-      return;
-    }
-    case "user": {
-      if (agentMessage.parent_tool_use_id) return;
-      const messageContent = agentMessage.message.content;
-      if (!Array.isArray(messageContent)) return;
-      for (const contentBlock of messageContent) {
-        if (contentBlock.type === "tool_result") {
-          persistAndPublish(sessionId, {
-            kind: "tool_result",
-            toolUseId: contentBlock.tool_use_id,
-            content: stringifyToolResultContent(contentBlock.content).slice(0, 20_000),
-            isError: Boolean(contentBlock.is_error),
-          });
-        }
-      }
-      return;
-    }
-    case "result":
-      persistAndPublish(sessionId, {
-        kind: "turn_result",
-        success: agentMessage.subtype === "success" && !agentMessage.is_error,
-        costUsd: agentMessage.total_cost_usd,
-        durationMs: agentMessage.duration_ms,
-        errorText: agentMessage.subtype === "success" ? undefined : agentMessage.errors.join("\n"),
-        agentSessionId: sessionStore.get(sessionId)?.agentSessionId ?? undefined,
-        lastChainUuid: turnTracking.lastChainUuid,
-        contextTokens: turnTracking.contextTokens,
-        contextWindow: contextWindowOf(agentMessage.modelUsage, turnTracking.model),
-      });
-      return;
-    default:
-      return;
-  }
-}
-
-/** Options a turn and a context check of this session share (same tools, prompt and model, so the numbers match). */
-async function sharedAgentOptions(sessionId: string, permissionMode: PermissionMode, model?: string): Promise<Options> {
+/** What a turn and a context check of this session share (same tools, prompt and model, so the numbers match). */
+async function turnContextFor(sessionId: string, permissionMode: PermissionMode, model?: string): Promise<{ backend: AgentBackend; context: TurnContext }> {
   const session = sessionStore.get(sessionId);
   if (!session) throw new Error(t("Session nicht gefunden"));
   const project = projectStore.get(session.projectId);
   if (!project) throw new Error(t("Projekt nicht gefunden"));
-  const claudeExecutablePath = await claudeExecutable();
+  const backendId = backendIdFor(sessionId);
+  const backend = agentBackends.get(backendId);
   const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
-  const agentSetup = await environmentStore.agentSetupFor(project.id);
-  const integrationOptions = agentIntegrationOptions(project);
-  const pluginOptions = agentPluginOptions();
-  const projectEnvironment = environmentStore.forProject(project.id);
+  const agentSetup = await environmentStore.agentSetupFor(project.id, backendId);
+  const fitting = (candidate?: string | null) => (candidate && modelFitsBackend(candidate, backendId) ? candidate : undefined);
   return {
-    pathToClaudeCodeExecutable: claudeExecutablePath,
-    cwd: project.path,
-    // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
-    env: agentSetup.env,
-    // All design systems are open to the agent (it may create/link one mid-turn).
-    // Plus workspace and environment memory, so the agent can read files stored there.
-    additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : [])],
-    model: teamAgent?.model || model || agentSetup.model || agentModelSettings.read(),
-    thinking: { type: "adaptive", display: "summarized" },
-    permissionMode,
-    allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
-    settingSources: ["user", "project", "local"],
-    systemPrompt: {
-      type: "preset",
-      preset: "claude_code",
-      append: [harnoldSystemAppend, teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)].filter(Boolean).join("\n\n"),
+    backend,
+    context: {
+      sessionId,
+      session,
+      project,
+      teamAgentId: session.agentId,
+      permissionMode,
+      model: fitting(teamAgent?.model) || fitting(model) || fitting(agentSetup.model) || backend.defaultModel(),
+      env: agentSetup.env,
+      systemPromptAppend: [harnoldSystemAppend(), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
+        .filter(Boolean)
+        .join("\n\n"),
     },
-    mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId, permissionMode) },
-    allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
-    skills: integrationOptions.skills,
-    settings: pluginOptions.settings,
-    plugins: pluginOptions.plugins,
   };
 }
 
-/** Plain text, or – with attachments – one user message with image/document/text blocks (streaming input). */
-function promptFor(project: { id: string; path: string } & Parameters<typeof contentBlocksFor>[0], promptText: string, attachments: Attachment[]): string | AsyncIterable<SDKUserMessage> {
-  if (!attachments.length) return promptText;
-  const userMessage: SDKUserMessage = {
-    type: "user",
-    parent_tool_use_id: null,
-    message: { role: "user", content: contentBlocksFor(project, promptText, attachments) },
-  };
-  return (async function* () {
-    yield userMessage;
-  })();
+/** Stores and publishes what a backend reports. */
+function applyTurnEvent(sessionId: string, turnEvent: TurnEvent, outcome: TurnOutcome): void {
+  switch (turnEvent.type) {
+    case "session_started":
+      sessionStore.update(sessionId, { agentSessionId: turnEvent.agentSessionId, pendingFork: null });
+      return;
+    case "text_delta":
+      eventHub.publish({ type: "text_delta", sessionId, text: turnEvent.text });
+      return;
+    case "thinking_delta":
+      eventHub.publish({ type: "thinking_delta", sessionId, text: turnEvent.text });
+      return;
+    case "context_size":
+      eventHub.publish({ type: "context_size", sessionId, tokens: turnEvent.tokens });
+      return;
+    case "item":
+      persistAndPublish(
+        sessionId,
+        turnEvent.payload.kind === "turn_result" ? { ...turnEvent.payload, agentSessionId: sessionStore.get(sessionId)?.agentSessionId ?? undefined } : turnEvent.payload,
+      );
+      return;
+    case "outcome":
+      outcome.success = turnEvent.success;
+      outcome.finalText = turnEvent.finalText;
+      if (turnEvent.errorText) outcome.errorText = turnEvent.errorText;
+      return;
+  }
 }
 
 export const agentRuntime = {
@@ -282,9 +153,8 @@ export const agentRuntime = {
     const project = projectStore.get(session.projectId);
     if (!project) throw new Error(t("Projekt nicht gefunden"));
     if (runningTurns.has(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
-    // Fail early (before the message is stored) when Claude is missing.
-    await claudeExecutable();
-    await environmentStore.agentSetupFor(project.id);
+    // Fail early (before the message is stored) when the agent program is missing or not signed in.
+    const { backend, context } = await turnContextFor(sessionId, permissionMode, model);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
       sessionStore.update(sessionId, { title: (text.trim() || attachments.map((attachment) => attachment.name).join(", ")).slice(0, 60) });
@@ -294,7 +164,7 @@ export const agentRuntime = {
     if (session.forkOriginSessionId && !session.forkItemId) sessionStore.update(sessionId, { forkItemId: userChatItem.id });
     // A version created by editing a message picks the conversation up at the point before that message.
     const pendingFork = session.agentSessionId ? null : session.pendingFork;
-    const turnTracking: TurnTracking = {};
+    if (session.backendId !== backend.id) sessionStore.update(sessionId, { backendId: backend.id });
 
     const abortController = new AbortController();
     const outcome: TurnOutcome = { success: false, finalText: "" };
@@ -303,48 +173,25 @@ export const agentRuntime = {
     eventHub.publish({ type: "turn_state", sessionId, running: true });
 
     try {
-      const agentStream = query({
-        prompt: promptFor(project, `${pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text}${mentionHintFor(project.id, text, session.agentId)}`, attachments),
-        options: {
-          ...(await sharedAgentOptions(sessionId, permissionMode, model)),
-          ...(pendingFork?.mode === "resume"
-            ? { resume: pendingFork.agentSessionId, resumeSessionAt: pendingFork.resumeAt, forkSession: true }
-            : { resume: session.agentSessionId ?? undefined }),
-          includePartialMessages: true,
-          abortController,
-          canUseTool: (toolName, input, { signal }) =>
-            new Promise<PermissionResult>((resolve) => {
-              const requestId = randomUUID();
-              pendingPermissions.set(requestId, { sessionId, toolName, input, resolve });
-              signal.addEventListener("abort", () => {
-                pendingPermissions.delete(requestId);
-                resolve({ behavior: "deny", message: "Abgebrochen" });
-              });
-              eventHub.publish({ type: "permission_request", sessionId, requestId, toolName, input });
-            }),
-        },
+      const turnEvents = backend.runTurn({
+        ...context,
+        promptText: `${pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text}${mentionHintFor(project.id, text, session.agentId)}`,
+        attachments,
+        resumeSessionId: session.agentSessionId,
+        pendingFork,
+        signal: abortController.signal,
+        requestPermission: (toolName, toolInput, signal) =>
+          new Promise<PermissionDecision>((resolve) => {
+            const requestId = randomUUID();
+            pendingPermissions.set(requestId, { sessionId, toolName, input: toolInput, resolve });
+            signal.addEventListener("abort", () => {
+              pendingPermissions.delete(requestId);
+              resolve({ behavior: "deny", message: "Abgebrochen" });
+            });
+            eventHub.publish({ type: "permission_request", sessionId, requestId, toolName, input: toolInput });
+          }),
       });
-      activeQueries.set(sessionId, agentStream);
-      for await (const agentMessage of agentStream) {
-        handleAgentMessage(sessionId, project.id, agentMessage, turnTracking);
-        if (agentMessage.type === "system" && agentMessage.subtype === "init") {
-          recordClaudeMcpServers(agentMessage.mcp_servers ?? []);
-          const terminalOnlyNames = agentMessage.terminal_slash_commands ?? [];
-          agentStream
-            .supportedCommands()
-            .then((reportedCommands) => agentCommands.remember(project.id, reportedCommands, terminalOnlyNames))
-            .catch(() => undefined);
-        }
-        if (agentMessage.type === "assistant" && !agentMessage.parent_tool_use_id) {
-          const turnText = agentMessage.message.content
-            .flatMap((contentBlock) => (contentBlock.type === "text" && contentBlock.text.trim() ? [contentBlock.text] : []))
-            .join("\n\n");
-          if (turnText) outcome.finalText = turnText; // last top-level text = the answer
-        } else if (agentMessage.type === "result") {
-          outcome.success = agentMessage.subtype === "success" && !agentMessage.is_error;
-          if (agentMessage.subtype !== "success") outcome.errorText = agentMessage.errors.join("\n");
-        }
-      }
+      for await (const turnEvent of turnEvents) applyTurnEvent(sessionId, turnEvent, outcome);
     } catch (turnError) {
       outcome.errorText = abortController.signal.aborted ? "Abgebrochen" : turnError instanceof Error ? turnError.message : String(turnError);
       if (!abortController.signal.aborted) {
@@ -358,7 +205,6 @@ export const agentRuntime = {
       }
     } finally {
       runningTurns.delete(sessionId);
-      activeQueries.delete(sessionId);
       for (const [requestId, pendingPermission] of pendingPermissions) {
         if (pendingPermission.sessionId === sessionId) {
           pendingPermissions.delete(requestId);
@@ -405,15 +251,15 @@ export const agentRuntime = {
   },
 
   /** Context window by category; model = the one the composer has picked (window size depends on it). */
-  measureContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
-    const inFlight = contextMeasurementsInFlight.get(sessionId);
-    if (inFlight) return inFlight;
-    const activeQuery = activeQueries.get(sessionId);
-    const measurement = (activeQuery ? activeQuery.getContextUsage({ detail: "full" }).then(toContextBreakdown) : measureIdleContext(sessionId, model)).finally(() =>
-      contextMeasurementsInFlight.delete(sessionId),
-    );
-    contextMeasurementsInFlight.set(sessionId, measurement);
-    return measurement;
+  async measureContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
+    const { backend, context } = await turnContextFor(sessionId, "default", model);
+    if (!backend.measureContext) throw new Error(t("{0} bietet keine Kontextanzeige", backend.name));
+    return backend.measureContext(context);
+  },
+
+  /** Throws a friendly error when the agent program of this session cannot run (not installed / signed in). */
+  async assertReady(sessionId: string): Promise<void> {
+    await agentBackends.get(backendIdFor(sessionId)).assertReady();
   },
 
   queueFor(sessionId: string): QueuedMessage[] {

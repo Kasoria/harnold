@@ -118,6 +118,8 @@ export const sessionActions = {
     }
     const versionRoot = versionRootOf(session, itemId);
     const forkedSession = sessionStore.create(session.projectId, session.title, { originSessionId: versionRoot.sessionId, originItemId: versionRoot.itemId, pendingFork });
+    // The fork continues with the agent program its origin used (its conversation id belongs to it).
+    if (session.backendId) sessionStore.update(forkedSession.id, { backendId: session.backendId });
     for (const keptItem of keptItems) {
       const { id: _id, sessionId: _sessionId, createdAt, ...payload } = keptItem;
       chatItemStore.append(forkedSession.id, payload, createdAt);

@@ -11,7 +11,7 @@ import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
 import { permissionModeOptions } from "@/components/form-field";
-import { agentModels, ModelSelect, type InheritedModel } from "@/components/model-select";
+import { getAgentModels, ModelSelect, useAgentModels, type InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
 
 const fieldSizingSupported = CSS.supports("field-sizing", "content");
@@ -24,7 +24,7 @@ const harnoldCommands: ComposerCommand[] = [
   { name: "new", description: t("Neue Session"), argumentHint: "", source: "harnold" },
   { name: "rename", description: t("Session umbenennen"), argumentHint: "<Titel>", source: "harnold" },
   { name: "move", description: t("In anderes Projekt / andere Umgebung verschieben"), argumentHint: "", source: "harnold" },
-  { name: "model", description: t("Modell wechseln"), argumentHint: agentModels.map((agentModel) => agentModel.label.split(" ")[0].toLowerCase()).join(" | "), source: "harnold" },
+  { name: "model", description: t("Modell wechseln"), argumentHint: "", source: "harnold" },
   { name: "plan", description: t("Plan-Modus an/aus"), argumentHint: "", source: "harnold" },
 ];
 
@@ -74,10 +74,13 @@ export function Composer(props: ComposerProps) {
     (safeStorage.getItem("harnold.permissionMode") as PermissionMode | null) ?? "default",
   );
   // "" = inherited model (older builds stored "default").
-  const [model, setModel] = useState(() => {
+  const [pickedModel, setModel] = useState(() => {
     const storedModel = safeStorage.getItem("harnold.model") ?? "";
     return storedModel === "default" ? "" : storedModel;
   });
+  // A model of another provider (switched in the meantime) falls back to the inherited one.
+  const availableModels = useAgentModels();
+  const model = availableModels.some((availableModel) => availableModel.value === pickedModel) ? pickedModel : "";
   const [transcribing, setTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorder = useVoiceRecorder();
@@ -210,6 +213,7 @@ export function Composer(props: ComposerProps) {
     }
     if (name === "model") {
       const wantedModel = commandArguments.toLowerCase();
+      const agentModels = getAgentModels();
       const matchedModel = agentModels.find((agentModel) => agentModel.value.includes(wantedModel) || agentModel.label.toLowerCase().includes(wantedModel));
       if (!wantedModel || !matchedModel) {
         props.onError(new Error(t("Modell: {0}", agentModels.map((agentModel) => agentModel.label).join(", "))));

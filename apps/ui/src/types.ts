@@ -14,6 +14,8 @@ export type Session = {
   forkItemId: string | null;
   /** Team member this conversation is with; null = default Harnold agent. */
   agentId: string | null;
+  /** Agent program this conversation runs on (null until its first turn). */
+  backendId?: AgentBackendId | null;
   /** Created by this task; shown as one row per task, not per run. */
   taskId: string | null;
 };
@@ -245,8 +247,10 @@ export type DesignSystemSummary = {
 };
 export type DesignSystemDetail = DesignSystemView & { id: string; name: string; directory: string; links: DesignSystemLinkTarget[] };
 
+export type AgentBackendId = "claude-code" | "codex" | "native";
+
 export type AgentRuntimeStatus = {
-  id: "claude-code";
+  id: AgentBackendId;
   name: string;
   found: boolean;
   source?: "configured" | "bundled" | "downloaded" | "installed";
@@ -257,11 +261,43 @@ export type AgentRuntimeStatus = {
   tooOldPath?: string;
   installHint: string;
   installUrl: string;
+  updateHint: string;
+  /** Harnold can fetch the program itself. */
+  downloadable: boolean;
   download: { running: boolean; receivedBytes: number; totalBytes: number; error?: string };
 };
 
+/** What the UI may offer for an agent program; features it lacks are hidden. */
+export type BackendCapabilities = { interactivePermissions: boolean; questions: boolean; contextBreakdown: boolean; forkAtMessage: boolean; extensions: boolean };
+/** runtime null = nothing to install (Harnold-Agent). */
+export type BackendStatus = { id: AgentBackendId; name: string; ready: boolean; runtime: AgentRuntimeStatus | null; capabilities: BackendCapabilities };
+export type AgentBackendsView = { activeId: AgentBackendId; backends: BackendStatus[] };
+export type CodexAuthMode = "login" | "apiKey";
+export type CodexStatus = {
+  mode: CodexAuthMode;
+  apiKeySet: boolean;
+  environmentApiKey: boolean;
+  loginText: string | null;
+  loggedIn: boolean;
+  loginPending: boolean;
+  ready: boolean;
+  runtime: AgentRuntimeStatus;
+  /** Extra model ids the user added (besides Codex's own default). */
+  models: string[];
+};
+
 export type ClaudeAuthMode = "subscription" | "apiKey";
+/** "anthropic" = Messages API (also usable by Claude Code), "openai" = chat completions. */
+export type ProviderProtocol = "anthropic" | "openai";
+export type ProviderPreset = { id: string; name: string; protocol: ProviderProtocol; baseUrl: string; models: string[]; needsKey: boolean; keyPlaceholder: string; hint?: string };
+export type CustomProvider = { id: string; name: string; protocol: ProviderProtocol; baseUrl: string; models: string[]; needsKey: boolean; apiKeySet: boolean; ready: boolean };
+export type ProviderInput = { name: string; protocol: ProviderProtocol; baseUrl: string; models: string[]; needsKey: boolean; apiKey?: string };
+/** activeId: "claude" or a custom provider's id. */
+export type ProvidersView = { activeId: string; providers: CustomProvider[]; presets: ProviderPreset[] };
+
 export type ClaudeAuthStatus = {
+  /** "claude" or the id of the active custom provider. */
+  providerId: string;
   mode: ClaudeAuthMode;
   apiKeySet: boolean;
   environmentApiKey: boolean;
@@ -289,7 +325,7 @@ export type ImageRequest = {
 };
 
 /** "inherit" = Einstellungen → Claude. */
-export type EnvironmentClaudeMode = "inherit" | "subscription" | "apiKey";
+export type EnvironmentClaudeMode = "inherit" | "subscription" | "apiKey" | `provider:${string}` | `backend:${string}`;
 export type EnvironmentVariable = { key: string; value: string; secret: boolean };
 export type Environment = {
   id: string;

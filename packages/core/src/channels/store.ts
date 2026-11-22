@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import type { PermissionMode } from "../backends/types.ts";
 import { database } from "../db.ts";
 import { decryptSecret, encryptSecret } from "../secrets.ts";
 import { channelFieldDefinitions, type ChannelType } from "./types.ts";

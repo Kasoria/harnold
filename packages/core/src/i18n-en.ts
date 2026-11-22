@@ -1,5 +1,15 @@
 /** English texts of the Core, keyed by the German source text. */
 export const englishTexts: Record<string, string> = {
+  "{0} kann nicht von Harnold geladen werden": "{0} can't be downloaded by Harnold",
+  "Codex ist nicht installiert – Einstellungen → Agent": "Codex is not installed – Settings → Agent",
+  "Keine Anmelde-URL von Codex erhalten": "No sign-in URL received from Codex",
+  "Codex ist nicht angemeldet – Einstellungen → Agent": "Codex is not signed in – Settings → Agent",
+  "{0} bietet keine Kontextanzeige": "{0} has no context display",
+  "Unbekannter Agent": "Unknown agent",
+  "Anbieter nicht gefunden": "Provider not found",
+  "Anbieter ist nicht fertig eingerichtet – Einstellungen → Agent": "Provider is not set up yet – Settings → Agent",
+  "Umgebung „{0}“: Anbieter nicht eingerichtet – Umgebungen → {1}": "Environment “{0}”: provider not set up – Environments → {1}",
+
   " (eine Zeile pro Frage)": " (one line per question)",
   "API-Key für die Bild-Generierung fehlt (Einstellungen → Bilder).": "API key for image generation is missing (Settings → Images).",
   "Agent gehört nicht zum Team dieses Projekts": "Agent is not part of this project's team",
@@ -92,4 +102,13 @@ export const englishTexts: Record<string, string> = {
   "{0} in „{1}“.": "{0} in “{1}”.",
   "⚠️ Sprachnachricht nicht verarbeitet: {0}": "⚠️ Voice message not processed: {0}",
   "Neuer Kontext: Der Agent beginnt ab hier ohne die Läufe davor (nach {0} Läufen).": "New context: from here on the agent starts without the earlier runs (after {0} runs).",
+  "Kein Modell gewählt. Lege unter Einstellungen → Agent einen Anbieter an.": "No model selected. Add a provider under Settings → Agent.",
+  "Anbieter „{0}“ ist nicht fertig eingerichtet (API-Key fehlt?).": "Provider “{0}” is not fully set up (API key missing?).",
+  "MCP-Server nicht verbunden: {0}": "MCP server not connected: {0}",
+  "Das Modell hat die Antwort abgebrochen.": "The model cut off its answer.",
+  "Nach {0} Schritten angehalten.": "Stopped after {0} steps.",
+  "Für den Harnold-Agent ist noch kein Anbieter eingerichtet. Einstellungen → Agent.": "No provider is set up for the Harnold agent yet. Settings → Agent.",
+  "Unbekanntes Modell": "Unknown model",
+  "Modelle nicht abrufbar ({0})": "Models not available ({0})",
+  "Der Endpunkt nennt keine Modelle": "The endpoint lists no models",
 };

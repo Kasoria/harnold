@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { TeamAgent, Attachment, SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { TeamAgent, Attachment, SessionReference, Channel, ChatItem, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -17,7 +17,9 @@ import { SettingsScreen, settingsSectionNames, type SettingsSection } from "@/sc
 import { DesignSystemsScreen } from "@/screens/design-systems-screen";
 import { EnvironmentsScreen } from "@/screens/environments-screen";
 import { TodayScreen } from "@/screens/today-screen";
-import { ClaudeOnboarding } from "@/components/claude-connection";
+import { AgentOnboarding } from "@/components/agent-connection";
+import { modelsForCodex, modelsForNative, modelsForProvider, setActiveModels } from "@/components/model-select";
+import { setAgentBackendsView } from "@/lib/agent-backends";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
 import { FilesScreen } from "@/screens/files-screen";
@@ -67,6 +69,9 @@ export function App() {
   const [integrationsChangeCounter, setIntegrationsChangeCounter] = useState(0);
   const [designSystemsChangeCounter, setDesignSystemsChangeCounter] = useState(0);
   const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
+  const [providers, setProviders] = useState<ProvidersView | null>(null);
+  const [agentBackends, setAgentBackends] = useState<AgentBackendsView | null>(null);
+  const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [teamAgents, setTeamAgents] = useState<TeamAgent[]>([]);
@@ -139,12 +144,16 @@ export function App() {
       )
       .catch(reportError);
     api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(reportError);
+    api.readProviders().then(setProviders).catch(reportError);
     api.readVoiceSettings().then(setVoiceSettings).catch(reportError);
-    api
-      .readClaudeStatus()
-      .then((loadedStatus) => {
+    api.readCodexStatus().then(setCodexStatus).catch(() => undefined);
+    Promise.all([api.readClaudeStatus(), api.readAgentBackends()])
+      .then(([loadedStatus, loadedBackends]) => {
         setClaudeStatus(loadedStatus);
-        if (!loadedStatus.ready && !loadedStatus.cliError) setOnboardingVisible(true);
+        setAgentBackends(loadedBackends);
+        const activeBackend = loadedBackends.backends.find((backend) => backend.id === loadedBackends.activeId);
+        // Unknown Claude CLI state (status failed) is no reason to block – the agent reports real auth errors itself.
+        if (activeBackend && !activeBackend.ready && !(activeBackend.id === "claude-code" && loadedStatus.cliError)) setOnboardingVisible(true);
       })
       .catch(reportError);
   }, [refreshTasks, refreshChannels, refreshEnvironments]);
@@ -288,6 +297,10 @@ export function App() {
             return;
           case "claude_auth_changed":
             api.readClaudeStatus().then(setClaudeStatus).catch(() => undefined);
+            api.readProviders().then(setProviders).catch(() => undefined);
+            api.readAgentBackends().then(setAgentBackends).catch(() => undefined);
+            api.readCodexStatus().then(setCodexStatus).catch(() => undefined);
+            api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(() => undefined);
             return;
           case "task_run_finished":
             setTodayReloadCounter((previous) => previous + 1);
@@ -309,6 +322,20 @@ export function App() {
       }),
     [refreshSessions, refreshTasks, refreshChannels, refreshEnvironments, navigate],
   );
+
+  // The model pickers list the models of the active provider.
+  useEffect(() => {
+    const activeProvider = providers?.providers.find((provider) => provider.id === providers.activeId);
+    const activeBackendId = agentBackends?.activeId;
+    setActiveModels(
+      activeBackendId === "codex"
+        ? modelsForCodex(codexStatus?.models ?? [])
+        : activeBackendId === "native"
+          ? modelsForNative(providers?.providers ?? [])
+          : modelsForProvider(activeProvider?.protocol === "anthropic" ? activeProvider : null),
+    );
+    setAgentBackendsView(agentBackends);
+  }, [providers, agentBackends, codexStatus]);
 
   /** Model a turn in this project uses when the composer/task picks none: environment model, else settings. */
   const inheritedModelFor = (projectId: string | null): InheritedModel => {
@@ -584,6 +611,8 @@ export function App() {
       case "today":
         return (
           <TodayScreen
+            projects={projects}
+            environments={environments}
             permissionRequests={permissionRequests}
             runningSessionIds={runningSessionIds}
             sessionReferenceFor={sessionReferenceFor}
@@ -701,6 +730,8 @@ export function App() {
             onSelect={(selection) => navigate(routePath("environments", selection))}
             environments={environments}
             workspaceDefaultModel={defaultModel}
+            aiProviders={providers?.providers ?? []}
+            codexModels={codexStatus?.models ?? []}
             projects={projects.filter((project) => project.kind !== "quick")}
             onEnvironmentsChange={() => void refreshEnvironments()}
             onOpenMemory={(environment) => {
@@ -716,6 +747,12 @@ export function App() {
           <SettingsScreen
             section={(settingsSectionNames.includes(route.section as SettingsSection) ? route.section : "claude") as SettingsSection}
             claudeStatus={claudeStatus}
+            providers={providers}
+            onProvidersChange={setProviders}
+            backends={agentBackends}
+            codex={codexStatus}
+            onBackendsChange={setAgentBackends}
+            onCodexChange={setCodexStatus}
             defaultModel={defaultModel}
             onDefaultModelChange={setDefaultModel}
             onClaudeStatusChange={setClaudeStatus}
@@ -888,7 +925,18 @@ export function App() {
       </div>
 
       {onboardingVisible && (
-        <ClaudeOnboarding status={claudeStatus} onStatusChange={setClaudeStatus} onError={reportError} onDismiss={() => setOnboardingVisible(false)} />
+        <AgentOnboarding
+          backends={agentBackends}
+          codex={codexStatus}
+          claudeStatus={claudeStatus}
+          providers={providers}
+          onBackendsChange={setAgentBackends}
+          onCodexChange={setCodexStatus}
+          onClaudeStatusChange={setClaudeStatus}
+          onProvidersChange={setProviders}
+          onError={reportError}
+          onDismiss={() => setOnboardingVisible(false)}
+        />
       )}
       <ConfirmDialogHost />
       <TextPromptDialogHost />

@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { BookOpen, CheckCircle2, CircleAlert, Download, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "@/api";
-import type { ClaudeAuthStatus, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentProvider, EnvironmentVariable, Project } from "@/types";
+import type { ClaudeAuthStatus, CustomProvider, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentProvider, EnvironmentVariable, Project } from "@/types";
 import { SegmentedControl } from "@/components/segmented-control";
 import { ClaudeAccountSection } from "@/components/claude-connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FormField } from "@/components/form-field";
-import { ModelSelect, modelLabel } from "@/components/model-select";
+import { ModelSelect, modelLabel, modelsForCodex, modelsForNative, modelsForProvider } from "@/components/model-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
@@ -17,6 +18,9 @@ import { t } from "@/lib/i18n";
 
 type EnvironmentsScreenProps = {
   workspaceDefaultModel: string;
+  /** Custom AI providers an environment can use instead of the workspace one. */
+  aiProviders: CustomProvider[];
+  codexModels: string[];
   /** Selected environment id, "new" for the create form, null for none. */
   selection: string | null;
   onSelect: (selection: string | null) => void;
@@ -30,7 +34,7 @@ type EnvironmentsScreenProps = {
 };
 
 const accountSummary = (environment: Environment) =>
-  [environment.claudeMode !== "inherit" && t("eigenes Claude"), environment.model && modelLabel(environment.model), ...environment.accounts.map((account) => account.label), environment.sshKeyPath && "SSH", environment.variables.length && t("{0} Variablen", environment.variables.length)].filter(Boolean).join(" · ") ||
+  [environment.claudeMode !== "inherit" && t("eigener KI-Zugang"), environment.model && modelLabel(environment.model), ...environment.accounts.map((account) => account.label), environment.sshKeyPath && "SSH", environment.variables.length && t("{0} Variablen", environment.variables.length)].filter(Boolean).join(" · ") ||
   t("noch keine Konten");
 
 export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
@@ -81,6 +85,8 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
               environment={selectedEnvironment}
               providers={providers}
               workspaceDefaultModel={props.workspaceDefaultModel}
+              aiProviders={props.aiProviders}
+              codexModels={props.codexModels}
               allEnvironments={props.environments}
               projects={props.projects}
               onOpenMemory={props.onOpenMemory}
@@ -149,6 +155,8 @@ function EnvironmentEditor(props: {
   environment: Environment | null;
   providers: EnvironmentProvider[];
   workspaceDefaultModel: string;
+  aiProviders: CustomProvider[];
+  codexModels: string[];
   allEnvironments: Environment[];
   projects: Project[];
   onOpenMemory: (environment: Environment) => void;
@@ -281,6 +289,8 @@ function EnvironmentEditor(props: {
           claudeApiKey={draft.claudeApiKey}
           model={draft.model}
           workspaceDefaultModel={props.workspaceDefaultModel}
+          aiProviders={props.aiProviders}
+          codexModels={props.codexModels}
           onChange={update}
           onError={props.onError}
         />
@@ -407,6 +417,8 @@ function EnvironmentEditor(props: {
 function AiSection(props: {
   environment: Environment | null;
   workspaceDefaultModel: string;
+  aiProviders: CustomProvider[];
+  codexModels: string[];
   claudeMode: EnvironmentClaudeMode;
   claudeApiKey: string | undefined;
   model: string;
@@ -416,6 +428,7 @@ function AiSection(props: {
   const [accountStatus, setAccountStatus] = useState<ClaudeAuthStatus | null>(null);
   const environmentId = props.environment?.id;
   const { onError } = props;
+  const ownProvider = props.aiProviders.find((aiProvider) => props.claudeMode === `provider:${aiProvider.id}`);
 
   useEffect(() => {
     if (props.claudeMode !== "subscription" || !environmentId) return;
@@ -425,17 +438,25 @@ function AiSection(props: {
   return (
     <section className="grid gap-4">
       <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">KI</h3>
-      <FormField label={t("Claude-Zugang")}>
-        <SegmentedControl
-          className="w-96"
-          options={[
-            { value: "inherit", label: t("Wie Einstellungen") },
-            { value: "subscription", label: t("Claude-Konto") },
-            { value: "apiKey", label: t("API-Key") },
-          ]}
-          value={props.claudeMode}
-          onValueChange={(claudeMode) => props.onChange({ claudeMode })}
-        />
+      <FormField label={t("KI-Zugang")}>
+        <Select value={props.claudeMode} onValueChange={(claudeMode) => props.onChange({ claudeMode: claudeMode as EnvironmentClaudeMode })}>
+          <SelectTrigger className="w-72">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="inherit">{t("Wie Einstellungen")}</SelectItem>
+            <SelectItem value="subscription">{t("Claude-Konto")}</SelectItem>
+            <SelectItem value="apiKey">{t("Claude API-Key")}</SelectItem>
+            <SelectItem value="backend:codex">Codex</SelectItem>
+            <SelectItem value="backend:native">{t("Harnold-Agent (alle Anbieter)")}</SelectItem>
+            {props.aiProviders.map((aiProvider) => (
+              <SelectItem key={aiProvider.id} value={`provider:${aiProvider.id}`}>
+                {aiProvider.name}
+                {aiProvider.protocol === "openai" && <span className="text-muted-foreground"> · Harnold-Agent</span>}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </FormField>
 
       {props.claudeMode === "subscription" &&
@@ -461,7 +482,30 @@ function AiSection(props: {
       )}
 
       <FormField label={t("Modell")}>
-        <ModelSelect value={props.model} onChange={(model) => props.onChange({ model })} inherited={{ model: props.workspaceDefaultModel, source: "Einstellungen" }} />
+        <ModelSelect
+          value={props.model}
+          models={
+            props.claudeMode === "backend:codex"
+              ? modelsForCodex(props.codexModels)
+              : props.claudeMode === "backend:native"
+                ? modelsForNative(props.aiProviders)
+                : ownProvider
+                  ? modelsForProvider(ownProvider)
+                  : props.claudeMode === "inherit"
+                    ? undefined
+                    : modelsForProvider(null)
+          }
+          onChange={(model) => props.onChange({ model })}
+          inherited={
+            props.claudeMode === "backend:codex"
+              ? { model: "codex-default", source: "Codex" }
+              : props.claudeMode === "backend:native"
+                ? { model: modelsForNative(props.aiProviders)[0]?.value ?? "", source: "Harnold-Agent" }
+                : ownProvider
+                  ? { model: ownProvider.models[0] ?? "", source: ownProvider.name }
+                  : { model: props.workspaceDefaultModel, source: "Einstellungen" }
+          }
+        />
       </FormField>
     </section>
   );

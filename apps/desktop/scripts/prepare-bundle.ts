@@ -61,6 +61,13 @@ function prepareCore() {
   for (const packageName of fs.readdirSync(anthropicDirectory)) {
     if (packageName.startsWith("claude-agent-sdk-")) fs.rmSync(path.join(anthropicDirectory, packageName), { recursive: true, force: true });
   }
+  // Same for Codex: the SDK stays, its bundled program (@openai/codex and platform builds) does not.
+  const openaiDirectory = path.join(coreTarget, "node_modules/@openai");
+  if (fs.existsSync(openaiDirectory)) {
+    for (const packageName of fs.readdirSync(openaiDirectory)) {
+      if (packageName !== "codex-sdk") fs.rmSync(path.join(openaiDirectory, packageName), { recursive: true, force: true });
+    }
+  }
 }
 
 function prepareUi() {

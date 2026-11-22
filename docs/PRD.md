@@ -13,7 +13,7 @@ Heute: Artifact erstellen → teilen → Claude Code öffnen → Ordner wählen 
 1. **Ein Projekt = ein Ordner.** Alles (Chat, Code, Designs, Assets, Memory) liegt im Projekt. Kein Export/Import zwischen Bereichen.
 2. **Klare Bereiche, gemeinsamer Kontext.** Bereiche haben eigene UI und Zuständigkeit, referenzieren sich aber direkt (`@design/hero`, `@file/src/app.tsx`).
 3. **Überall hostbar.** Gleicher Core lokal (Desktop) und auf Server (24/7).
-4. **Offen.** Provider, Channels, Integrationen über Adapter. Wording generisch, nicht nutzerspezifisch.
+4. **Offen.** Agent-Programm (Claude Code, Codex, eigener Harnold-Agent für jeden Anbieter mit OpenAI- oder Anthropic-Schnittstelle), Provider, Channels, Integrationen über Adapter. Nichts davon ist fest verdrahtet: Das Agent-Programm ist eine Einstellung (pro Workspace, pro Umgebung überschreibbar). Wording generisch, nicht nutzerspezifisch.
 
 ## Begriffe
 

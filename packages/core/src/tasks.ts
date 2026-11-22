@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Cron } from "croner";
-import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import type { PermissionMode } from "./backends/types.ts";
 import { chatItemStore, database, projectStore, sessionStore } from "./db.ts";
 import { agentRuntime } from "./agent.ts";
 import { eventHub } from "./events.ts";

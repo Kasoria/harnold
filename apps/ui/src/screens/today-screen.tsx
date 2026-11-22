@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, CircleAlert, Loader2, MessageCircleQuestion, MessageSquare, ShieldAlert } from "lucide-react";
 import { isQuestionRequest, questionsOf } from "@/components/chat/question-card";
 import { api } from "@/api";
-import type { PermissionRequest, SessionReference, TodayOverview } from "@/types";
+import type { Environment, PermissionRequest, Project, SessionReference, TodayOverview } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { formatRelativeTime } from "@/components/form-field";
@@ -10,6 +10,8 @@ import { summarizeToolInput } from "@/components/chat/tool-group";
 import { locale, t } from "@/lib/i18n";
 
 type TodayScreenProps = {
+  projects: Project[];
+  environments: Environment[];
   /** Live from the event stream; the rest is loaded. */
   permissionRequests: PermissionRequest[];
   runningSessionIds: Set<string>;
@@ -21,26 +23,28 @@ type TodayScreenProps = {
   onError: (unknownError: unknown) => void;
 };
 
-function Section(props: { title: string; children: React.ReactNode }) {
+function Section(props: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="min-w-0 animate-in fade-in duration-200">
-      <h2 className="mb-2 px-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{props.title}</h2>
+      <h2 className="mb-2 flex items-center gap-1.5 px-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{props.title}</h2>
       <div className="divide-y rounded-xl border bg-card">{props.children}</div>
     </section>
   );
 }
 
-function SessionRow(props: { reference: SessionReference; leading: React.ReactNode; meta?: React.ReactNode; detail?: string; actions?: React.ReactNode; onOpen: () => void }) {
+function SessionRow(props: { reference: SessionReference; showProject?: boolean; leading: React.ReactNode; meta?: React.ReactNode; detail?: string; actions?: React.ReactNode; onOpen: () => void }) {
   return (
     <div className="group flex items-center gap-3 px-3 py-2.5">
       <div className="shrink-0">{props.leading}</div>
       <button className="min-w-0 flex-1 text-left" onClick={props.onOpen}>
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-medium">{props.reference.sessionTitle}</span>
-          <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
-            <ProjectAvatar name={props.reference.projectName} className="size-3.5 rounded text-[8px]" />
-            {props.reference.projectName}
-          </span>
+          {props.showProject !== false && (
+            <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
+              <ProjectAvatar name={props.reference.projectName} className="size-3.5 rounded text-[8px]" />
+              {props.reference.projectName}
+            </span>
+          )}
           {props.meta && <span className="ml-auto shrink-0 text-[12px] text-muted-foreground tabular-nums">{props.meta}</span>}
         </div>
         {props.detail && <div className="mt-0.5 truncate text-[12px] text-muted-foreground">{props.detail}</div>}
@@ -68,7 +72,34 @@ export function TodayScreen(props: TodayScreenProps) {
     return reference && !waiting.some((entry) => entry.reference.sessionId === sessionId) ? [reference] : [];
   });
   const taskResults = overview?.taskResults ?? [];
+  const recentChats = overview?.recentSessions ?? [];
   const nothingPending = waiting.length === 0 && running.length === 0 && taskResults.length === 0;
+
+  // Task results and chats, split by environment; projects without one form their own group.
+  type Group = { key: string; name: string; icon: string | null; latest: number; taskRuns: typeof taskResults; chats: typeof recentChats };
+  const groups = new Map<string, Group>();
+  const groupFor = (projectId: string, projectName: string): Group => {
+    const environment = props.environments.find((candidate) => candidate.projectIds.includes(projectId));
+    const key = environment ? `environment:${environment.id}` : `project:${projectId}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, name: environment?.name ?? projectName, icon: environment?.icon ?? props.projects.find((project) => project.id === projectId)?.icon ?? null, latest: 0, taskRuns: [], chats: [] };
+      groups.set(key, group);
+    }
+    return group;
+  };
+  for (const taskRun of taskResults) {
+    if (!taskRun.session) continue;
+    const group = groupFor(taskRun.session.projectId, taskRun.session.projectName);
+    group.taskRuns.push(taskRun);
+    group.latest = Math.max(group.latest, (taskRun.finishedAt ?? taskRun.startedAt));
+  }
+  for (const chat of recentChats) {
+    const group = groupFor(chat.projectId, chat.projectName);
+    group.chats.push(chat);
+    group.latest = Math.max(group.latest, chat.updatedAt);
+  }
+  const orderedGroups = [...groups.values()].sort((first, second) => second.latest - first.latest);
   const open = (reference: SessionReference) => props.onOpenSession(reference.projectId, reference.sessionId);
 
   return (
@@ -126,36 +157,58 @@ export function TodayScreen(props: TodayScreenProps) {
           </Section>
         )}
 
-        {taskResults.length > 0 && (
-          <Section title={t("Task-Ergebnisse")}>
-            {taskResults.map((taskRun) =>
-              taskRun.session ? (
-                <SessionRow
-                  key={taskRun.id}
-                  reference={{ ...taskRun.session, sessionTitle: taskRun.taskName }}
-                  leading={taskRun.status === "success" ? <CheckCircle2 className="size-4 text-status-running" /> : <CircleAlert className="size-4 text-destructive" />}
-                  meta={formatRelativeTime(taskRun.finishedAt ?? taskRun.startedAt)}
-                  detail={taskRun.summary ?? undefined}
-                  onOpen={() => open(taskRun.session!)}
-                />
-              ) : null,
-            )}
-          </Section>
-        )}
-
-        {overview && overview.recentSessions.length > 0 && (
-          <Section title={t("Weitermachen")}>
-            {overview.recentSessions.map((reference) => (
-              <SessionRow
-                key={reference.sessionId}
-                reference={reference}
-                leading={<MessageSquare className="size-4 text-muted-foreground" />}
-                meta={formatRelativeTime(reference.updatedAt)}
-                onOpen={() => open(reference)}
-              />
-            ))}
-          </Section>
-        )}
+        {orderedGroups.map((group) => {
+          const projectCount = new Set([...group.taskRuns.map((taskRun) => taskRun.session!.projectId), ...group.chats.map((chat) => chat.projectId)]).size;
+          const showProject = projectCount > 1;
+          const sublabel = (label: string) => <div className="px-3 pt-2.5 pb-1 text-[11px] text-muted-foreground">{label}</div>;
+          return (
+            <Section
+              key={group.key}
+              title={
+                <>
+                  <ProjectAvatar name={group.name} className="size-4 rounded text-[9px]" />
+                  {group.name}
+                </>
+              }
+            >
+              {group.taskRuns.length > 0 && (
+                <div>
+                  {sublabel(t("Task-Ergebnisse"))}
+                  <div className="divide-y">
+                    {group.taskRuns.map((taskRun) => (
+                      <SessionRow
+                        key={taskRun.id}
+                        reference={{ ...taskRun.session!, sessionTitle: taskRun.taskName }}
+                        showProject={showProject}
+                        leading={taskRun.status === "success" ? <CheckCircle2 className="size-4 text-status-running" /> : <CircleAlert className="size-4 text-destructive" />}
+                        meta={formatRelativeTime(taskRun.finishedAt ?? taskRun.startedAt)}
+                        detail={taskRun.summary ?? undefined}
+                        onOpen={() => open(taskRun.session!)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {group.chats.length > 0 && (
+                <div>
+                  {sublabel(t("Weitermachen"))}
+                  <div className="divide-y">
+                    {group.chats.map((reference) => (
+                      <SessionRow
+                        key={reference.sessionId}
+                        reference={reference}
+                        showProject={showProject}
+                        leading={<MessageSquare className="size-4 text-muted-foreground" />}
+                        meta={formatRelativeTime(reference.updatedAt)}
+                        onOpen={() => open(reference)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Section>
+          );
+        })}
       </div>
     </section>
   );

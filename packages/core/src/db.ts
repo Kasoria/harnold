@@ -41,6 +41,16 @@ addColumnIfMissing("sessions", "fork_item_id", "TEXT");
 addColumnIfMissing("sessions", "pending_fork", "TEXT");
 addColumnIfMissing("sessions", "agent_id", "TEXT");
 addColumnIfMissing("sessions", "task_id", "TEXT");
+addColumnIfMissing("sessions", "backend_id", "TEXT");
+// Conversation history of Harnold's own agent (other agent programs keep theirs themselves).
+database.exec(`
+  CREATE TABLE IF NOT EXISTS agent_messages (
+    session_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (session_id, sequence)
+  );
+`);
 
 /** "quick" = the built-in home of chats without a project (Quick Chats). */
 export type ProjectKind = "project" | "quick";
@@ -57,6 +67,8 @@ export type Session = {
   projectId: string;
   title: string;
   agentSessionId: string | null;
+  /** Agent program of this conversation (set on the first turn; its agentSessionId belongs to it). null = not started yet. */
+  backendId: string | null;
   /** Set on a version created by editing a message: the session/message it is an alternative to. */
   forkOriginSessionId: string | null;
   forkOriginItemId: string | null;
@@ -115,6 +127,7 @@ const mapSession = (row: Row): Session => ({
   projectId: String(row.project_id),
   title: String(row.title),
   agentSessionId: row.agent_session_id ? String(row.agent_session_id) : null,
+  backendId: row.backend_id ? String(row.backend_id) : null,
   forkOriginSessionId: row.fork_origin_session_id ? String(row.fork_origin_session_id) : null,
   forkOriginItemId: row.fork_origin_item_id ? String(row.fork_origin_item_id) : null,
   forkItemId: row.fork_item_id ? String(row.fork_item_id) : null,
@@ -149,6 +162,7 @@ export const projectStore = {
   },
   remove(projectId: string): void {
     database.prepare("DELETE FROM chat_items WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)").run(projectId);
+    database.prepare("DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)").run(projectId);
     database.prepare("DELETE FROM sessions WHERE project_id = ?").run(projectId);
     database.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
   },
@@ -177,6 +191,7 @@ export const sessionStore = {
       projectId,
       title,
       agentSessionId: null,
+      backendId: null,
       forkOriginSessionId: fork?.originSessionId ?? null,
       forkOriginItemId: fork?.originItemId ?? null,
       forkItemId: null,
@@ -196,13 +211,13 @@ export const sessionStore = {
   /** `agentSessionId: null` starts a fresh agent context on the next turn. */
   update(
     sessionId: string,
-    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null },
+    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null },
   ): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
     const pendingFork = changes.pendingFork === undefined ? current.pendingFork : changes.pendingFork;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, updated_at = ? WHERE id = ?")
       .run(
         changes.title ?? current.title,
         changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
@@ -210,6 +225,7 @@ export const sessionStore = {
         changes.forkItemId ?? current.forkItemId,
         pendingFork ? JSON.stringify(pendingFork) : null,
         changes.agentId === undefined ? current.agentId : changes.agentId,
+        changes.backendId === undefined ? current.backendId : changes.backendId,
         Date.now(),
         sessionId,
       );
@@ -222,6 +238,7 @@ export const sessionStore = {
   remove(sessionId: string): void {
     for (const fork of sessionStore.listForks(sessionId)) sessionStore.remove(fork.id);
     database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
+    database.prepare("DELETE FROM agent_messages WHERE session_id = ?").run(sessionId);
     database.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
   },
 };
@@ -247,5 +264,23 @@ export const chatItemStore = {
       .prepare("INSERT INTO chat_items (id, session_id, payload, created_at) VALUES (?, ?, ?, ?)")
       .run(chatItem.id, sessionId, JSON.stringify(payload), chatItem.createdAt);
     return chatItem;
+  },
+};
+
+export const agentMessageStore = {
+  list(sessionId: string): unknown[] {
+    return database.prepare("SELECT payload FROM agent_messages WHERE session_id = ? ORDER BY sequence").all(sessionId).map((row) => JSON.parse(String(row.payload)));
+  },
+  append(sessionId: string, message: unknown): void {
+    const next = database.prepare("SELECT COALESCE(MAX(sequence), -1) + 1 AS next FROM agent_messages WHERE session_id = ?").get(sessionId);
+    database.prepare("INSERT INTO agent_messages (session_id, sequence, payload) VALUES (?, ?, ?)").run(sessionId, Number(next?.next ?? 0), JSON.stringify(message));
+  },
+  /** Replaces the whole history (after trimming). */
+  replace(sessionId: string, messages: unknown[]): void {
+    database.prepare("DELETE FROM agent_messages WHERE session_id = ?").run(sessionId);
+    messages.forEach((message, index) => database.prepare("INSERT INTO agent_messages (session_id, sequence, payload) VALUES (?, ?, ?)").run(sessionId, index, JSON.stringify(message)));
+  },
+  clear(sessionId: string): void {
+    database.prepare("DELETE FROM agent_messages WHERE session_id = ?").run(sessionId);
   },
 };

@@ -30,6 +30,7 @@ import { UserMessage } from "./user-message";
 import { ImageGallery, imagePathsIn } from "./attachment-views";
 import { ProjectQuickSelect } from "./project-quick-select";
 import { ContextIndicator } from "./context-indicator";
+import { useSessionBackend } from "@/lib/agent-backends";
 import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
@@ -101,6 +102,7 @@ function buildRenderBlocks(chatItems: ChatItem[]): RenderBlock[] {
 }
 
 export function ChatPane(props: ChatPaneProps) {
+  const sessionBackend = useSessionBackend(props.session?.backendId);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const running = props.status === "running" || props.status === "waiting";
   const [readAloud, setReadAloud] = useState(safeStorage.getItem("harnold.readAloud") === "1");
@@ -528,7 +530,8 @@ export function ChatPane(props: ChatPaneProps) {
             teamAgents={props.teamAgents}
             onInterrupt={props.onInterrupt}
             onError={props.onError}
-            contextIndicator={(composerModel) => (
+            contextIndicator={(composerModel) =>
+              sessionBackend && !sessionBackend.capabilities.contextBreakdown ? null : (
               <ContextIndicator
                 sessionId={props.session?.id ?? null}
                 model={composerModel}
@@ -537,7 +540,8 @@ export function ChatPane(props: ChatPaneProps) {
                 running={running}
                 onCompact={() => props.onSend("/compact", "default", composerModel || undefined)}
               />
-            )}
+              )
+            }
             footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}
           />
         </div>

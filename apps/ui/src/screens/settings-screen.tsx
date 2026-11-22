@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ClaudeAuthStatus, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
+import type { AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api } from "@/api";
 import { Brain, Image as ImageIcon, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
-import { ClaudeConnectionPanel } from "@/components/claude-connection";
+import { AgentConnection } from "@/components/agent-connection";
 import { ModelSelect } from "@/components/model-select";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
@@ -29,6 +29,12 @@ type SettingsScreenProps = {
   voiceSettings: VoiceSettingsView | null;
   onVoiceSettingsChange: (voiceSettings: VoiceSettingsView) => void;
   claudeStatus: ClaudeAuthStatus | null;
+  providers: ProvidersView | null;
+  backends: AgentBackendsView | null;
+  codex: CodexStatus | null;
+  onBackendsChange: (backends: AgentBackendsView) => void;
+  onCodexChange: (codex: CodexStatus) => void;
+  onProvidersChange: (providers: ProvidersView) => void;
   defaultModel: string;
   onDefaultModelChange: (defaultModel: string) => void;
   onClaudeStatusChange: (claudeStatus: ClaudeAuthStatus) => void;
@@ -36,7 +42,7 @@ type SettingsScreenProps = {
 };
 
 const settingsSections: { value: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: "claude", label: t("Claude"), icon: Sparkles },
+  { value: "claude", label: t("Agent"), icon: Sparkles },
   { value: "general", label: t("Allgemein"), icon: SlidersHorizontal },
   { value: "voice", label: t("Voice"), icon: Mic },
   { value: "images", label: t("Bilder"), icon: ImageIcon },
@@ -214,7 +220,17 @@ export function SettingsScreen(props: SettingsScreenProps) {
             <h2 className="mb-5 text-[15px] font-semibold">{activeSection.label}</h2>
             {activeSection.value === "claude" ? (
               <div className="grid gap-6">
-                <ClaudeConnectionPanel status={props.claudeStatus} onStatusChange={props.onClaudeStatusChange} onError={props.onError} />
+                <AgentConnection
+                  backends={props.backends}
+                  codex={props.codex}
+                  claudeStatus={props.claudeStatus}
+                  providers={props.providers}
+                  onBackendsChange={props.onBackendsChange}
+                  onCodexChange={props.onCodexChange}
+                  onClaudeStatusChange={props.onClaudeStatusChange}
+                  onProvidersChange={props.onProvidersChange}
+                  onError={props.onError}
+                />
                 <FormField label={t("Modell")}>
                   <ModelSelect
                     value={props.defaultModel}

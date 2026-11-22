@@ -3,6 +3,9 @@ import { z } from "zod";
 import { database, projectStore } from "./db.ts";
 import { decryptSecret, encryptSecret } from "./secrets.ts";
 import { eventHub } from "./events.ts";
+import { providerStore } from "./providers.ts";
+import { codexAuth } from "./codex-auth.ts";
+import { agentBackendSettings, isAgentBackendId, type AgentBackendId } from "./agent-backend-settings.ts";
 import { claudeAuth, claudeProfileForEnvironment, removeClaudeProfile, subscriptionEnvironment } from "./claude-auth.ts";
 import { checkProviderAccount, detectGitIdentity, environmentProviders, findProvider, type AccountCheck } from "./environment-providers.ts";
 import { t } from "./i18n.ts";
@@ -37,7 +40,7 @@ for (const columnDefinition of ["claude_mode TEXT NOT NULL DEFAULT 'inherit'", "
 }
 
 /** "inherit" = Einstellungen → Claude; "subscription" = own Claude login of this environment; "apiKey" = own key. */
-export type EnvironmentClaudeMode = "inherit" | "subscription" | "apiKey";
+export type EnvironmentClaudeMode = "inherit" | "subscription" | "apiKey" | `provider:${string}` | `backend:${string}`;
 
 const variableKeyPattern = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
@@ -48,7 +51,8 @@ export const environmentInputSchema = z.object({
   sshKeyPath: z.string().trim(),
   /** Accounts by provider; listed accounts replace the stored list. An empty secret value keeps the stored one. */
   accounts: z.array(z.object({ provider: z.string(), values: z.record(z.string(), z.string()) })).default([]),
-  claudeMode: z.enum(["inherit", "subscription", "apiKey"]).default("inherit"),
+  /** "provider:<id>" = one of the custom providers from Einstellungen → Anbieter. */
+  claudeMode: z.union([z.enum(["inherit", "subscription", "apiKey"]), z.string().regex(/^(provider|backend):.+$/)]).default("inherit") as z.ZodType<EnvironmentClaudeMode>,
   claudeApiKey: z.string().optional(),
   /** Default model for turns in this environment; "" = Harnold default. The composer's explicit choice wins. */
   model: z.string().trim().default(""),
@@ -270,10 +274,38 @@ export const environmentStore = {
    * Everything an agent turn in this project needs from its environment: process env (Claude credentials +
    * accounts + variables) and the default model. Throws a friendly error when the chosen Claude access is missing.
    */
-  async agentSetupFor(projectId: string): Promise<{ env: NodeJS.ProcessEnv; model?: string }> {
+  /** Agent program for turns in this project: the environment's own choice ("backend:<id>"), else the workspace setting. */
+  backendFor(projectId: string): AgentBackendId {
+    const claudeMode = environmentStore.forProject(projectId)?.claudeMode ?? "inherit";
+    const chosenBackend = claudeMode.startsWith("backend:") ? claudeMode.slice("backend:".length) : undefined;
+    if (isAgentBackendId(chosenBackend)) return chosenBackend;
+    if (claudeMode === "inherit") return agentBackendSettings.read();
+    // Claude Code only speaks the Anthropic protocol; every other provider runs on Harnold's own agent.
+    if (claudeMode.startsWith("provider:")) return providerStore.get(claudeMode.slice("provider:".length))?.protocol === "openai" ? "native" : "claude-code";
+    return "claude-code";
+  },
+
+  async agentSetupFor(projectId: string, backendId: AgentBackendId = environmentStore.backendFor(projectId)): Promise<{ env: NodeJS.ProcessEnv; model?: string }> {
     const environment = environmentStore.forProject(projectId);
     const variables = environmentStore.variablesForProject(projectId);
-    const model = environment?.model || undefined;
+    // The environment's model only counts for the access it was set up with.
+    const model = backendId === "codex" && environment?.claudeMode !== "backend:codex" ? undefined : environment?.model || undefined;
+    if (backendId === "native") {
+      const env: NodeJS.ProcessEnv = { ...process.env, ...variables };
+      if (!providerStore.list().some((provider) => provider.ready && provider.models.length))
+        throw new Error(t("Für den Harnold-Agent ist noch kein Anbieter eingerichtet. Einstellungen → Agent."));
+      if (environment?.claudeMode.startsWith("provider:")) {
+        const provider = providerStore.get(environment.claudeMode.slice("provider:".length));
+        if (!provider?.ready) throw new Error(t("Umgebung „{0}“: Anbieter nicht eingerichtet – Umgebungen → {1}", environment.name, environment.name));
+        const modelId = environment.model && !environment.model.includes("::") ? environment.model : provider.models[0];
+        return { env, model: modelId ? `${provider.id}::${modelId}` : undefined };
+      }
+      return { env, model: environment?.claudeMode === "backend:native" ? environment.model || undefined : undefined };
+    }
+    if (backendId === "codex") {
+      await codexAuth.assertReady();
+      return { env: { ...codexAuth.agentEnvironment(), ...variables }, model };
+    }
     if (!environment || environment.claudeMode === "inherit") {
       await claudeAuth.assertReady();
       const env: NodeJS.ProcessEnv = { ...claudeAuth.agentEnvironment(), ...variables };
@@ -282,6 +314,11 @@ export const environmentStore = {
       if (workspaceEnv.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = workspaceEnv.ANTHROPIC_API_KEY;
       else delete env.ANTHROPIC_API_KEY;
       return { env, model };
+    }
+    if (environment.claudeMode.startsWith("provider:")) {
+      const provider = providerStore.get(environment.claudeMode.slice("provider:".length));
+      if (!provider?.ready || provider.protocol !== "anthropic") throw new Error(t("Umgebung „{0}“: Anbieter nicht eingerichtet – Umgebungen → {1}", environment.name, environment.name));
+      return { env: providerStore.environmentFor(provider, { ...process.env, ...variables }), model: model ?? provider.models[0] };
     }
     if (environment.claudeMode === "apiKey") {
       const claudeApiKey = readSecrets(requireRow(environment.id)).claudeApiKey;

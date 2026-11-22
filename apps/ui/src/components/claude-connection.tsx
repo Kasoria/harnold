@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/segmented-control";
 import { FormField } from "@/components/form-field";
 import { isActionEnter } from "@/lib/utils";
-import { HarnoldSymbol } from "@/components/harnold-logo";
 import { t } from "@/lib/i18n";
 
 type ClaudeConnectionPanelProps = {
@@ -143,14 +142,14 @@ const runtimeSourceLabels: Record<NonNullable<AgentRuntimeStatus["source"]>, str
  * The Claude Code program. Harnold uses an existing install; downloading one is the user's explicit choice.
  * Returns the found-line when present, otherwise the choice (install yourself / download).
  */
-function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onStatusChange: (status: ClaudeAuthStatus) => void; onError: (unknownError: unknown) => void }) {
+export function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onRecheck: () => Promise<void>; onError: (unknownError: unknown) => void }) {
   const [checking, setChecking] = useState(false);
-  const { runtime, onStatusChange, onError } = props;
+  const { runtime, onRecheck, onError } = props;
 
   const recheck = async () => {
     setChecking(true);
     try {
-      onStatusChange(await api.readClaudeStatus(true));
+      await onRecheck();
     } catch (checkError) {
       onError(checkError);
     } finally {
@@ -166,7 +165,7 @@ function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onStatusChang
         </span>
         {runtime.outdated && (
           <span>
-            {t("Älter als empfohlen (")}{runtime.recommendedVersion}{t(") – aktualisieren mit")} <code className="font-mono">{t("claude update")}</code>
+            {t("Älter als empfohlen (")}{runtime.recommendedVersion}{t(") – aktualisieren mit")} <code className="font-mono">{runtime.updateHint}</code>
           </span>
         )}
       </div>
@@ -195,6 +194,7 @@ function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onStatusChang
           </a>
         </div>
       </div>
+      {runtime.downloadable && (
       <div className="grid gap-1.5 text-[13px]">
         <span className="font-medium">{t("Oder von Harnold laden")}</span>
         <span className="text-[12px] text-muted-foreground">{t("Nur für Harnold, Version")} {runtime.recommendedVersion}. Download ca. 165 MB, belegt ca. 360 MB.</span>
@@ -220,6 +220,7 @@ function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onStatusChang
         )}
         {download.error && <p className="text-[12px] text-destructive">{t("Download fehlgeschlagen:")} {download.error}</p>}
       </div>
+      )}
     </div>
   );
 }
@@ -245,7 +246,7 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
 
   const changeMode = (mode: ClaudeAuthMode) => void run(async () => onStatusChange(await api.saveClaudeSettings(mode)));
 
-  if (!status.runtime.found) return <AgentRuntimeSection runtime={status.runtime} onStatusChange={onStatusChange} onError={onError} />;
+  if (!status.runtime.found) return <AgentRuntimeSection runtime={status.runtime} onRecheck={async () => onStatusChange(await api.readClaudeStatus(true))} onError={onError} />;
 
   return (
     <div className="grid gap-5">
@@ -291,34 +292,7 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
           </div>
         </div>
       )}
-      <AgentRuntimeSection runtime={status.runtime} onStatusChange={onStatusChange} onError={onError} />
-    </div>
-  );
-}
-
-/** First-run screen when Claude is not connected yet. */
-export function ClaudeOnboarding(props: ClaudeConnectionPanelProps & { onDismiss: () => void }) {
-  const ready = props.status?.ready ?? false;
-  return (
-    <div className="fixed inset-0 z-40 flex animate-in items-center justify-center bg-background/95 p-6 backdrop-blur-sm fade-in duration-200">
-      <div className="w-full max-w-md">
-        <HarnoldSymbol className="mb-4 size-12" />
-        <h1 className="text-[20px] font-semibold">{t("Willkommen bei Harnold")}</h1>
-        <p className="mt-1 mb-6 text-[13px] text-muted-foreground">{t("Verbinde Claude – damit arbeitet der Agent in deinen Projekten.")}</p>
-        <ClaudeConnectionPanel status={props.status} onStatusChange={props.onStatusChange} onError={props.onError} />
-        <div className="mt-8 flex items-center gap-2">
-          {ready ? (
-            <Button size="sm" onClick={props.onDismiss}>
-              <CheckCircle2 className="size-3.5" /> {t("Verbunden – los geht's")}
-            </Button>
-          ) : (
-            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={props.onDismiss}>
-              {t("Später")}
-            </Button>
-          )}
-          <span className="ml-auto text-[11.5px] text-muted-foreground">{t("Jederzeit unter Einstellungen → Claude")}</span>
-        </div>
-      </div>
+      <AgentRuntimeSection runtime={status.runtime} onRecheck={async () => onStatusChange(await api.readClaudeStatus(true))} onError={onError} />
     </div>
   );
 }

@@ -7,6 +7,10 @@ import { z } from "zod";
 import { settingsStore } from "./settings.ts";
 import { eventHub } from "./events.ts";
 import { agentRuntimes, type AgentRuntimeStatus } from "./agent-runtimes.ts";
+import { providerStore } from "./providers.ts";
+import { agentBackendSettings, type AgentBackendId } from "./agent-backend-settings.ts";
+import { codexSettings } from "./codex-auth.ts";
+import { nativeSettings } from "./backends/native/settings.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -31,6 +35,8 @@ export type ClaudeAuthStatus = {
   cliError?: string;
   loginPending: boolean;
   ready: boolean;
+  /** Active provider of the workspace: "claude" or a custom provider's id. Only then do mode/account/apiKey matter. */
+  providerId: string;
   /** The Claude Code program on this machine (needed for both modes). */
   runtime: AgentRuntimeStatus;
 };
@@ -74,10 +80,16 @@ export function removeClaudeProfile(environmentId: string): void {
 const modeKey = "claude.authMode";
 const defaultModelKey = "claude.defaultModel";
 
-/** Workspace default model – concrete, never "whatever Claude Code picks". Environments and the composer may override it. */
+/**
+ * Workspace default model of an agent backend – concrete, never "whatever the program picks" (Codex: its own
+ * default is a named choice). Environments and the composer may override it. Without a backend: the active one.
+ */
 export const agentModelSettings = {
-  read: (): string => settingsStore.read<string>(defaultModelKey, config.defaultModel ?? "claude-opus-5-5"),
-  write: (model: string): string => {
+  read: (backendId: AgentBackendId = agentBackendSettings.read()): string =>
+    backendId === "codex" ? codexSettings.defaultModel() : backendId === "native" ? nativeSettings.defaultModel() : settingsStore.read<string>(defaultModelKey, config.defaultModel ?? "claude-opus-5-5"),
+  write: (model: string, backendId: AgentBackendId = agentBackendSettings.read()): string => {
+    if (backendId === "codex") return codexSettings.writeDefaultModel(model);
+    if (backendId === "native") return nativeSettings.writeDefaultModel(model);
     settingsStore.write(defaultModelKey, model);
     return model;
   },
@@ -161,8 +173,9 @@ export const claudeAuth = {
     const environmentApiKey = isDefault && Boolean(process.env.ANTHROPIC_API_KEY);
     const runtime = await agentRuntimes.status("claude-code", forceRefresh);
     const { account, cliError } = runtime.found ? await readAccount(profile, forceRefresh) : { account: null, cliError: undefined };
-    const credentialsReady = mode === "apiKey" ? apiKeySet || environmentApiKey : Boolean(account?.loggedIn);
-    return { mode, apiKeySet, environmentApiKey, account, cliError, loginPending: pendingLogins.has(profile.key), ready: runtime.found && credentialsReady, runtime };
+    const customProvider = isDefault ? providerStore.active() : undefined;
+    const credentialsReady = customProvider ? customProvider.ready : mode === "apiKey" ? apiKeySet || environmentApiKey : Boolean(account?.loggedIn);
+    return { mode, apiKeySet, environmentApiKey, account, cliError, loginPending: pendingLogins.has(profile.key), ready: runtime.found && credentialsReady, providerId: customProvider?.id ?? "claude", runtime };
   },
 
   async save(input: z.infer<typeof claudeSettingsSchema>): Promise<ClaudeAuthStatus> {
@@ -174,6 +187,8 @@ export const claudeAuth = {
 
   /** Env for `query()`: the chosen credential wins, the other one is removed. */
   agentEnvironment(): NodeJS.ProcessEnv {
+    const customProvider = providerStore.active();
+    if (customProvider) return providerStore.environmentFor(customProvider);
     if (readMode() === "subscription") return environmentWithoutApiKey();
     const storedApiKey = readApiKey();
     return storedApiKey ? { ...process.env, ANTHROPIC_API_KEY: storedApiKey } : { ...process.env };
@@ -242,6 +257,10 @@ export const claudeAuth = {
   async assertReady(): Promise<void> {
     const currentStatus = await claudeAuth.status();
     if (!currentStatus.runtime.found) throw new Error(t("Claude Code ist nicht installiert – Einstellungen → Claude"));
+    if (currentStatus.providerId !== "claude") {
+      if (!currentStatus.ready) throw new Error(t("Anbieter ist nicht fertig eingerichtet – Einstellungen → Agent"));
+      return;
+    }
     // Unknown CLI state (status failed) is not a reason to block – the SDK reports real auth errors itself.
     if (!currentStatus.ready && !currentStatus.cliError) throw new Error(t("Claude ist nicht verbunden – Einstellungen → Claude"));
   },

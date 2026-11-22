@@ -1,5 +1,5 @@
 import { currentLanguage } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -130,6 +130,20 @@ export const api = {
   readClaudeStatus: (refresh = false, environmentId?: string) =>
     request<ClaudeAuthStatus>("GET", `/api/claude/status?${new URLSearchParams({ ...(refresh ? { refresh: "1" } : {}), ...(environmentId ? { environmentId } : {}) })}`),
   downloadRuntime: (runtimeId: AgentRuntimeStatus["id"]) => request<{ ok: true }>("POST", `/api/runtimes/${runtimeId}/download`),
+  readAgentBackends: (refresh = false) => request<AgentBackendsView>("GET", `/api/agent-backends${refresh ? "?refresh=1" : ""}`),
+  setActiveBackend: (backendId: AgentBackendId) => request<AgentBackendsView>("PUT", "/api/agent-backends-active", { backendId }),
+  readCodexStatus: (refresh = false) => request<CodexStatus>("GET", `/api/codex/status${refresh ? "?refresh=1" : ""}`),
+  saveCodexSettings: (settings: { mode: CodexAuthMode; apiKey?: string; models?: string[] }) => request<CodexStatus>("PUT", "/api/codex/settings", settings),
+  startCodexLogin: () => request<{ url: string }>("POST", "/api/codex/login"),
+  cancelCodexLogin: () => request<{ ok: true }>("POST", "/api/codex/login/cancel"),
+  logoutCodex: () => request<CodexStatus>("POST", "/api/codex/logout"),
+  readProviders: () => request<ProvidersView>("GET", "/api/providers"),
+  createProvider: (input: ProviderInput) => request<ProvidersView>("POST", "/api/providers", input),
+  updateProvider: (providerId: string, input: ProviderInput) => request<ProvidersView>("PUT", `/api/providers/${providerId}`, input),
+  deleteProvider: (providerId: string) => request<ProvidersView>("DELETE", `/api/providers/${providerId}`),
+  setActiveProvider: (providerId: string) => request<ProvidersView>("PUT", "/api/providers-active", { providerId }),
+  discoverProviderModels: (input: { protocol: ProviderProtocol; baseUrl: string; apiKey?: string; providerId?: string }) =>
+    request<{ models: string[] }>("POST", "/api/providers/discover-models", input),
   saveClaudeSettings: (mode: ClaudeAuthMode, apiKey?: string) => request<ClaudeAuthStatus>("PUT", "/api/claude/settings", { mode, apiKey }),
   startClaudeLogin: (method: "claudeai" | "console", environmentId?: string) => request<{ url: string }>("POST", "/api/claude/login", { method, environmentId }),
   submitClaudeLoginCode: (code: string, environmentId?: string) => request<ClaudeAuthStatus>("POST", "/api/claude/login/code", { code, environmentId }),

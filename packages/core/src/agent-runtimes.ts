@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { config } from "./config.ts";
 import { eventHub } from "./events.ts";
 import { t } from "./i18n.ts";
@@ -13,7 +14,7 @@ import { t } from "./i18n.ts";
  * Harnold uses what is already on the machine and downloads one only when the user asks for it.
  * Order: explicit path (env) → copy from the SDK install (dev/server) → downloaded by Harnold → installed on the system.
  */
-export type AgentRuntimeId = "claude-code";
+export type AgentRuntimeId = "claude-code" | "codex";
 export type AgentRuntimeSource = "configured" | "bundled" | "downloaded" | "installed";
 export type AgentRuntimeStatus = {
   id: AgentRuntimeId;
@@ -29,6 +30,10 @@ export type AgentRuntimeStatus = {
   tooOldPath?: string;
   installHint: string;
   installUrl: string;
+  /** Command that updates an installed copy. */
+  updateHint: string;
+  /** Harnold can fetch this program itself (otherwise: install it yourself). */
+  downloadable: boolean;
   download: { running: boolean; receivedBytes: number; totalBytes: number; error?: string };
 };
 
@@ -40,15 +45,17 @@ type RuntimeDefinition = {
   minimumVersion: string;
   recommendedVersion: () => string;
   bundledExecutable: () => string | null;
-  /** npm package that holds the exact matching binary for this platform. */
-  downloadPackage: () => { packageName: string; version: string; pathInArchive: string };
+  /** npm package that holds the exact matching binary for this platform; null = not downloadable by Harnold. */
+  downloadPackage: (() => { packageName: string; version: string; pathInArchive: string }) | null;
   installHint: string;
   installUrl: string;
+  updateHint: string;
 };
 
 const claudeSdkDirectory = () => path.dirname(createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk"));
 const claudeSdkPackage = (): { version: string; claudeCodeVersion: string } =>
   JSON.parse(fs.readFileSync(path.join(claudeSdkDirectory(), "package.json"), "utf8"));
+const codexSdkVersion = (): string => JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.resolve("@openai/codex-sdk"))), "../package.json"), "utf8")).version;
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 
 function claudePlatformPackage(): string {
@@ -77,6 +84,19 @@ const runtimeDefinitions: Record<AgentRuntimeId, RuntimeDefinition> = {
     downloadPackage: () => ({ packageName: claudePlatformPackage(), version: claudeSdkPackage().version, pathInArchive: `package/claude${executableSuffix}` }),
     installHint: "curl -fsSL https://claude.ai/install.sh | bash",
     installUrl: "https://docs.claude.com/en/docs/claude-code/setup",
+    updateHint: "claude update",
+  },
+  codex: {
+    name: "Codex",
+    executableName: "codex",
+    pathVariable: "HARNOLD_CODEX_PATH",
+    minimumVersion: "0.100.0",
+    recommendedVersion: () => codexSdkVersion(),
+    bundledExecutable: () => null,
+    downloadPackage: null,
+    installHint: "npm install -g @openai/codex",
+    installUrl: "https://developers.openai.com/codex/cli",
+    updateHint: "npm install -g @openai/codex@latest",
   },
 };
 
@@ -102,6 +122,7 @@ const downloadsDirectory = (runtimeId: AgentRuntimeId) => path.join(config.dataD
 
 function downloadedExecutable(runtimeId: AgentRuntimeId): string | null {
   const definition = runtimeDefinitions[runtimeId];
+  if (!definition.downloadPackage) return null;
   const versionDirectory = path.join(downloadsDirectory(runtimeId), definition.downloadPackage().version);
   const executablePath = path.join(versionDirectory, `${definition.executableName}${executableSuffix}`);
   return fs.existsSync(executablePath) ? executablePath : null;
@@ -161,6 +182,7 @@ function announceChange(): void {
 
 async function downloadRuntime(runtimeId: AgentRuntimeId, downloadState: DownloadState): Promise<void> {
   const definition = runtimeDefinitions[runtimeId];
+  if (!definition.downloadPackage) throw new Error(t("{0} kann nicht von Harnold geladen werden", definition.name));
   const { packageName, version, pathInArchive } = definition.downloadPackage();
   const metadataResponse = await fetch(`https://registry.npmjs.org/${packageName.replace("/", "%2f")}/${version}`);
   if (!metadataResponse.ok) throw new Error(t("Paketinfo nicht abrufbar ({0})", metadataResponse.status));
@@ -226,6 +248,8 @@ export const agentRuntimes = {
       outdated: Boolean(detected.version && compareVersions(detected.version, recommendedVersion) < 0),
       installHint: definition.installHint,
       installUrl: definition.installUrl,
+      updateHint: definition.updateHint,
+      downloadable: Boolean(definition.downloadPackage),
       download: downloadStates.get(runtimeId) ?? { running: false, receivedBytes: 0, totalBytes: 0 },
     };
   },

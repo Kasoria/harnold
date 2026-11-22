@@ -14,18 +14,9 @@ import { ModelSelect, type InheritedModel } from "@/components/model-select";
 import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
+import { describeSchedule, ScheduleEditor } from "@/components/schedule-editor";
 
-const schedulePresets = [
-  { value: "0 * * * *", label: t("Stündlich") },
-  { value: "0 8 * * *", label: t("Täglich 8:00") },
-  { value: "0 8 * * 1-5", label: t("Werktags 8:00") },
-  { value: "0 8 * * 1", label: t("Montags 8:00") },
-];
-const customScheduleValue = "custom";
-
-export function describeSchedule(schedule: string): string {
-  return schedulePresets.find((preset) => preset.value === schedule)?.label ?? schedule;
-}
+export { describeSchedule };
 
 type TasksScreenProps = {
   inheritedModelFor: (projectId: string) => InheritedModel;
@@ -70,7 +61,6 @@ function TaskEditor(props: {
   onError: (unknownError: unknown) => void;
 }) {
   const [taskInput, setTaskInput] = useState<TaskInput>(props.initialInput);
-  const [customSchedule, setCustomSchedule] = useState(!schedulePresets.some((preset) => preset.value === props.initialInput.schedule));
   const [taskRuns, setTaskRuns] = useState<TaskRun[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -121,39 +111,8 @@ function TaskEditor(props: {
           onChange={(event) => updateInput({ prompt: event.target.value })}
         />
       </FormField>
-      <FormField label={t("Zeitplan")} hint={customSchedule ? t("Minute Stunde Tag Monat Wochentag") : undefined}>
-        <div className="flex gap-2">
-          <Select
-            value={customSchedule ? customScheduleValue : taskInput.schedule}
-            onValueChange={(value) => {
-              if (value === customScheduleValue) setCustomSchedule(true);
-              else {
-                setCustomSchedule(false);
-                updateInput({ schedule: value });
-              }
-            }}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {schedulePresets.map((preset) => (
-                <SelectItem key={preset.value} value={preset.value}>
-                  {preset.label}
-                </SelectItem>
-              ))}
-              <SelectItem value={customScheduleValue}>{t("Eigener …")}</SelectItem>
-            </SelectContent>
-          </Select>
-          {customSchedule && (
-            <Input
-              className="flex-1 animate-in font-mono fade-in duration-200"
-              value={taskInput.schedule}
-              placeholder="*/30 9-18 * * 1-5"
-              onChange={(event) => updateInput({ schedule: event.target.value })}
-            />
-          )}
-        </div>
+      <FormField label={t("Zeitplan")}>
+        <ScheduleEditor value={taskInput.schedule} onChange={(schedule) => updateInput({ schedule })} />
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label={t("Rechte")}>

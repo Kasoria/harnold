@@ -755,6 +755,9 @@ export function App() {
               }}
               sessionActions={sessionActions}
               projectActions={projectActions}
+              tasks={tasks}
+              onOpenTask={(taskId) => navigate(routePath("tasks", taskId))}
+              onRunTask={(taskId) => void api.runTask(taskId).catch(reportError)}
               onNewProject={() => setNewProjectDialogOpen(true)}
               onNewQuickChat={() => void createQuickChat()}
               activeScreen={route.screen}

@@ -91,4 +91,5 @@ export const englishTexts: Record<string, string> = {
   "{0}\n\nAntworte einfach mit deiner Wahl{1}.": "{0}\n\nJust reply with your choice{1}.",
   "{0} in „{1}“.": "{0} in “{1}”.",
   "⚠️ Sprachnachricht nicht verarbeitet: {0}": "⚠️ Voice message not processed: {0}",
+  "Neuer Kontext: Der Agent beginnt ab hier ohne die Läufe davor (nach {0} Läufen).": "New context: from here on the agent starts without the earlier runs (after {0} runs).",
 };

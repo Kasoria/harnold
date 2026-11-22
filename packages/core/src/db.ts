@@ -40,6 +40,7 @@ addColumnIfMissing("sessions", "fork_origin_item_id", "TEXT");
 addColumnIfMissing("sessions", "fork_item_id", "TEXT");
 addColumnIfMissing("sessions", "pending_fork", "TEXT");
 addColumnIfMissing("sessions", "agent_id", "TEXT");
+addColumnIfMissing("sessions", "task_id", "TEXT");
 
 /** "quick" = the built-in home of chats without a project (Quick Chats). */
 export type ProjectKind = "project" | "quick";
@@ -64,6 +65,8 @@ export type Session = {
   pendingFork: PendingFork | null;
   /** Team member this conversation is with (see agents.ts); null = the default Harnold agent. */
   agentId: string | null;
+  /** Set on sessions a task created; they are listed with the task, not as normal sessions. */
+  taskId: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -114,6 +117,7 @@ const mapSession = (row: Row): Session => ({
   forkItemId: row.fork_item_id ? String(row.fork_item_id) : null,
   pendingFork: row.pending_fork ? (JSON.parse(String(row.pending_fork)) as PendingFork) : null,
   agentId: row.agent_id ? String(row.agent_id) : null,
+  taskId: row.task_id ? String(row.task_id) : null,
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -175,6 +179,7 @@ export const sessionStore = {
       forkItemId: null,
       pendingFork: fork?.pendingFork ?? null,
       agentId,
+      taskId: null,
       createdAt: now,
       updatedAt: now,
     };

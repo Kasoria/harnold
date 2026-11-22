@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Cron } from "croner";
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import { database, projectStore, sessionStore } from "./db.ts";
+import { chatItemStore, database, projectStore, sessionStore } from "./db.ts";
 import { agentRuntime } from "./agent.ts";
 import { eventHub } from "./events.ts";
 import { teamStore } from "./agents.ts";
@@ -36,6 +36,13 @@ const taskColumns = new Set((database.prepare("PRAGMA table_info(tasks)").all() 
 if (!taskColumns.has("agent_id")) database.exec("ALTER TABLE tasks ADD COLUMN agent_id TEXT");
 if (!taskColumns.has("session_mode")) database.exec("ALTER TABLE tasks ADD COLUMN session_mode TEXT NOT NULL DEFAULT 'new'");
 if (!taskColumns.has("continued_session_id")) database.exec("ALTER TABLE tasks ADD COLUMN continued_session_id TEXT");
+if (!taskColumns.has("cleanup_after_days")) database.exec("ALTER TABLE tasks ADD COLUMN cleanup_after_days INTEGER");
+if (!taskColumns.has("context_reset_runs")) database.exec("ALTER TABLE tasks ADD COLUMN context_reset_runs INTEGER");
+if (!taskColumns.has("runs_since_reset")) database.exec("ALTER TABLE tasks ADD COLUMN runs_since_reset INTEGER NOT NULL DEFAULT 0");
+// Sessions of earlier runs belong to their task too.
+database.exec(
+  "UPDATE sessions SET task_id = (SELECT task_id FROM task_runs WHERE task_runs.session_id = sessions.id LIMIT 1) WHERE task_id IS NULL AND id IN (SELECT session_id FROM task_runs WHERE session_id IS NOT NULL)",
+);
 
 /** "new": every run gets its own session; "continue": all runs in one session, so the agent knows earlier runs. */
 export type TaskSessionMode = "new" | "continue";
@@ -52,6 +59,10 @@ export type Task = {
   /** Team member that runs the task (null = default agent). */
   agentId: string | null;
   sessionMode: TaskSessionMode;
+  /** "new" mode, opt-in: run sessions older than this are deleted after the next run. null = keep all. */
+  cleanupAfterDays: number | null;
+  /** "continue" mode, opt-in: the agent starts with a fresh context after this many runs; the history stays. null = never. */
+  contextResetRuns: number | null;
   notifyChannelId: string | null;
   notifyChatId: string | null;
   createdAt: number;
@@ -82,6 +93,8 @@ const mapTask = (row: Row): Task => ({
   model: row.model ? String(row.model) : null,
   agentId: row.agent_id ? String(row.agent_id) : null,
   sessionMode: row.session_mode === "continue" ? "continue" : "new",
+  cleanupAfterDays: row.cleanup_after_days ? Number(row.cleanup_after_days) : null,
+  contextResetRuns: row.context_reset_runs ? Number(row.context_reset_runs) : null,
   notifyChannelId: row.notify_channel_id ? String(row.notify_channel_id) : null,
   notifyChatId: row.notify_chat_id ? String(row.notify_chat_id) : null,
   createdAt: Number(row.created_at),
@@ -119,14 +132,15 @@ export const taskStore = {
     const task: Task = { ...taskInput, id: existing?.id ?? randomUUID(), createdAt: existing?.createdAt ?? Date.now() };
     database
       .prepare(
-        `INSERT INTO tasks (id, project_id, name, prompt, schedule, enabled, permission_mode, model, agent_id, session_mode, notify_channel_id, notify_chat_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (id, project_id, name, prompt, schedule, enabled, permission_mode, model, agent_id, session_mode, cleanup_after_days, context_reset_runs, notify_channel_id, notify_chat_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id, name = excluded.name, prompt = excluded.prompt,
            schedule = excluded.schedule, enabled = excluded.enabled, permission_mode = excluded.permission_mode, model = excluded.model,
            agent_id = excluded.agent_id, session_mode = excluded.session_mode,
+           cleanup_after_days = excluded.cleanup_after_days, context_reset_runs = excluded.context_reset_runs,
            notify_channel_id = excluded.notify_channel_id, notify_chat_id = excluded.notify_chat_id`,
       )
-      .run(task.id, task.projectId, task.name, task.prompt, task.schedule, task.enabled ? 1 : 0, task.permissionMode, task.model, task.agentId, task.sessionMode, task.notifyChannelId, task.notifyChatId, task.createdAt);
+      .run(task.id, task.projectId, task.name, task.prompt, task.schedule, task.enabled ? 1 : 0, task.permissionMode, task.model, task.agentId, task.sessionMode, task.cleanupAfterDays, task.contextResetRuns, task.notifyChannelId, task.notifyChatId, task.createdAt);
     return task;
   },
   remove(taskId: string): void {
@@ -154,23 +168,54 @@ export function setTaskRunNotifier(notifier: RunNotifier): void {
 
 const scheduledJobs = new Map<string, Cron>();
 
-/** New session per run, or the task's ongoing session (recreated if it was deleted or moved to another project). */
+function createTaskSession(task: Task, title: string, agentId: string | null) {
+  const session = sessionStore.create(task.projectId, title, undefined, agentId);
+  database.prepare("UPDATE sessions SET task_id = ? WHERE id = ?").run(task.id, session.id);
+  return session;
+}
+
+/**
+ * New session per run, or the task's ongoing session (recreated if it was deleted or moved to another project).
+ * In the ongoing session the agent optionally starts fresh after `contextResetRuns` runs; the history stays visible.
+ */
 function sessionForRun(task: Task, startedAt: number) {
   // A deleted team member falls back to the default agent.
   const agentId = task.agentId && teamStore.get(task.agentId) ? task.agentId : null;
   if (task.sessionMode === "continue") {
-    const continuedRow = database.prepare("SELECT continued_session_id FROM tasks WHERE id = ?").get(task.id) as { continued_session_id: string | null } | undefined;
-    const continuedSession = continuedRow?.continued_session_id ? sessionStore.get(continuedRow.continued_session_id) : undefined;
+    const taskRow = database.prepare("SELECT continued_session_id, runs_since_reset FROM tasks WHERE id = ?").get(task.id) as
+      | { continued_session_id: string | null; runs_since_reset: number }
+      | undefined;
+    const continuedSession = taskRow?.continued_session_id ? sessionStore.get(taskRow.continued_session_id) : undefined;
     if (continuedSession && continuedSession.projectId === task.projectId) {
-      if (continuedSession.agentId !== agentId) sessionStore.update(continuedSession.id, { agentId: agentId, agentSessionId: null });
+      const resetDue = task.contextResetRuns !== null && (taskRow?.runs_since_reset ?? 0) >= task.contextResetRuns;
+      if (continuedSession.agentId !== agentId || resetDue) {
+        sessionStore.update(continuedSession.id, { agentId, agentSessionId: null });
+        database.prepare("UPDATE tasks SET runs_since_reset = 0 WHERE id = ?").run(task.id);
+        if (resetDue) {
+          const chatItem = chatItemStore.append(continuedSession.id, { kind: "notice", text: t("Neuer Kontext: Der Agent beginnt ab hier ohne die Läufe davor (nach {0} Läufen).", task.contextResetRuns) });
+          eventHub.publish({ type: "chat_item", sessionId: continuedSession.id, chatItem });
+        }
+      }
+      database.prepare("UPDATE tasks SET runs_since_reset = runs_since_reset + 1 WHERE id = ?").run(task.id);
       return continuedSession;
     }
-    const newSession = sessionStore.create(task.projectId, `Task · ${task.name}`, undefined, agentId);
-    database.prepare("UPDATE tasks SET continued_session_id = ? WHERE id = ?").run(newSession.id, task.id);
+    const newSession = createTaskSession(task, `Task · ${task.name}`, agentId);
+    database.prepare("UPDATE tasks SET continued_session_id = ?, runs_since_reset = 1 WHERE id = ?").run(newSession.id, task.id);
     return newSession;
   }
   const runTime = new Date(startedAt).toLocaleString(currentLanguage() === "en" ? "en-US" : "de-DE", { dateStyle: "short", timeStyle: "short" });
-  return sessionStore.create(task.projectId, `Task · ${task.name} · ${runTime}`, undefined, agentId);
+  return createTaskSession(task, `Task · ${task.name} · ${runTime}`, agentId);
+}
+
+/** Opt-in (cleanupAfterDays): removes this task's run sessions older than the limit. Never touches the ongoing session. */
+function cleanUpOldRuns(task: Task, currentSessionId: string): void {
+  if (task.sessionMode !== "new" || task.cleanupAfterDays === null) return;
+  const cutoff = Date.now() - task.cleanupAfterDays * 24 * 60 * 60 * 1000;
+  const oldSessionIds = (database.prepare("SELECT id FROM sessions WHERE task_id = ? AND created_at < ? AND id != ?").all(task.id, cutoff, currentSessionId) as { id: string }[]).map(
+    (row) => row.id,
+  );
+  for (const sessionId of oldSessionIds) if (!agentRuntime.isRunning(sessionId)) sessionStore.remove(sessionId);
+  if (oldSessionIds.length) eventHub.publish({ type: "sessions_changed", projectId: task.projectId });
 }
 
 export async function runTask(taskId: string): Promise<TaskRun> {
@@ -202,6 +247,7 @@ export async function runTask(taskId: string): Promise<TaskRun> {
     .prepare("UPDATE task_runs SET finished_at = ?, status = ?, summary = ? WHERE id = ?")
     .run(taskRun.finishedAt, taskRun.status, taskRun.summary, taskRun.id);
   eventHub.publish({ type: "tasks_changed" });
+  cleanUpOldRuns(task, session.id);
   eventHub.publish({ type: "task_run_finished", taskId, taskName: task.name, sessionId: session.id, projectId: task.projectId, success: turnOutcome.success });
 
   if (task.notifyChannelId && task.notifyChatId && runNotifier) {

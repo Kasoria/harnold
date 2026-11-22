@@ -1,7 +1,7 @@
-import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Users } from "lucide-react";
+import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Play, Plus, Settings, Sun, Users } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
-import type { Environment, Project, Session } from "@/types";
+import type { Environment, Project, Session, Task } from "@/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { ScreenName } from "@/hooks/use-hash-route";
@@ -26,6 +26,10 @@ type AppSidebarProps = {
   /** Right-click / "…" menu of a conversation and of a project. */
   sessionActions: (session: Session) => MenuAction[];
   projectActions: (project: Project) => MenuAction[];
+  /** Tasks: one row per task in its project (runs don't flood the session list). */
+  tasks: Task[];
+  onOpenTask: (taskId: string) => void;
+  onRunTask: (taskId: string) => void;
   onNewProject: () => void;
   onNewQuickChat: () => void;
   activeScreen: ScreenName;
@@ -122,10 +126,14 @@ function conversationStatus(members: Session[], sessionStatusFor: (sessionId: st
 /** Conversations of one project; versions created by editing a message appear once. */
 function ConversationList({ projectId, className, ...props }: AppSidebarProps & { projectId: string; className?: string }) {
   const projectSessions = props.sessionsByProjectId[projectId] ?? [];
-  const conversations = projectSessions.filter((session) => !session.forkOriginSessionId);
+  const conversations = projectSessions.filter((session) => !session.forkOriginSessionId && !session.taskId);
   const activeConversationId = props.activeSessionId ? conversationRootId(props.activeSessionId, projectSessions) : null;
+  const projectTasks = props.tasks.filter((task) => task.projectId === projectId);
   return (
     <ul className={cn("space-y-0.5", className)}>
+      {projectTasks.map((task) => (
+        <TaskRow key={task.id} task={task} projectSessions={projectSessions} {...props} />
+      ))}
       {conversations.map((session) => (
         <li key={session.id}>
           <ActionContextMenu actions={props.sessionActions(session)}>
@@ -143,6 +151,38 @@ function ConversationList({ projectId, className, ...props }: AppSidebarProps & 
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A task in the session list: opens its latest run; status of the running or last run. */
+function TaskRow({ task, projectSessions, ...props }: AppSidebarProps & { task: Task; projectSessions: Session[] }) {
+  const taskSessions = projectSessions.filter((session) => session.taskId === task.id).sort((first, second) => second.updatedAt - first.updatedAt);
+  const latestSession = taskSessions[0];
+  const running = taskSessions.some((session) => props.sessionStatusFor(session.id) === "running");
+  const status: SessionStatus = running ? "running" : task.lastRun?.status === "error" ? "error" : "idle";
+  const active = props.activeScreen === "workspace" && taskSessions.some((session) => session.id === props.activeSessionId);
+  const actions: MenuAction[] = [
+    { label: t("Letzten Lauf öffnen"), icon: MessagesSquare, onSelect: () => latestSession && props.onSelectSession(task.projectId, latestSession.id), hidden: !latestSession },
+    { label: t("Task bearbeiten"), icon: CalendarClock, onSelect: () => props.onOpenTask(task.id) },
+    { label: t("Jetzt ausführen"), icon: Play, onSelect: () => props.onRunTask(task.id), hidden: running },
+  ];
+  return (
+    <li>
+      <ActionContextMenu actions={actions}>
+        <button
+          className={cn(rowClassName, active && activeRowClassName, !task.enabled && "opacity-60")}
+          title={t("Task · {0} Läufe", taskSessions.length)}
+          onClick={() => (latestSession ? props.onSelectSession(task.projectId, latestSession.id) : props.onOpenTask(task.id))}
+        >
+          <CalendarClock className="mx-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{task.name}</span>
+          <span className="ml-auto flex items-center gap-1">
+            <StatusDot status={status} />
+            <ActionMenuButton label={t("Aktionen")} actions={actions} />
+          </span>
+        </button>
+      </ActionContextMenu>
+    </li>
   );
 }
 

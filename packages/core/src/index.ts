@@ -177,7 +177,7 @@ function emptyOrNewSession(projectId: string, agentId: string | null = null) {
   if (agentId && !teamStore.forProject(projectId).some((agent) => agent.id === agentId)) throw new Error(t("Agent gehört nicht zum Team dieses Projekts"));
   const emptySession = sessionStore
     .listByProject(projectId)
-    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0 && !session.title.startsWith("Team · "));
+    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0 && !session.title.startsWith("Team · ") && !session.taskId);
   if (emptySession) {
     if (emptySession.agentId !== agentId) {
       sessionStore.update(emptySession.id, { agentId });
@@ -358,6 +358,8 @@ const taskInputSchema = z.object({
   model: z.string().nullable(),
   agentId: z.string().nullable().default(null),
   sessionMode: z.enum(["new", "continue"]).default("new"),
+  cleanupAfterDays: z.number().int().min(1).max(3650).nullable().default(null),
+  contextResetRuns: z.number().int().min(1).max(10000).nullable().default(null),
   notifyChannelId: z.string().nullable(),
   notifyChatId: z.string().nullable(),
 });

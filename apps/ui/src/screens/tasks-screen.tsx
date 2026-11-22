@@ -42,6 +42,8 @@ function emptyTaskInput(projectId: string): TaskInput {
     model: null,
     agentId: null,
     sessionMode: "new",
+    cleanupAfterDays: null,
+    contextResetRuns: null,
     notifyChannelId: null,
     notifyChatId: null,
   };
@@ -153,7 +155,39 @@ function TaskEditor(props: {
           </Select>
         </FormField>
       </div>
-      {taskInput.sessionMode === "continue" && <p className="-mt-2 text-[12px] text-muted-foreground">{t("Der Agent sieht frühere Läufe und kann daran anknüpfen.")}</p>}
+      {taskInput.sessionMode === "new" ? (
+        <FormField label={t("Alte Läufe")} hint={t("Läufe erscheinen gesammelt unter dem Task, nicht einzeln in der Session-Liste.")}>
+          <Select value={String(taskInput.cleanupAfterDays ?? "keep")} onValueChange={(value) => updateInput({ cleanupAfterDays: value === "keep" ? null : Number(value) })}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="keep">{t("Alle behalten")}</SelectItem>
+              {[1, 7, 30, 90].map((days) => (
+                <SelectItem key={days} value={String(days)}>
+                  {days === 1 ? t("Nach 1 Tag löschen") : t("Nach {0} Tagen löschen", days)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+      ) : (
+        <FormField label={t("Gedächtnis des Agents")} hint={t("Der Verlauf bleibt immer sichtbar – nur der Agent fängt danach ohne die alten Läufe an.")}>
+          <Select value={String(taskInput.contextResetRuns ?? "all")} onValueChange={(value) => updateInput({ contextResetRuns: value === "all" ? null : Number(value) })}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("Erinnert sich an alle Läufe")}</SelectItem>
+              {[5, 10, 25, 50, 100].map((runs) => (
+                <SelectItem key={runs} value={String(runs)}>
+                  {t("Neu anfangen nach {0} Läufen", runs)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+      )}
       <FormField label={t("Ergebnis zusätzlich senden an")}>
         <div className="flex gap-2">
           <Combobox
@@ -274,6 +308,8 @@ export function TasksScreen(props: TasksScreenProps) {
           model: selectedTask.model,
           agentId: selectedTask.agentId,
           sessionMode: selectedTask.sessionMode,
+          cleanupAfterDays: selectedTask.cleanupAfterDays,
+          contextResetRuns: selectedTask.contextResetRuns,
           notifyChannelId: selectedTask.notifyChannelId,
           notifyChatId: selectedTask.notifyChatId,
         }}

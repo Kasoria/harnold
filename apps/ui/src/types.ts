@@ -14,6 +14,8 @@ export type Session = {
   forkItemId: string | null;
   /** Team member this conversation is with; null = default Harnold agent. */
   agentId: string | null;
+  /** Created by this task; shown as one row per task, not per run. */
+  taskId: string | null;
 };
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
 
@@ -99,6 +101,10 @@ export type TaskInput = {
   agentId: string | null;
   /** "new": own session per run; "continue": all runs in one session. */
   sessionMode: "new" | "continue";
+  /** "new" mode, opt-in: delete run sessions older than this many days. */
+  cleanupAfterDays: number | null;
+  /** "continue" mode, opt-in: fresh agent context after this many runs (history stays). */
+  contextResetRuns: number | null;
   notifyChannelId: string | null;
   notifyChatId: string | null;
 };

@@ -418,6 +418,8 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
               model: existingTask?.model ?? null,
               agentId,
               sessionMode: sessionMode ?? existingTask?.sessionMode ?? "new",
+              cleanupAfterDays: existingTask?.cleanupAfterDays ?? null,
+              contextResetRuns: existingTask?.contextResetRuns ?? null,
               notifyChannelId: existingTask?.notifyChannelId ?? null,
               notifyChatId: existingTask?.notifyChatId ?? null,
             },

@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import Editor from "@monaco-editor/react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ChevronRight, ExternalLink, PanelLeft, RotateCw, Save, Wand2, X } from "lucide-react";
 import { api } from "@/api";
 import type { FileNode, Project } from "@/types";
@@ -10,6 +9,9 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { FileTree } from "./file-tree";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
 import { t } from "@/lib/i18n";
+
+/** Monaco is large; it arrives with the first file the user opens in the code view. */
+const CodeEditor = lazy(() => import("./code-editor"));
 
 type WorkspaceView = "canvas" | "preview" | "code";
 
@@ -222,14 +224,15 @@ export function WorkspacePane(props: WorkspacePaneProps) {
                 }
               }}
             >
-              <Editor
-                path={selectedPath}
-                value={editorContent}
-                language={languageByExtension[selectedPath.split(".").pop() ?? ""] ?? "plaintext"}
-                theme={props.resolvedTheme === "dark" ? "vs-dark" : "vs"}
-                onChange={(value) => setEditorContent(value ?? "")}
-                options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false, padding: { top: 12 } }}
-              />
+              <Suspense fallback={<div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">{t("Editor lädt …")}</div>}>
+                <CodeEditor
+                  path={selectedPath}
+                  value={editorContent}
+                  language={languageByExtension[selectedPath.split(".").pop() ?? ""] ?? "plaintext"}
+                  theme={props.resolvedTheme}
+                  onChange={setEditorContent}
+                />
+              </Suspense>
             </div>
           )}
         </div>

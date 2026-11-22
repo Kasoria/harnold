@@ -1,4 +1,5 @@
 import { splitMessage, type ChannelAdapter, type ChannelAdapterContext } from "./types.ts";
+import { t } from "../i18n.ts";
 
 type TelegramUpdate = {
   update_id: number;
@@ -27,14 +28,14 @@ export function createTelegramAdapter(context: ChannelAdapterContext): ChannelAd
       signal,
     });
     const payload = (await response.json()) as { ok: boolean; result: ResponseBody; description?: string };
-    if (!payload.ok) throw new Error(`Telegram ${method}: ${payload.description ?? response.statusText}`);
+    if (!payload.ok) throw new Error(t("Telegram {0}: {1}", method, payload.description ?? response.statusText));
     return payload.result;
   };
 
   const downloadFile = async (fileId: string): Promise<Buffer> => {
     const fileInfo = await callApi<{ file_path: string }>("getFile", { file_id: fileId });
     const response = await fetch(`https://api.telegram.org/file/bot${context.secrets.botToken}/${fileInfo.file_path}`);
-    if (!response.ok) throw new Error(`Telegram-Download fehlgeschlagen: ${response.status}`);
+    if (!response.ok) throw new Error(t("Telegram-Download fehlgeschlagen: {0}", response.status));
     return Buffer.from(await response.arrayBuffer());
   };
 
@@ -117,7 +118,7 @@ export function createTelegramAdapter(context: ChannelAdapterContext): ChannelAd
       formData.append(isOggVoice ? "voice" : "audio", new Blob([new Uint8Array(audio.data)], { type: audio.mimeType }), isOggVoice ? "antwort.ogg" : "antwort.mp3");
       const response = await fetch(`${apiBase}/${isOggVoice ? "sendVoice" : "sendAudio"}`, { method: "POST", body: formData });
       const payload = (await response.json()) as { ok: boolean; description?: string };
-      if (!payload.ok) throw new Error(`Telegram sendVoice: ${payload.description ?? response.statusText}`);
+      if (!payload.ok) throw new Error(t("Telegram sendVoice: {0}", payload.description ?? response.statusText));
     },
     async indicateTyping(chatId) {
       await callApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => undefined);

@@ -6,6 +6,7 @@ import type { Project } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { memoryIndex, memoryNotes, type MemoryScope } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
+import { t } from "./i18n.ts";
 
 export const memoryServerName = "harnold_memory";
 export const memoryToolNames = ["memory_search", "memory_read", "memory_write", "memory_list", "memory_add_file"].map((toolName) => `mcp__${memoryServerName}__${toolName}`);
@@ -78,7 +79,7 @@ export function createMemoryServer(project: Project) {
         async ({ scope, sourcePath, name }) => {
           try {
             const absoluteSource = path.resolve(project.path, sourcePath.replace(/^~(?=$|\/)/, process.env.HOME ?? "~"));
-            if (!fs.existsSync(absoluteSource) || !fs.statSync(absoluteSource).isFile()) throw new Error(`Datei nicht gefunden: ${sourcePath}`);
+            if (!fs.existsSync(absoluteSource) || !fs.statSync(absoluteSource).isFile()) throw new Error(t("Datei nicht gefunden: {0}", sourcePath));
             const fileName = name?.trim() || path.basename(absoluteSource).replace(/^\d{8}-\d{6}-/, ""); // drop the attachment timestamp
             const savedFile = memoryFiles.save(scope, scope === "workspace" ? null : project, fileName, fs.readFileSync(absoluteSource));
             eventHub.publish({ type: "memory_changed", projectId: project.id });

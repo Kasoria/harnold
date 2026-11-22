@@ -12,12 +12,13 @@ import { StatusDot } from "@/components/status-dot";
 import { FormField, formatRelativeTime, permissionModeOptions } from "@/components/form-field";
 import { ModelSelect, type InheritedModel } from "@/components/model-select";
 import { confirmAction } from "@/components/confirm-dialog";
+import { t } from "@/lib/i18n";
 
 const schedulePresets = [
-  { value: "0 * * * *", label: "Stündlich" },
-  { value: "0 8 * * *", label: "Täglich 8:00" },
-  { value: "0 8 * * 1-5", label: "Werktags 8:00" },
-  { value: "0 8 * * 1", label: "Montags 8:00" },
+  { value: "0 * * * *", label: t("Stündlich") },
+  { value: "0 8 * * *", label: t("Täglich 8:00") },
+  { value: "0 8 * * 1-5", label: t("Werktags 8:00") },
+  { value: "0 8 * * 1", label: t("Montags 8:00") },
 ];
 const customScheduleValue = "custom";
 
@@ -91,13 +92,13 @@ function TaskEditor(props: {
 
   return (
     <div className="grid gap-4 py-3">
-      <FormField label="Name">
-        <Input value={taskInput.name} placeholder="z. B. Morgen-Briefing" onChange={(event) => updateInput({ name: event.target.value })} />
+      <FormField label={t("Name")}>
+        <Input value={taskInput.name} placeholder={t("z. B. Morgen-Briefing")} onChange={(event) => updateInput({ name: event.target.value })} />
       </FormField>
-      <FormField label="Projekt">
+      <FormField label={t("Projekt")}>
         <Select value={taskInput.projectId} onValueChange={(projectId) => updateInput({ projectId })}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Projekt wählen" />
+            <SelectValue placeholder={t("Projekt wählen")} />
           </SelectTrigger>
           <SelectContent>
             {props.projects.map((project) => (
@@ -108,15 +109,15 @@ function TaskEditor(props: {
           </SelectContent>
         </Select>
       </FormField>
-      <FormField label="Auftrag">
+      <FormField label={t("Auftrag")}>
         <Textarea
           rows={4}
           value={taskInput.prompt}
-          placeholder="Was soll der Agent tun?"
+          placeholder={t("Was soll der Agent tun?")}
           onChange={(event) => updateInput({ prompt: event.target.value })}
         />
       </FormField>
-      <FormField label="Zeitplan" hint={customSchedule ? "Minute Stunde Tag Monat Wochentag" : undefined}>
+      <FormField label={t("Zeitplan")} hint={customSchedule ? t("Minute Stunde Tag Monat Wochentag") : undefined}>
         <div className="flex gap-2">
           <Select
             value={customSchedule ? customScheduleValue : taskInput.schedule}
@@ -137,7 +138,7 @@ function TaskEditor(props: {
                   {preset.label}
                 </SelectItem>
               ))}
-              <SelectItem value={customScheduleValue}>Eigener …</SelectItem>
+              <SelectItem value={customScheduleValue}>{t("Eigener …")}</SelectItem>
             </SelectContent>
           </Select>
           {customSchedule && (
@@ -151,7 +152,7 @@ function TaskEditor(props: {
         </div>
       </FormField>
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Rechte">
+        <FormField label={t("Rechte")}>
           <Select value={taskInput.permissionMode} onValueChange={(value) => updateInput({ permissionMode: value as TaskInput["permissionMode"] })}>
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -165,11 +166,11 @@ function TaskEditor(props: {
             </SelectContent>
           </Select>
         </FormField>
-        <FormField label="Modell">
+        <FormField label={t("Modell")}>
           <ModelSelect className="w-full" value={taskInput.model ?? ""} onChange={(model) => updateInput({ model: model || null })} inherited={props.inheritedModelFor(taskInput.projectId)} />
         </FormField>
       </div>
-      <FormField label="Ergebnis zusätzlich senden an">
+      <FormField label={t("Ergebnis zusätzlich senden an")}>
         <div className="flex gap-2">
           <Select
             value={taskInput.notifyChannelId ?? "none"}
@@ -182,7 +183,7 @@ function TaskEditor(props: {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Nur in Harnold</SelectItem>
+              <SelectItem value="none">{t("Nur in Harnold")}</SelectItem>
               {props.channels.map((channel) => (
                 <SelectItem key={channel.id} value={channel.id}>
                   {channel.name}
@@ -194,7 +195,7 @@ function TaskEditor(props: {
             <Input
               className="flex-1 animate-in fade-in duration-200"
               value={taskInput.notifyChatId ?? ""}
-              placeholder="Chat-ID / Adresse"
+              placeholder={t("Chat-ID / Adresse")}
               onChange={(event) => updateInput({ notifyChatId: event.target.value })}
             />
           )}
@@ -203,10 +204,10 @@ function TaskEditor(props: {
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={!valid || saving} onClick={save}>
-          Speichern
+          {t("Speichern")}
         </Button>
         <Button size="sm" variant="ghost" onClick={props.onCancel}>
-          Abbrechen
+          {t("Abbrechen")}
         </Button>
         {props.task && (
           <Button
@@ -214,19 +215,19 @@ function TaskEditor(props: {
             variant="ghost"
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={async () => {
-              if (!(await confirmAction({ title: `Task „${props.task!.name}“ löschen?`, description: "Die bisherigen Läufe bleiben als Sessions erhalten." }))) return;
+              if (!(await confirmAction({ title: t("Task „{0}“ löschen?", props.task!.name), description: t("Die bisherigen Läufe bleiben als Sessions erhalten.") }))) return;
               await api.deleteTask(props.task!.id).catch(props.onError);
               props.onSaved(null);
             }}
           >
-            <Trash2 className="size-3.5" /> Löschen
+            <Trash2 className="size-3.5" /> {t("Löschen")}
           </Button>
         )}
       </div>
 
       {taskRuns.length > 0 && (
         <div className="grid gap-1 border-t pt-3">
-          <span className="text-[12px] font-medium">Letzte Läufe</span>
+          <span className="text-[12px] font-medium">{t("Letzte Läufe")}</span>
           {taskRuns.slice(0, 20).map((taskRun) => (
             <button
               key={taskRun.id}
@@ -236,7 +237,7 @@ function TaskEditor(props: {
             >
               <StatusDot status={taskRun.status === "running" ? "running" : taskRun.status === "error" ? "error" : "idle"} />
               <span className="shrink-0 text-muted-foreground">{formatRelativeTime(taskRun.startedAt)}</span>
-              <span className="truncate">{taskRun.summary ?? "Läuft …"}</span>
+              <span className="truncate">{taskRun.summary ?? t("Läuft …")}</span>
               <ChevronRight className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
             </button>
           ))}
@@ -259,7 +260,7 @@ export function TasksScreen(props: TasksScreenProps) {
   const projectNameOf = (projectId: string) => props.projects.find((project) => project.id === projectId)?.name ?? "—";
 
   const detail = creatingTask ? (
-    <DetailPane detailKey="new" title="Neuer Task" subtitle="Geplanter Agent-Lauf. Jeder Lauf landet als Session im Projekt.">
+    <DetailPane detailKey="new" title={t("Neuer Task")} subtitle={t("Geplanter Agent-Lauf. Jeder Lauf landet als Session im Projekt.")}>
       <TaskEditor
         task={null}
         initialInput={emptyTaskInput(defaultProjectId)}
@@ -277,11 +278,11 @@ export function TasksScreen(props: TasksScreenProps) {
       detailKey={selectedTask.id}
       title={selectedTask.name}
       subtitle={`${describeSchedule(selectedTask.schedule)} · ${projectNameOf(selectedTask.projectId)}${
-        selectedTask.nextRunAt ? ` · nächster Lauf ${formatRelativeTime(selectedTask.nextRunAt)}` : selectedTask.enabled ? "" : " · pausiert"
+        selectedTask.nextRunAt ? t(" · nächster Lauf {0}", formatRelativeTime(selectedTask.nextRunAt)) : selectedTask.enabled ? "" : t(" · pausiert")
       }`}
       actions={
         <Button size="sm" variant="secondary" disabled={selectedTask.lastRun?.status === "running"} onClick={() => api.runTask(selectedTask.id).catch(props.onError)}>
-          <Play className="size-3.5" /> Jetzt ausführen
+          <Play className="size-3.5" /> {t("Jetzt ausführen")}
         </Button>
       }
     >
@@ -310,10 +311,10 @@ export function TasksScreen(props: TasksScreenProps) {
     </DetailPane>
   ) : (
     <EmptyState
-      title={props.tasks.length ? "Task wählen" : "Noch keine Tasks"}
+      title={props.tasks.length ? t("Task wählen") : t("Noch keine Tasks")}
       action={
         <Button size="sm" disabled={!props.projects.length} onClick={() => props.onSelectTask("new")}>
-          <Plus className="size-3.5" /> Neuer Task
+          <Plus className="size-3.5" /> {t("Neuer Task")}
         </Button>
       }
     />
@@ -321,24 +322,24 @@ export function TasksScreen(props: TasksScreenProps) {
 
   return (
     <ScreenLayout
-      title="Tasks"
+      title={t("Tasks")}
       actions={
         <Button size="sm" variant="secondary" disabled={!props.projects.length} onClick={() => props.onSelectTask("new")}>
-          <Plus className="size-3.5" /> Neuer Task
+          <Plus className="size-3.5" /> {t("Neuer Task")}
         </Button>
       }
     >
       <MasterDetail
         list={
           props.tasks.length === 0 ? (
-            <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine Tasks.</p>
+            <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Noch keine Tasks.")}</p>
           ) : (
             props.tasks.map((task) => (
               <ListRow
                 key={task.id}
                 selected={task.id === props.selectedTaskId}
                 onSelect={() => props.onSelectTask(task.id)}
-                leading={<Switch checked={task.enabled} onCheckedChange={(enabled) => void toggleEnabled(task, enabled)} aria-label="Aktiv" />}
+                leading={<Switch checked={task.enabled} onCheckedChange={(enabled) => void toggleEnabled(task, enabled)} aria-label={t("Aktiv")} />}
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[13px] font-medium">{task.name}</span>

@@ -17,6 +17,7 @@ import { environmentProviders } from "./environment-providers.ts";
 import { sessionActions } from "./session-actions.ts";
 import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./setup-tools.ts";
 import { createTeamTools, teamToolNames } from "./agents.ts";
+import { t } from "./i18n.ts";
 
 /**
  * In-process MCP server giving the agent access to everything in Harnold (projects, sessions, design systems,
@@ -66,11 +67,11 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
   const resolveTarget = (target: "session" | "project", explicitId?: string): DesignSystemLinkTarget => {
     if (target === "session") {
       const targetSessionId = explicitId ?? sessionId;
-      if (!sessionStore.get(targetSessionId)) throw new Error(`Session ${targetSessionId} nicht gefunden`);
+      if (!sessionStore.get(targetSessionId)) throw new Error(t("Session {0} nicht gefunden", targetSessionId));
       return { targetType: "session", targetId: targetSessionId };
     }
     const targetProjectId = explicitId ?? project.id;
-    if (!projectStore.get(targetProjectId)) throw new Error(`Projekt ${targetProjectId} nicht gefunden`);
+    if (!projectStore.get(targetProjectId)) throw new Error(t("Projekt {0} nicht gefunden", targetProjectId));
     return { targetType: "project", targetId: targetProjectId };
   };
 
@@ -151,7 +152,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
         { environmentId: z.string().nullable(), projectId: z.string().optional() },
         safely(({ environmentId, projectId }) => {
           const targetProject = projectStore.get(projectId ?? project.id);
-          if (!targetProject) throw new Error("Projekt nicht gefunden");
+          if (!targetProject) throw new Error(t("Projekt nicht gefunden"));
           environmentStore.assignProject(targetProject.id, environmentId);
           return textResult(`${targetProject.name} → ${environmentId ? environmentStore.get(environmentId).name : "keine Umgebung"}. Gilt ab dem nächsten Durchlauf.`);
         }),
@@ -166,7 +167,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           assignCurrentProject: z.boolean().optional().describe("Aktuelles Projekt zuordnen (Standard true)"),
         },
         safely(async ({ environmentId, name, providers, assignCurrentProject }) => {
-          if (!environmentId && !name) throw new Error("name (neue Umgebung) oder environmentId angeben");
+          if (!environmentId && !name) throw new Error(t("name (neue Umgebung) oder environmentId angeben"));
           const result = await environmentStore.importCurrent(environmentId, { name, providerIds: providers, addProjectIds: assignCurrentProject === false ? [] : [project.id] });
           return textResult(
             [
@@ -201,7 +202,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
         },
         safely(({ environmentId, assignCurrentProject, addProjectIds, ...patch }) => {
           const unknownProviders = Object.keys(patch.accounts ?? {}).filter((providerId) => !environmentProviders.some((provider) => provider.id === providerId));
-          if (unknownProviders.length) throw new Error(`Unbekannte Anbieter: ${unknownProviders.join(", ")} – dafür variables nutzen`);
+          if (unknownProviders.length) throw new Error(t("Unbekannte Anbieter: {0} – dafür variables nutzen", unknownProviders.join(", ")));
           const environment = environmentStore.save(environmentId, { ...patch, addProjectIds: [...(addProjectIds ?? []), ...(assignCurrentProject ? [project.id] : [])] });
           return textResult(`Umgebung „${environment.name}“ (id ${environment.id}) gespeichert. Konten: ${environment.accounts.map((account) => account.label).join(", ") || "keine"}. Gilt ab dem nächsten Durchlauf.`);
         }),
@@ -265,7 +266,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
         { projectId: z.string(), sessionId: z.string().optional() },
         safely(({ projectId, sessionId: targetSessionId }) => {
           const targetProject = projectStore.get(projectId);
-          if (!targetProject) throw new Error("Projekt nicht gefunden");
+          if (!targetProject) throw new Error(t("Projekt nicht gefunden"));
           const { deferred } = sessionActions.move(targetSessionId ?? sessionId, targetProject.id);
           const environment = environmentStore.forProject(targetProject.id);
           return textResult(`${deferred ? "Wird nach diesem Durchlauf verschoben" : "Verschoben"} nach ${targetProject.name}${environment ? ` (Umgebung ${environment.name})` : ""}.`);

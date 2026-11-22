@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { t } from "@/lib/i18n";
 
 const autoDeleteOptions: { days: number | null; label: string }[] = [
-  { days: null, label: "Nie" },
-  { days: 1, label: "Nach 1 Tag" },
-  { days: 7, label: "Nach 7 Tagen" },
-  { days: 30, label: "Nach 30 Tagen" },
-  { days: 90, label: "Nach 90 Tagen" },
+  { days: null, label: t("Nie") },
+  { days: 1, label: t("Nach 1 Tag") },
+  { days: 7, label: t("Nach 7 Tagen") },
+  { days: 30, label: t("Nach 30 Tagen") },
+  { days: 90, label: t("Nach 90 Tagen") },
 ];
 
 /** Quick Chats (no project) are deleted once untouched for X days; saved on change. */
@@ -25,13 +26,13 @@ export function QuickChatAutoDeleteSetting(props: { onSaved: (message: string) =
     setAutoDeleteDays(days);
     api
       .saveQuickChatSettings({ autoDeleteDays: days })
-      .then(() => props.onSaved(days ? `Quick Chats werden nach ${days} ${days === 1 ? "Tag" : "Tagen"} gelöscht` : "Quick Chats bleiben erhalten"))
+      .then(() => props.onSaved(days ? (days === 1 ? t("Quick Chats werden nach 1 Tag gelöscht") : t("Quick Chats werden nach {0} Tagen gelöscht", days)) : t("Quick Chats bleiben erhalten")))
       .catch(props.onError);
   };
 
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-sm">Quick Chats automatisch löschen</span>
+      <span className="text-sm">{t("Quick Chats automatisch löschen")}</span>
       <Select value={autoDeleteDays === null ? "never" : String(autoDeleteDays)} onValueChange={choose}>
         <SelectTrigger size="sm" className="w-36">
           <SelectValue />

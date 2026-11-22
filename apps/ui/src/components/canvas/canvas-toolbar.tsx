@@ -1,17 +1,18 @@
 import { Hand, Hash, MousePointer2, Pencil, Sparkles, Square, StickyNote, Type } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { t } from "@/lib/i18n";
 
 export type CanvasTool = "select" | "hand" | "text" | "frame" | "note" | "pen" | "rect";
 
 export const canvasTools: { tool: CanvasTool; label: string; shortcut: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { tool: "select", label: "Auswahl", shortcut: "V", icon: MousePointer2 },
-  { tool: "hand", label: "Hand", shortcut: "H", icon: Hand },
-  { tool: "text", label: "Text", shortcut: "T", icon: Type },
-  { tool: "frame", label: "Frame", shortcut: "F", icon: Hash },
-  { tool: "note", label: "Notiz", shortcut: "N", icon: StickyNote },
-  { tool: "pen", label: "Stift", shortcut: "P", icon: Pencil },
-  { tool: "rect", label: "Rechteck", shortcut: "R", icon: Square },
+  { tool: "select", label: t("Auswahl"), shortcut: "V", icon: MousePointer2 },
+  { tool: "hand", label: t("Hand"), shortcut: "H", icon: Hand },
+  { tool: "text", label: t("Text"), shortcut: "T", icon: Type },
+  { tool: "frame", label: t("Frame"), shortcut: "F", icon: Hash },
+  { tool: "note", label: t("Notiz"), shortcut: "N", icon: StickyNote },
+  { tool: "pen", label: t("Stift"), shortcut: "P", icon: Pencil },
+  { tool: "rect", label: t("Rechteck"), shortcut: "R", icon: Square },
 ];
 
 const buttonSize = 32;
@@ -67,7 +68,7 @@ export function CanvasToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            aria-label="Bild generieren"
+            aria-label={t("Bild generieren")}
             aria-pressed={imagePanelOpen}
             onClick={onToggleImagePanel}
             className={cn(
@@ -80,7 +81,7 @@ export function CanvasToolbar({
           </button>
         </TooltipTrigger>
         <TooltipContent side="top">
-          Bild generieren <span className="ml-1 opacity-60">G</span>
+          {t("Bild generieren")} <span className="ml-1 opacity-60">G</span>
         </TooltipContent>
       </Tooltip>
       </div>

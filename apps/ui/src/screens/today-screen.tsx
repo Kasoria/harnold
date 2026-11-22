@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { formatRelativeTime } from "@/components/form-field";
 import { summarizeToolInput } from "@/components/chat/tool-group";
+import { locale, t } from "@/lib/i18n";
 
 type TodayScreenProps = {
   /** Live from the event stream; the rest is loaded. */
@@ -74,15 +75,15 @@ export function TodayScreen(props: TodayScreenProps) {
     <section className="h-full overflow-y-auto bg-background">
       <div className="mx-auto grid w-full max-w-2xl min-w-0 animate-in grid-cols-[minmax(0,1fr)] gap-8 px-6 py-10 fade-in duration-200">
         <header>
-          <h1 className="text-[20px] font-semibold">Heute</h1>
+          <h1 className="text-[20px] font-semibold">{t("Heute")}</h1>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
-            {new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}
-            {overview && nothingPending && " · Nichts wartet auf dich."}
+            {new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })}
+            {overview && nothingPending && t(" · Nichts wartet auf dich.")}
           </p>
         </header>
 
         {waiting.length > 0 && (
-          <Section title="Wartet auf dich">
+          <Section title={t("Wartet auf dich")}>
             {waiting.map(({ permissionRequest, reference }) => (
               <SessionRow
                 key={permissionRequest.requestId}
@@ -92,22 +93,22 @@ export function TodayScreen(props: TodayScreenProps) {
                 }
                 detail={
                   isQuestionRequest(permissionRequest.toolName)
-                    ? `Frage: ${questionsOf(permissionRequest.input).map((question) => question.question).join(" · ")}`
+                    ? t("Frage: {0}", questionsOf(permissionRequest.input).map((question) => question.question).join(" · "))
                     : `${permissionRequest.toolName}: ${summarizeToolInput(permissionRequest.input) || JSON.stringify(permissionRequest.input).slice(0, 120)}`
                 }
                 onOpen={() => open(reference)}
                 actions={
                   isQuestionRequest(permissionRequest.toolName) ? (
                     <Button size="sm" className="h-7 shrink-0" onClick={() => open(reference)}>
-                      Beantworten
+                      {t("Beantworten")}
                     </Button>
                   ) : (
                   <div className="flex shrink-0 gap-1.5">
                     <Button size="sm" className="h-7" onClick={() => props.onAnswerPermission(permissionRequest.requestId, true)}>
-                      Erlauben
+                      {t("Erlauben")}
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7" onClick={() => props.onAnswerPermission(permissionRequest.requestId, false)}>
-                      Ablehnen
+                      {t("Ablehnen")}
                     </Button>
                   </div>
                   )
@@ -118,7 +119,7 @@ export function TodayScreen(props: TodayScreenProps) {
         )}
 
         {running.length > 0 && (
-          <Section title="Läuft">
+          <Section title={t("Läuft")}>
             {running.map((reference) => (
               <SessionRow key={reference.sessionId} reference={reference} leading={<Loader2 className="size-4 animate-spin text-status-running" />} onOpen={() => open(reference)} />
             ))}
@@ -126,7 +127,7 @@ export function TodayScreen(props: TodayScreenProps) {
         )}
 
         {taskResults.length > 0 && (
-          <Section title="Task-Ergebnisse">
+          <Section title={t("Task-Ergebnisse")}>
             {taskResults.map((taskRun) =>
               taskRun.session ? (
                 <SessionRow
@@ -143,7 +144,7 @@ export function TodayScreen(props: TodayScreenProps) {
         )}
 
         {overview && overview.recentSessions.length > 0 && (
-          <Section title="Weitermachen">
+          <Section title={t("Weitermachen")}>
             {overview.recentSessions.map((reference) => (
               <SessionRow
                 key={reference.sessionId}

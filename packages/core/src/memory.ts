@@ -8,6 +8,7 @@ import { eventHub } from "./events.ts";
 import { settingsStore } from "./settings.ts";
 import { voiceConfig } from "./voice.ts";
 import { environmentStore } from "./environments.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Memory = Markdown files (the truth) + a rebuildable SQLite index (FTS5, optional vectors).
@@ -96,10 +97,10 @@ const environmentRoot = (environmentId: string): MemoryRoot => ({ scope: "enviro
 /** Environment memory is addressed via a project; it resolves to that project's environment. */
 function memoryRootFor(scope: MemoryScope, project: Project | null): MemoryRoot {
   if (scope === "workspace") return { scope, ownerKey: "", directory: memoryConfig.workspaceDirectory(), project: null };
-  if (!project) throw new Error("Projekt fehlt");
+  if (!project) throw new Error(t("Projekt fehlt"));
   if (scope === "environment") {
     const environment = environmentStore.forProject(project.id);
-    if (!environment) throw new Error("Projekt gehört zu keiner Umgebung");
+    if (!environment) throw new Error(t("Projekt gehört zu keiner Umgebung"));
     return { ...environmentRoot(environment.id), project };
   }
   return { scope, ownerKey: project.id, directory: path.join(project.path, "memory"), project };
@@ -113,11 +114,11 @@ const environmentKeyOf = (projectId: string | null) => (projectId ? (environment
 export function resolveNotePath(scope: MemoryScope, project: Project | null, notePath: string): { absolutePath: string; relativePath: string } {
   let relativePath = notePath.trim().replace(/\\/g, "/").replace(/^\/+/, "");
   if (scope === "project" && relativePath === "HARNOLD.md" && project) return { absolutePath: path.join(project.path, "HARNOLD.md"), relativePath };
-  if (!relativePath) throw new Error("Pfad fehlt");
+  if (!relativePath) throw new Error(t("Pfad fehlt"));
   if (!relativePath.toLowerCase().endsWith(".md")) relativePath += ".md";
   const rootDirectory = path.resolve(rootDirectoryOf(scope, project));
   const absolutePath = path.resolve(rootDirectory, relativePath);
-  if (!absolutePath.startsWith(rootDirectory + path.sep)) throw new Error("Pfad liegt außerhalb des Memory-Ordners");
+  if (!absolutePath.startsWith(rootDirectory + path.sep)) throw new Error(t("Pfad liegt außerhalb des Memory-Ordners"));
   return { absolutePath, relativePath: path.relative(rootDirectory, absolutePath).split(path.sep).join("/") };
 }
 
@@ -156,7 +157,7 @@ async function embed(text: string): Promise<{ vector: Float32Array; model: strin
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({ model, input }),
     });
-    if (!response.ok) throw new Error(`OpenAI Embeddings: ${response.status} ${await response.text()}`);
+    if (!response.ok) throw new Error(t("OpenAI Embeddings: {0} {1}", response.status, await response.text()));
     const responseBody = (await response.json()) as { data: { embedding: number[] }[] };
     return { vector: Float32Array.from(responseBody.data[0].embedding), model };
   }
@@ -165,7 +166,7 @@ async function embed(text: string): Promise<{ vector: Float32Array; model: strin
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ model, input }),
   });
-  if (!response.ok) throw new Error(`Ollama Embeddings: ${response.status} ${await response.text()}`);
+  if (!response.ok) throw new Error(t("Ollama Embeddings: {0} {1}", response.status, await response.text()));
   const responseBody = (await response.json()) as { embeddings: number[][] };
   return { vector: Float32Array.from(responseBody.embeddings[0]), model };
 }
@@ -383,14 +384,14 @@ export const memoryIndex = {
 function projectFor(noteRef: { scope: MemoryScope; projectId: string | null }): Project | null {
   if (noteRef.scope === "workspace") return null;
   const project = noteRef.projectId ? projectStore.get(noteRef.projectId) : undefined;
-  if (!project) throw new Error("Projekt nicht gefunden");
+  if (!project) throw new Error(t("Projekt nicht gefunden"));
   return project;
 }
 
 export const memoryNotes = {
   read(noteRef: MemoryNoteRef): string {
     const { absolutePath } = resolveNotePath(noteRef.scope, projectFor(noteRef), noteRef.path);
-    if (!fs.existsSync(absolutePath)) throw new Error("Notiz nicht gefunden");
+    if (!fs.existsSync(absolutePath)) throw new Error(t("Notiz nicht gefunden"));
     return fs.readFileSync(absolutePath, "utf8");
   },
 

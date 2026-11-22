@@ -12,6 +12,7 @@ import { DesignTokensEditor } from "@/components/design-system/design-tokens-edi
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
 import { isActionEnter } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 type DesignSystemsScreenProps = {
   /** Selected system id, "new" for the create form, null for none. */
@@ -30,9 +31,11 @@ type CreationTemplate = "starter" | "derive" | "empty";
 const sameTarget = (first: DesignSystemLinkTarget, second: DesignSystemLinkTarget) => first.targetType === second.targetType && first.targetId === second.targetId;
 
 const derivePrompt = (designSystem: DesignSystemDetail) =>
-  `Analysiere das Projekt (Code, Styles, Entwürfe unter design/) und fülle das verknüpfte Design System „${designSystem.name}“ unter ${designSystem.directory}: ` +
-  "tokens.json (Farben, Typografie, Abstände, Radien, Schatten; $modes.dark falls sinnvoll) und Referenz-Komponenten unter components/*.html, die ../tokens.css einbinden. " +
-  "Passe danach vorhandene Entwürfe an die Tokens an.";
+  t(
+    "Analysiere das Projekt (Code, Styles, Entwürfe unter design/) und fülle das verknüpfte Design System „{0}“ unter {1}: tokens.json (Farben, Typografie, Abstände, Radien, Schatten; $modes.dark falls sinnvoll) und Referenz-Komponenten unter components/*.html, die ../tokens.css einbinden. Passe danach vorhandene Entwürfe an die Tokens an.",
+    designSystem.name,
+    designSystem.directory,
+  );
 
 function Swatches(props: { colors: string[] }) {
   if (props.colors.length === 0) return <div className="size-8 rounded-lg border bg-muted" />;
@@ -57,17 +60,17 @@ export function DesignSystemsScreen(props: DesignSystemsScreenProps) {
 
   return (
     <ScreenLayout
-      title="Design Systems"
+      title={t("Design Systems")}
       actions={
         <Button size="sm" className="gap-1.5" onClick={() => props.onSelect("new")}>
-          <Plus className="size-3.5" /> Neues Design System
+          <Plus className="size-3.5" /> {t("Neues Design System")}
         </Button>
       }
     >
       <MasterDetail
         list={
           designSystems.length === 0 ? (
-            <p className="p-3 text-[12.5px] text-muted-foreground">Noch keine Design Systems.</p>
+            <p className="p-3 text-[12.5px] text-muted-foreground">{t("Noch keine Design Systems.")}</p>
           ) : (
             designSystems.map((designSystem) => (
               <ListRow
@@ -78,7 +81,7 @@ export function DesignSystemsScreen(props: DesignSystemsScreenProps) {
               >
                 <div className="truncate text-[13px] font-medium">{designSystem.name}</div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
-                  {designSystem.tokenCount} Tokens · {designSystem.links.length === 0 ? "nicht verknüpft" : `${designSystem.links.length} verknüpft`}
+                  {designSystem.tokenCount} {t("Tokens ·")} {designSystem.links.length === 0 ? t("nicht verknüpft") : t("{0} verknüpft", designSystem.links.length)}
                 </div>
               </ListRow>
             ))
@@ -123,11 +126,11 @@ export function DesignSystemsScreen(props: DesignSystemsScreenProps) {
             />
           ) : (
             <EmptyState
-              title={designSystems.length ? "Design System auswählen" : "Noch kein Design System"}
-              description="Tokens und Komponenten für Entwürfe und Code."
+              title={designSystems.length ? t("Design System auswählen") : t("Noch kein Design System")}
+              description={t("Tokens und Komponenten für Entwürfe und Code.")}
               action={
                 <Button size="sm" onClick={() => props.onSelect("new")}>
-                  <Plus className="size-3.5" /> Neues Design System
+                  <Plus className="size-3.5" /> {t("Neues Design System")}
                 </Button>
               }
             />
@@ -165,7 +168,7 @@ function CreateDesignSystemForm(props: {
   };
 
   return (
-    <DetailPane detailKey="new" title="Neues Design System">
+    <DetailPane detailKey="new" title={t("Neues Design System")}>
       <form
         className="grid max-w-md gap-4"
         onSubmit={(submitEvent) => {
@@ -173,27 +176,27 @@ function CreateDesignSystemForm(props: {
           void create();
         }}
       >
-        <FormField label="Name" htmlFor="design-system-name">
-          <Input id="design-system-name" autoFocus value={name} placeholder="z. B. Kasoria Marke" onChange={(changeEvent) => setName(changeEvent.target.value)} />
+        <FormField label={t("Name")} htmlFor="design-system-name">
+          <Input id="design-system-name" autoFocus value={name} placeholder={t("z. B. Kasoria Marke")} onChange={(changeEvent) => setName(changeEvent.target.value)} />
         </FormField>
-        <FormField label="Start">
+        <FormField label={t("Start")}>
           <SegmentedControl
             options={[
-              { value: "starter", label: "Vorlage" },
-              { value: "derive", label: "Aus Projekt" },
-              { value: "empty", label: "Leer" },
+              { value: "starter", label: t("Vorlage") },
+              { value: "derive", label: t("Aus Projekt") },
+              { value: "empty", label: t("Leer") },
             ]}
             value={template}
             onValueChange={setTemplate}
           />
         </FormField>
-        <FormField label={projectRequired ? "Projekt" : "Verknüpfen mit"}>
+        <FormField label={projectRequired ? t("Projekt") : t("Verknüpfen mit")}>
           <Select value={projectId} onValueChange={setProjectId}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">{projectRequired ? "Projekt wählen …" : "Nichts"}</SelectItem>
+              <SelectItem value="none">{projectRequired ? t("Projekt wählen …") : t("Nichts")}</SelectItem>
               {props.projects.map((project) => (
                 <SelectItem key={project.id} value={project.id}>
                   {project.name}
@@ -204,10 +207,10 @@ function CreateDesignSystemForm(props: {
         </FormField>
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!canCreate}>
-            {creating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Anlegen
+            {creating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} {t("Anlegen")}
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={props.onCancel}>
-            Abbrechen
+            {t("Abbrechen")}
           </Button>
         </div>
       </form>
@@ -257,8 +260,8 @@ function DesignSystemDetailView(props: {
   const saveLinks = (links: DesignSystemLinkTarget[]) => api.setDesignSystemLinks(designSystem.id, links).then(applyChange).catch(onError);
 
   const remove = async () => {
-    const linkHint = designSystem.links.length ? ` Verknüpft mit ${designSystem.links.length} Projekten/Sessions.` : "";
-    if (!(await confirmAction({ title: `Design System „${designSystem.name}“ löschen?`, description: `Alle Dateien werden entfernt.${linkHint}` }))) return;
+    const linkHint = designSystem.links.length ? t(" Verknüpft mit {0} Projekten/Sessions.", designSystem.links.length) : "";
+    if (!(await confirmAction({ title: t("Design System „{0}“ löschen?", designSystem.name), description: t("Alle Dateien werden entfernt.{0}", linkHint) }))) return;
     api.deleteDesignSystem(designSystem.id).then(props.onDeleted).catch(onError);
   };
 
@@ -269,7 +272,7 @@ function DesignSystemDetailView(props: {
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={nameDraft}
-          aria-label="Name"
+          aria-label={t("Name")}
           onChange={(changeEvent) => setNameDraft(changeEvent.target.value)}
           onBlur={rename}
           onKeyDown={(keyboardEvent) => {
@@ -279,15 +282,15 @@ function DesignSystemDetailView(props: {
           className="-ml-1.5 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[15px] font-semibold transition-colors duration-150 outline-none hover:border-border focus:border-ring"
         />
         <span className="text-[12px] text-muted-foreground">
-          {designSystem.flatTokens.length} Tokens · geändert {formatRelativeTime(props.allDesignSystems.find((summary) => summary.id === designSystem.id)?.updatedAt ?? Date.now())}
+          {designSystem.flatTokens.length} {t("Tokens · geändert")} {formatRelativeTime(props.allDesignSystems.find((summary) => summary.id === designSystem.id)?.updatedAt ?? Date.now())}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {designSystem.modeTokens.dark && (
             <SegmentedControl
               className="w-36"
               options={[
-                { value: "base", label: "Hell" },
-                { value: "dark", label: "Dunkel" },
+                { value: "base", label: t("Hell") },
+                { value: "dark", label: t("Dunkel") },
               ]}
               value={mode}
               onValueChange={setMode}
@@ -298,15 +301,15 @@ function DesignSystemDetailView(props: {
             variant="secondary"
             className="h-7 gap-1.5 px-2 text-[12px]"
             disabled={!agentTarget}
-            title={agentTarget ? undefined : "Zuerst mit einem Projekt oder einer Session verknüpfen"}
-            onClick={() => agentTarget && props.onWorkWithAgent(agentTarget, `Design System „${designSystem.name}“ (${designSystem.directory}): `, false)}
+            title={agentTarget ? undefined : t("Zuerst mit einem Projekt oder einer Session verknüpfen")}
+            onClick={() => agentTarget && props.onWorkWithAgent(agentTarget, t("Design System „{0}“ ({1}): ", designSystem.name, designSystem.directory), false)}
           >
-            <Wand2 className="size-3.5" /> Mit Agent bearbeiten
+            <Wand2 className="size-3.5" /> {t("Mit Agent bearbeiten")}
           </Button>
-          <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" title={designSystem.directory} onClick={() => void navigator.clipboard.writeText(designSystem.directory)} aria-label="Ordnerpfad kopieren">
+          <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" title={designSystem.directory} onClick={() => void navigator.clipboard.writeText(designSystem.directory)} aria-label={t("Ordnerpfad kopieren")}>
             <FolderOpen className="size-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={remove} aria-label="Löschen">
+          <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={remove} aria-label={t("Löschen")}>
             <Trash2 className="size-3.5" />
           </Button>
         </div>
@@ -323,12 +326,12 @@ function DesignSystemDetailView(props: {
 
       {designSystem.flatTokens.length === 0 && designSystem.components.length === 0 ? (
         <EmptyState
-          title="Noch leer"
-          description="tokens.json füllen oder aus einem Projekt ableiten."
+          title={t("Noch leer")}
+          description={t("tokens.json füllen oder aus einem Projekt ableiten.")}
           action={
             agentTarget && (
               <Button size="sm" variant="secondary" onClick={() => props.onWorkWithAgent(agentTarget, derivePrompt(designSystem), true)}>
-                <Wand2 className="size-3.5" /> Aus Projekt ableiten
+                <Wand2 className="size-3.5" /> {t("Aus Projekt ableiten")}
               </Button>
             )
           }
@@ -383,12 +386,12 @@ function LinksSection(props: {
 
   return (
     <section className="mt-4 mb-6 flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-[12px] text-muted-foreground">Verknüpft mit</span>
+      <span className="mr-1 text-[12px] text-muted-foreground">{t("Verknüpft mit")}</span>
       {props.links.map((link) => (
         <span key={`${link.targetType}:${link.targetId}`} className="inline-flex animate-in items-center gap-1 rounded-md border bg-background py-0.5 pr-1 pl-2 text-[12px] fade-in duration-150">
-          <span className="text-muted-foreground">{link.targetType === "project" ? "Projekt" : "Session"}</span>
+          <span className="text-muted-foreground">{link.targetType === "project" ? t("Projekt") : t("Session")}</span>
           <span className="max-w-56 truncate">{labelOf(link)}</span>
-          <button className="rounded text-muted-foreground transition-colors hover:text-foreground" onClick={() => toggle(link)} aria-label="Verknüpfung entfernen">
+          <button className="rounded text-muted-foreground transition-colors hover:text-foreground" onClick={() => toggle(link)} aria-label={t("Verknüpfung entfernen")}>
             <X className="size-3" />
           </button>
         </span>
@@ -396,13 +399,13 @@ function LinksSection(props: {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="sm" variant="ghost" className="h-6 gap-1 px-1.5 text-[12px] text-muted-foreground">
-            <Link2 className="size-3.5" /> Verknüpfen
+            <Link2 className="size-3.5" /> {t("Verknüpfen")}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-96 w-80 overflow-y-auto">
-          <DropdownMenuLabel className="text-[11.5px] font-normal text-muted-foreground">Session-Verknüpfung geht vor Projekt. Rechts: aktuell verknüpftes System.</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-[11.5px] font-normal text-muted-foreground">{t("Session-Verknüpfung geht vor Projekt. Rechts: aktuell verknüpftes System.")}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {props.projects.length === 0 && <p className="px-2 py-1.5 text-[12.5px] text-muted-foreground">Keine Projekte.</p>}
+          {props.projects.length === 0 && <p className="px-2 py-1.5 text-[12.5px] text-muted-foreground">{t("Keine Projekte.")}</p>}
           {props.projects.map((project) => [
             renderOption({ targetType: "project", targetId: project.id }, project.name, false),
             ...(props.sessionsByProjectId[project.id] ?? []).map((session) => renderOption({ targetType: "session", targetId: session.id }, session.title, true)),

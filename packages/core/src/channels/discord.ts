@@ -1,5 +1,6 @@
 import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, ChannelType as DiscordChannelType, Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { splitMessage, type ChannelAdapter, type ChannelAdapterContext } from "./types.ts";
+import { t } from "../i18n.ts";
 
 /** Discord bot: answers DMs and messages that mention it. */
 export function createDiscordAdapter(context: ChannelAdapterContext): ChannelAdapter {
@@ -35,7 +36,7 @@ export function createDiscordAdapter(context: ChannelAdapterContext): ChannelAda
 
   const fetchTextChannel = async (chatId: string) => {
     const channel = await client.channels.fetch(chatId);
-    if (!channel?.isSendable()) throw new Error("Discord-Kanal nicht beschreibbar");
+    if (!channel?.isSendable()) throw new Error(t("Discord-Kanal nicht beschreibbar"));
     return channel;
   };
 

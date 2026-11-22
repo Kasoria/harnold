@@ -4,6 +4,7 @@ import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import { database, projectStore, sessionStore } from "./db.ts";
 import { agentRuntime } from "./agent.ts";
 import { eventHub } from "./events.ts";
+import { currentLanguage, t } from "./i18n.ts";
 
 database.exec(`
   CREATE TABLE IF NOT EXISTS tasks (
@@ -87,7 +88,7 @@ export function validateSchedule(schedule: string): void {
   try {
     new Cron(schedule, { paused: true }).stop();
   } catch {
-    throw new Error(`Ungültiger Zeitplan: ${schedule}`);
+    throw new Error(t("Ungültiger Zeitplan: {0}", schedule));
   }
 }
 
@@ -141,11 +142,11 @@ const scheduledJobs = new Map<string, Cron>();
 
 export async function runTask(taskId: string): Promise<TaskRun> {
   const task = taskStore.get(taskId);
-  if (!task) throw new Error("Task nicht gefunden");
-  if (!projectStore.get(task.projectId)) throw new Error("Projekt des Tasks existiert nicht mehr");
+  if (!task) throw new Error(t("Task nicht gefunden"));
+  if (!projectStore.get(task.projectId)) throw new Error(t("Projekt des Tasks existiert nicht mehr"));
 
   const startedAt = Date.now();
-  const session = sessionStore.create(task.projectId, `Task · ${task.name} · ${new Date(startedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}`);
+  const session = sessionStore.create(task.projectId, `Task · ${task.name} · ${new Date(startedAt).toLocaleString(currentLanguage() === "en" ? "en-US" : "de-DE", { dateStyle: "short", timeStyle: "short" })}`);
   eventHub.publish({ type: "sessions_changed", projectId: task.projectId });
 
   const taskRun: TaskRun = { id: randomUUID(), taskId, sessionId: session.id, startedAt, finishedAt: null, status: "running", summary: null };
@@ -171,7 +172,7 @@ export async function runTask(taskId: string): Promise<TaskRun> {
   eventHub.publish({ type: "task_run_finished", taskId, taskName: task.name, sessionId: session.id, projectId: task.projectId, success: turnOutcome.success });
 
   if (task.notifyChannelId && task.notifyChatId && runNotifier) {
-    const headline = `${turnOutcome.success ? "✅" : "⚠️"} Task „${task.name}“`;
+    const headline = t("{0} Task „{1}“", turnOutcome.success ? "✅" : "⚠️", task.name);
     await runNotifier(task, `${headline}\n\n${taskRun.summary}`).catch((notifyError) => console.error("[tasks] notify failed:", notifyError));
   }
   return taskRun;

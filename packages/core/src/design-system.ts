@@ -5,6 +5,7 @@ import { config } from "./config.ts";
 import { database, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { settingsStore } from "./settings.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Design systems are standalone (workspace-wide) and can be linked to any number of projects and sessions.
@@ -162,7 +163,7 @@ const directoryOf = (designSystemId: string) => path.join(designSystemsDirectory
 
 function requireRow(designSystemId: string): DesignSystemRow {
   const row = database.prepare("SELECT * FROM design_systems WHERE id = ?").get(designSystemId);
-  if (!row) throw new Error("Design System nicht gefunden");
+  if (!row) throw new Error(t("Design System nicht gefunden"));
   return mapRow(row);
 }
 
@@ -178,7 +179,7 @@ function readTokenTree(directory: string): TokenTree | null {
   const tokensPath = path.join(directory, "tokens.json");
   if (!fs.existsSync(tokensPath)) return null;
   const parsedTokens = JSON.parse(fs.readFileSync(tokensPath, "utf8")) as unknown;
-  if (!parsedTokens || typeof parsedTokens !== "object" || Array.isArray(parsedTokens)) throw new Error("tokens.json muss ein Objekt sein");
+  if (!parsedTokens || typeof parsedTokens !== "object" || Array.isArray(parsedTokens)) throw new Error(t("tokens.json muss ein Objekt sein"));
   return parsedTokens as TokenTree;
 }
 
@@ -322,7 +323,7 @@ export const designSystemStore = {
     requireRow(designSystemId);
     const directory = directoryOf(designSystemId);
     const absolutePath = path.resolve(directory, relativePath);
-    if (absolutePath !== directory && !absolutePath.startsWith(directory + path.sep)) throw new Error("Pfad außerhalb des Design Systems");
+    if (absolutePath !== directory && !absolutePath.startsWith(directory + path.sep)) throw new Error(t("Pfad außerhalb des Design Systems"));
     return absolutePath;
   },
 

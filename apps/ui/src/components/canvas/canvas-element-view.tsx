@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { api } from "@/api";
 import type { CanvasElement } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 type CanvasElementViewProps = {
   element: CanvasElement;
@@ -95,7 +96,7 @@ export function CanvasElementView(props: CanvasElementViewProps) {
             {props.editing ? (
               <EditableText value={element.text ?? ""} className="text-[13px] leading-snug" onChange={(text) => props.onTextChange(element, text)} onDone={props.onFinishEditing} />
             ) : (
-              <p className="whitespace-pre-wrap">{element.text || "Notiz"}</p>
+              <p className="whitespace-pre-wrap">{element.text || t("Notiz")}</p>
             )}
           </div>
         );
@@ -103,7 +104,7 @@ export function CanvasElementView(props: CanvasElementViewProps) {
         return props.editing ? (
           <EditableText value={element.text ?? ""} className="text-[18px] font-medium" onChange={(text) => props.onTextChange(element, text)} onDone={props.onFinishEditing} />
         ) : (
-          <p className="text-[18px] font-medium whitespace-pre-wrap">{element.text || "Text"}</p>
+          <p className="text-[18px] font-medium whitespace-pre-wrap">{element.text || t("Text")}</p>
         );
       case "rect":
         return <div className="size-full rounded-sm border-2 border-foreground/70" />;
@@ -139,7 +140,7 @@ export function CanvasElementView(props: CanvasElementViewProps) {
           {props.editing ? (
             <input
               autoFocus
-              defaultValue={element.title || "Frame"}
+              defaultValue={element.title || t("Frame")}
               onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
               onKeyDown={(keyboardEvent) => {
                 keyboardEvent.stopPropagation();
@@ -152,7 +153,7 @@ export function CanvasElementView(props: CanvasElementViewProps) {
               className="rounded bg-background px-1 font-semibold outline-none ring-1 ring-sky-500"
             />
           ) : (
-            element.title || "Frame"
+            element.title || t("Frame")
           )}
         </div>
       )}

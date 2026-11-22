@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { eventHub } from "./events.ts";
 import type { Project } from "./db.ts";
+import { t } from "./i18n.ts";
 
 const ignoredNames = new Set(["node_modules", ".git", "dist", ".next", ".DS_Store", ".turbo"]);
 
@@ -12,7 +13,7 @@ export function resolveInsideProject(project: Project, relativePath: string): st
   const absolutePath = path.resolve(project.path, relativePath.replace(/^\/+/, ""));
   const projectRoot = path.resolve(project.path);
   if (absolutePath !== projectRoot && !absolutePath.startsWith(projectRoot + path.sep)) {
-    throw new Error("Pfad liegt außerhalb des Projekts");
+    throw new Error(t("Pfad liegt außerhalb des Projekts"));
   }
   return absolutePath;
 }

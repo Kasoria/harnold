@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { settingsStore } from "./settings.ts";
+import { t } from "./i18n.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -132,7 +133,7 @@ export async function transcribe(audioClip: AudioClip): Promise<string> {
 
   switch (sttProvider) {
     case "system":
-      throw new Error("Die System-Spracherkennung gibt es nur bei der Eingabe in der App. Für Sprachnachrichten aus Channels einen Anbieter in Einstellungen → Voice wählen.");
+      throw new Error(t("Die System-Spracherkennung gibt es nur bei der Eingabe in der App. Für Sprachnachrichten aus Channels einen Anbieter in Einstellungen → Voice wählen."));
     case "openai": {
       const formData = new FormData();
       formData.append("file", audioBlob, fileName);
@@ -180,7 +181,7 @@ export async function transcribe(audioClip: AudioClip): Promise<string> {
       });
     }
     default:
-      throw new Error("Spracherkennung ist nicht eingerichtet (Einstellungen → Voice)");
+      throw new Error(t("Spracherkennung ist nicht eingerichtet (Einstellungen → Voice)"));
   }
 }
 
@@ -220,12 +221,12 @@ export async function synthesize(text: string): Promise<AudioClip> {
           let errorOutput = "";
           piperProcess.stderr.on("data", (chunk) => (errorOutput += chunk));
           piperProcess.on("error", reject);
-          piperProcess.on("close", (exitCode) => (exitCode === 0 ? resolve() : reject(new Error(`Piper: ${errorOutput.slice(0, 300)}`))));
+          piperProcess.on("close", (exitCode) => (exitCode === 0 ? resolve() : reject(new Error(t("Piper: {0}", errorOutput.slice(0, 300))))));
           piperProcess.stdin.end(spokenText);
         });
         return { data: fs.readFileSync(outputPath), mimeType: "audio/wav" };
       });
     default:
-      throw new Error("Sprachausgabe ist nicht eingerichtet (Einstellungen → Voice)");
+      throw new Error(t("Sprachausgabe ist nicht eingerichtet (Einstellungen → Voice)"));
   }
 }

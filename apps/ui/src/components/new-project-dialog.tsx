@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 
 type NewProjectDialogProps = {
   open: boolean;
@@ -29,25 +30,25 @@ export function NewProjectDialog({ open, onOpenChange, onCreate, environmentName
       <DialogContent className="sm:max-w-md">
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
-            <DialogTitle>Neues Projekt</DialogTitle>
+            <DialogTitle>{t("Neues Projekt")}</DialogTitle>
             <DialogDescription>
-              Ohne Ordner wird einer im Harnold-Projektverzeichnis angelegt.{environmentName && ` Gehört zur Umgebung ${environmentName}.`}
+              {t("Ohne Ordner wird einer im Harnold-Projektverzeichnis angelegt.")}{environmentName && t(" Gehört zur Umgebung {0}.", environmentName)}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
-            <Input autoFocus placeholder="Name" value={projectName} onChange={(event) => setProjectName(event.target.value)} />
+            <Input autoFocus placeholder={t("Name")} value={projectName} onChange={(event) => setProjectName(event.target.value)} />
             <Input
-              placeholder="Vorhandener Ordner (optional, absoluter Pfad)"
+              placeholder={t("Vorhandener Ordner (optional, absoluter Pfad)")}
               value={projectPath}
               onChange={(event) => setProjectPath(event.target.value)}
             />
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Abbrechen
+              {t("Abbrechen")}
             </Button>
             <Button type="submit" disabled={!projectName.trim()}>
-              Anlegen
+              {t("Anlegen")}
             </Button>
           </DialogFooter>
         </form>

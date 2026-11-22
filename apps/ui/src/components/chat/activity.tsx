@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { t } from "@/lib/i18n";
 
 /** Summarized reasoning of the model; live while it is still streaming. */
 export function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
@@ -9,7 +10,7 @@ export function ThinkingBlock({ text, live }: { text: string; live?: boolean }) 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="animate-in fade-in duration-200">
       <CollapsibleTrigger className="flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
-        <span className={cn(live && "text-shimmer")}>{live ? "Denkt nach" : "Gedanken"}</span>
+        <span className={cn(live && "text-shimmer")}>{live ? t("Denkt nach") : t("Gedanken")}</span>
         <ChevronRight className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")} />
       </CollapsibleTrigger>
       <CollapsibleContent className="collapsible-animated">

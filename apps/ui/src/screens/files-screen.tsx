@@ -12,6 +12,7 @@ import { formatRelativeTime } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
 import { EmptyState, ScreenLayout } from "./screen-layout";
+import { t } from "@/lib/i18n";
 
 type FilesScreenProps = {
   environments: Environment[];
@@ -24,7 +25,7 @@ type KindFilter = "all" | ManagedFileKind;
 type StatusFilter = "all" | "orphaned" | "duplicates";
 type SortOrder = "newest" | "largest";
 
-const kindLabels: Record<ManagedFileKind, string> = { attachment: "Anhang", generated: "Generiert", memory: "Memory" };
+const kindLabels: Record<ManagedFileKind, string> = { attachment: t("Anhang"), generated: t("Generiert"), memory: t("Memory") };
 const sumSize = (files: ManagedFile[]) => files.reduce((total, file) => total + file.size, 0);
 
 function Badge(props: { tone: "warning" | "muted"; children: React.ReactNode }) {
@@ -95,8 +96,8 @@ export function FilesScreen(props: FilesScreenProps) {
     const confirmed = await confirmAction({
       title,
       description: [
-        `${formatFileSize(sumSize(filesToDelete))} werden endgültig gelöscht.`,
-        canvasCount ? `${canvasCount === 1 ? "Ein Bild verschwindet" : `${canvasCount} Bilder verschwinden`} dabei auch vom Canvas.` : "",
+        t("{0} werden endgültig gelöscht.", formatFileSize(sumSize(filesToDelete))),
+        canvasCount ? (canvasCount === 1 ? t("Ein Bild verschwindet dabei auch vom Canvas.") : t("{0} Bilder verschwinden dabei auch vom Canvas.", canvasCount)) : "",
       ]
         .filter(Boolean)
         .join(" "),
@@ -104,7 +105,7 @@ export function FilesScreen(props: FilesScreenProps) {
     if (!confirmed) return;
     try {
       const { removedCount } = await api.deleteManagedFiles(filesToDelete.map((file) => file.id));
-      props.onInfo(`${removedCount} ${removedCount === 1 ? "Datei" : "Dateien"} gelöscht`);
+      props.onInfo(removedCount === 1 ? t("1 Datei gelöscht") : t("{0} Dateien gelöscht", removedCount));
       if (selectedFileId && filesToDelete.some((file) => file.id === selectedFileId)) setSelectedFileId(null);
       setCheckedFileIds(new Set());
       reload();
@@ -116,7 +117,7 @@ export function FilesScreen(props: FilesScreenProps) {
   const copyToMemory = async (file: ManagedFile, scope: MemoryScope) => {
     try {
       const savedFile = await api.copyFileToMemory(file.id, scope, scope === "workspace" ? null : file.projectId);
-      props.onInfo(`Ins Gedächtnis übernommen: ${savedFile.path}`);
+      props.onInfo(t("Ins Gedächtnis übernommen: {0}", savedFile.path));
       reload();
     } catch (copyError) {
       onError(copyError);
@@ -136,15 +137,15 @@ export function FilesScreen(props: FilesScreenProps) {
       <div className="grid gap-2 border-b p-2">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input className="h-8 pl-8" placeholder="Name, Pfad oder Session …" value={searchText} onChange={(changeEvent) => setSearchText(changeEvent.target.value)} />
+          <Input className="h-8 pl-8" placeholder={t("Name, Pfad oder Session …")} value={searchText} onChange={(changeEvent) => setSearchText(changeEvent.target.value)} />
         </div>
         <div className="flex gap-2">
           <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-[12.5px]" aria-label="Projekt">
+            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-[12.5px]" aria-label={t("Projekt")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Alle Orte</SelectItem>
+              <SelectItem value="all">{t("Alle Orte")}</SelectItem>
               {owners.map(([ownerKey, ownerName]) => (
                 <SelectItem key={ownerKey} value={ownerKey}>
                   {ownerName}
@@ -153,18 +154,18 @@ export function FilesScreen(props: FilesScreenProps) {
             </SelectContent>
           </Select>
           <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
-            <SelectTrigger size="sm" className="h-8 w-28 text-[12.5px]" aria-label="Sortierung">
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12.5px]" aria-label={t("Sortierung")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="newest">Neueste</SelectItem>
-              <SelectItem value="largest">Größte</SelectItem>
+              <SelectItem value="newest">{t("Neueste")}</SelectItem>
+              <SelectItem value="largest">{t("Größte")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <SegmentedControl
           options={[
-            { value: "all", label: "Alle" },
+            { value: "all", label: t("Alle") },
             { value: "orphaned", label: `Verwaist ${orphanedFiles.length || ""}`.trim() },
             { value: "duplicates", label: `Doppelt ${duplicateFiles.length || ""}`.trim() },
           ]}
@@ -175,9 +176,9 @@ export function FilesScreen(props: FilesScreenProps) {
 
       <div className="flex-1 overflow-y-auto p-2">
         {files === null ? (
-          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Lädt …</p>
+          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Lädt …")}</p>
         ) : visibleFiles.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{allFiles.length ? "Keine Treffer." : "Noch keine Dateien."}</p>
+          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{allFiles.length ? t("Keine Treffer.") : t("Noch keine Dateien.")}</p>
         ) : (
           visibleFiles.map((file) => (
             <div
@@ -193,7 +194,7 @@ export function FilesScreen(props: FilesScreenProps) {
             >
               <input
                 type="checkbox"
-                aria-label={`${file.name} auswählen`}
+                aria-label={t("{0} auswählen", file.name)}
                 checked={checkedFileIds.has(file.id)}
                 onClick={(clickEvent) => clickEvent.stopPropagation()}
                 onChange={() => toggleChecked(file.id)}
@@ -203,8 +204,8 @@ export function FilesScreen(props: FilesScreenProps) {
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className="truncate text-[13px] font-medium">{file.name}</span>
-                  {file.orphaned && <Badge tone="warning">Verwaist</Badge>}
-                  {file.duplicateGroup && <Badge tone="muted">Doppelt</Badge>}
+                  {file.orphaned && <Badge tone="warning">{t("Verwaist")}</Badge>}
+                  {file.duplicateGroup && <Badge tone="muted">{t("Doppelt")}</Badge>}
                 </span>
                 <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <span className="truncate">
@@ -221,13 +222,13 @@ export function FilesScreen(props: FilesScreenProps) {
       {checkedFiles.length > 0 && (
         <div className="flex animate-in items-center gap-2 border-t px-3 py-2 text-[12px] fade-in slide-in-from-bottom-1 duration-150">
           <span className="text-muted-foreground">
-            {checkedFiles.length} ausgewählt · {formatFileSize(sumSize(checkedFiles))}
+            {checkedFiles.length} {t("ausgewählt ·")} {formatFileSize(sumSize(checkedFiles))}
           </span>
           <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-[12px]" onClick={() => setCheckedFileIds(new Set())}>
-            Abwählen
+            {t("Abwählen")}
           </Button>
-          <Button size="sm" variant="destructive" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => void deleteFiles(checkedFiles, `${checkedFiles.length} ${checkedFiles.length === 1 ? "Datei" : "Dateien"} löschen?`)}>
-            <Trash2 className="size-3.5" /> Löschen
+          <Button size="sm" variant="destructive" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => void deleteFiles(checkedFiles, checkedFiles.length === 1 ? t("1 Datei löschen?") : t("{0} Dateien löschen?", checkedFiles.length))}>
+            <Trash2 className="size-3.5" /> {t("Löschen")}
           </Button>
         </div>
       )}
@@ -238,16 +239,16 @@ export function FilesScreen(props: FilesScreenProps) {
 
   const detail = !selectedFile ? (
     <EmptyState
-      title={files ? `${allFiles.length} Dateien · ${formatFileSize(sumSize(allFiles))}` : "Dateien"}
+      title={files ? t("{0} Dateien · {1}", allFiles.length, formatFileSize(sumSize(allFiles))) : t("Dateien")}
       description={
         orphanedFiles.length
-          ? `${orphanedFiles.length} davon verwaist (${formatFileSize(sumSize(orphanedFiles))}): Anhänge und Bilder, auf die keine Session und keine Design-Datei mehr verweist.`
-          : "Anhänge, generierte Bilder und Memory-Dateien aus allen Projekten."
+          ? t("{0} davon verwaist ({1}): Anhänge und Bilder, auf die keine Session und keine Design-Datei mehr verweist.", orphanedFiles.length, formatFileSize(sumSize(orphanedFiles)))
+          : t("Anhänge, generierte Bilder und Memory-Dateien aus allen Projekten.")
       }
       action={
         orphanedFiles.length > 0 && (
-          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => void deleteFiles(orphanedFiles, `${orphanedFiles.length} verwaiste Dateien löschen?`)}>
-            <Sparkles className="size-3.5" /> Verwaiste aufräumen
+          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => void deleteFiles(orphanedFiles, t("{0} verwaiste Dateien löschen?", orphanedFiles.length))}>
+            <Sparkles className="size-3.5" /> {t("Verwaiste aufräumen")}
           </Button>
         )
       }
@@ -259,7 +260,7 @@ export function FilesScreen(props: FilesScreenProps) {
         <span className="text-[11.5px] text-muted-foreground">{selectedFile.ownerName}</span>
         <div className="ml-auto flex items-center gap-1">
           <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" asChild>
-            <a href={api.managedFileUrl(selectedFile.id)} target="_blank" rel="noreferrer" aria-label="In neuem Tab öffnen">
+            <a href={api.managedFileUrl(selectedFile.id)} target="_blank" rel="noreferrer" aria-label={t("In neuem Tab öffnen")}>
               <ExternalLink className="size-3.5" />
             </a>
           </Button>
@@ -267,22 +268,22 @@ export function FilesScreen(props: FilesScreenProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="secondary" className="h-7 gap-1.5 px-2 text-[12px]">
-                  <BookmarkPlus className="size-3.5" /> Als Kontext
+                  <BookmarkPlus className="size-3.5" /> {t("Als Kontext")}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {selectedFile.projectId && (
                   <DropdownMenuItem className="text-[13px]" onSelect={() => void copyToMemory(selectedFile, "project")}>
-                    Projekt-Gedächtnis
+                    {t("Projekt-Gedächtnis")}
                   </DropdownMenuItem>
                 )}
                 {environmentOfProject(selectedFile.projectId) && (
                   <DropdownMenuItem className="text-[13px]" onSelect={() => void copyToMemory(selectedFile, "environment")}>
-                    Umgebung „{environmentOfProject(selectedFile.projectId)?.name}“
+                    {t("Umgebung „")}{environmentOfProject(selectedFile.projectId)?.name}“
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem className="text-[13px]" onSelect={() => void copyToMemory(selectedFile, "workspace")}>
-                  Workspace-Gedächtnis
+                  {t("Workspace-Gedächtnis")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -291,8 +292,8 @@ export function FilesScreen(props: FilesScreenProps) {
             size="icon"
             variant="ghost"
             className="size-7 text-muted-foreground hover:text-destructive"
-            aria-label="Löschen"
-            onClick={() => void deleteFiles([selectedFile], `„${selectedFile.name}“ löschen?`)}
+            aria-label={t("Löschen")}
+            onClick={() => void deleteFiles([selectedFile], t("„{0}“ löschen?", selectedFile.name))}
           >
             <Trash2 className="size-3.5" />
           </Button>
@@ -305,18 +306,18 @@ export function FilesScreen(props: FilesScreenProps) {
         ) : selectedFile.mimeType === "application/pdf" || selectedFile.mimeType.startsWith("text/") ? (
           <iframe src={api.managedFileUrl(selectedFile.id)} title={selectedFile.name} className="size-full border-0 bg-background" />
         ) : (
-          <EmptyState title="Keine Vorschau" description="Über das Pfeil-Symbol oben öffnen." />
+          <EmptyState title={t("Keine Vorschau")} description={t("Über das Pfeil-Symbol oben öffnen.")} />
         )}
       </div>
 
       <dl className="grid shrink-0 grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 border-t px-4 py-3 text-[12.5px]">
-        <dt className="text-muted-foreground">Art · Größe</dt>
+        <dt className="text-muted-foreground">{t("Art · Größe")}</dt>
         <dd>
           {kindLabels[selectedFile.kind]} · {formatFileSize(selectedFile.size)} · {formatRelativeTime(selectedFile.modifiedAt)}
         </dd>
         {selectedFile.kind !== "memory" && (
           <>
-            <dt className="text-muted-foreground">Aus Session</dt>
+            <dt className="text-muted-foreground">{t("Aus Session")}</dt>
             <dd className="flex flex-wrap gap-1">
               {selectedFile.sessions.length ? (
                 selectedFile.sessions.map((session) => (
@@ -330,16 +331,16 @@ export function FilesScreen(props: FilesScreenProps) {
                   </button>
                 ))
               ) : (
-                <span className="text-muted-foreground">keine mehr – Session gelöscht</span>
+                <span className="text-muted-foreground">{t("keine mehr – Session gelöscht")}</span>
               )}
             </dd>
-            <dt className="text-muted-foreground">Verwendet in</dt>
+            <dt className="text-muted-foreground">{t("Verwendet in")}</dt>
             <dd>{selectedFile.usedIn.length ? selectedFile.usedIn.join(", ") : <span className="text-muted-foreground">nirgends</span>}</dd>
           </>
         )}
         {selectedFile.duplicateGroup && (
           <>
-            <dt className="text-muted-foreground">Doppelt</dt>
+            <dt className="text-muted-foreground">{t("Doppelt")}</dt>
             <dd className="flex flex-wrap gap-1">
               {allFiles
                 .filter((file) => file.duplicateGroup === selectedFile.duplicateGroup && file.id !== selectedFile.id)
@@ -362,15 +363,15 @@ export function FilesScreen(props: FilesScreenProps) {
 
   return (
     <ScreenLayout
-      title="Dateien"
+      title={t("Dateien")}
       tabs={
         <SegmentedControl
           className="w-80"
           options={[
-            { value: "all", label: "Alle" },
-            { value: "attachment", label: "Anhänge" },
-            { value: "generated", label: "Generiert" },
-            { value: "memory", label: "Memory" },
+            { value: "all", label: t("Alle") },
+            { value: "attachment", label: t("Anhänge") },
+            { value: "generated", label: t("Generiert") },
+            { value: "memory", label: t("Memory") },
           ]}
           value={kindFilter}
           onValueChange={setKindFilter}
@@ -378,7 +379,7 @@ export function FilesScreen(props: FilesScreenProps) {
       }
       actions={
         <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" disabled={loading} onClick={reload}>
-          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} /> Aktualisieren
+          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} /> {t("Aktualisieren")}
         </Button>
       }
     >

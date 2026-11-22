@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import type { Environment, Project } from "@/types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProjectAvatar } from "@/components/project-avatar";
+import { t } from "@/lib/i18n";
 
 type MoveSessionDialogProps = {
   open: boolean;
@@ -18,7 +19,7 @@ export function MoveSessionDialog(props: MoveSessionDialogProps) {
     ...props.environments.map((environment) => ({ key: environment.id, title: environment.name, projects: props.projects.filter((project) => environment.projectIds.includes(project.id)) })),
     {
       key: "none",
-      title: "Ohne Umgebung",
+      title: t("Ohne Umgebung"),
       projects: props.projects.filter((project) => !props.environments.some((environment) => environment.projectIds.includes(project.id))),
     },
   ].filter((group) => group.projects.length > 0);
@@ -27,7 +28,7 @@ export function MoveSessionDialog(props: MoveSessionDialogProps) {
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[70vh] gap-3 overflow-y-auto sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Session verschieben</DialogTitle>
+          <DialogTitle className="text-[15px]">{t("Session verschieben")}</DialogTitle>
         </DialogHeader>
         {groups.map((group) => (
           <div key={group.key}>

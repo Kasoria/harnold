@@ -2,13 +2,14 @@ import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 export function CopyButton({ readText, className, label }: { readText: () => string; className?: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      aria-label="Kopieren"
+      aria-label={t("Kopieren")}
       className={cn("inline-flex items-center gap-1 rounded-md text-muted-foreground transition-colors hover:text-foreground", className)}
       onClick={() => {
         void navigator.clipboard.writeText(readText()).then(() => {
@@ -18,7 +19,7 @@ export function CopyButton({ readText, className, label }: { readText: () => str
       }}
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      {label && (copied ? "Kopiert" : label)}
+      {label && (copied ? t("Kopiert") : label)}
     </button>
   );
 }

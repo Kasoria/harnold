@@ -15,6 +15,7 @@ import { mcpServerInputSchema, mcpServerStore, skillStore } from "./integrations
 import { pluginStore } from "./plugins.ts";
 import { channelStore } from "./channels/store.ts";
 import { channelFieldDefinitions } from "./channels/types.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Tools that let the agent set Harnold up itself (projects, settings, integrations, plugins, channels, skills),
@@ -71,7 +72,7 @@ type Safely = <Input>(handler: (input: Input) => Promise<ReturnType<typeof textR
 export function createSetupTools(project: Project, safely: Safely) {
   const requireProject = (projectId: string | undefined) => {
     const foundProject = projectStore.get(projectId ?? project.id);
-    if (!foundProject) throw new Error(`Projekt ${projectId} nicht gefunden`);
+    if (!foundProject) throw new Error(t("Projekt {0} nicht gefunden", projectId));
     return foundProject;
   };
 
@@ -268,7 +269,7 @@ export function createSetupTools(project: Project, safely: Safely) {
         secrets: z.record(z.string(), z.string()).default({}),
       },
       safely(async ({ channelId, projectId, ...channelFields }) => {
-        if (channelId && !channelStore.get(channelId)) throw new Error("Channel nicht gefunden");
+        if (channelId && !channelStore.get(channelId)) throw new Error(t("Channel nicht gefunden"));
         const startProjectId = channelFields.scope === "workspace" ? (await import("./quick-chats.ts")).quickChatProject().id : requireProject(projectId).id;
         const savedChannel = channelStore.save({ ...channelFields, projectId: startProjectId }, channelId);
         const channelManager = await loadChannelManager();

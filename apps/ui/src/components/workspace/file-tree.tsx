@@ -3,6 +3,7 @@ import { AtSign, ChevronRight, File, Folder } from "lucide-react";
 import type { FileNode } from "@/types";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { t } from "@/lib/i18n";
 
 type FileTreeProps = {
   nodes: FileNode[];
@@ -51,8 +52,8 @@ export function FileTree(props: FileTreeProps) {
               <span
                 role="button"
                 tabIndex={0}
-                title="Im Chat referenzieren"
-                aria-label="Im Chat referenzieren"
+                title={t("Im Chat referenzieren")}
+                aria-label={t("Im Chat referenzieren")}
                 onClick={(clickEvent) => {
                   clickEvent.stopPropagation();
                   props.onReference(fileNode.path);

@@ -5,6 +5,7 @@ import { cn, isActionEnter } from "@/lib/utils";
 import { CopyButton } from "./chat-markdown";
 import { SentAttachments } from "./attachment-views";
 import type { Attachment } from "@/types";
+import { t } from "@/lib/i18n";
 
 type UserMessageProps = {
   text: string;
@@ -40,7 +41,7 @@ export function UserMessage(props: UserMessageProps) {
       >
         <textarea
           autoFocus
-          aria-label="Nachricht bearbeiten"
+          aria-label={t("Nachricht bearbeiten")}
           value={editDraft}
           onChange={(changeEvent) => setEditDraft(changeEvent.target.value)}
           onFocus={(focusEvent) => focusEvent.currentTarget.setSelectionRange(focusEvent.currentTarget.value.length, focusEvent.currentTarget.value.length)}
@@ -55,10 +56,10 @@ export function UserMessage(props: UserMessageProps) {
         />
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" size="sm" variant="ghost" onClick={() => setEditDraft(null)}>
-            Abbrechen
+            {t("Abbrechen")}
           </Button>
           <Button type="submit" size="sm" disabled={!editDraft.trim() || !props.canEdit}>
-            Senden
+            {t("Senden")}
           </Button>
         </div>
       </form>
@@ -74,10 +75,10 @@ export function UserMessage(props: UserMessageProps) {
       )}
       {props.text && <div className="rounded-xl bg-muted px-3.5 py-2 whitespace-pre-wrap">{props.text}</div>}
       <div className="mt-0.5 flex items-center gap-0.5">
-        <CopyButton readText={() => props.text} label="Kopieren" className={hoverActionClassName} />
+        <CopyButton readText={() => props.text} label={t("Kopieren")} className={hoverActionClassName} />
         {props.canEdit && (
           <Button variant="ghost" size="sm" className={cn(hoverActionClassName, "gap-1")} onClick={() => setEditDraft(props.text)}>
-            <Pencil className="size-3" /> Bearbeiten
+            <Pencil className="size-3" /> {t("Bearbeiten")}
           </Button>
         )}
         {props.versions && (
@@ -85,7 +86,7 @@ export function UserMessage(props: UserMessageProps) {
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Vorherige Version"
+              aria-label={t("Vorherige Version")}
               disabled={props.versions.currentIndex === 0}
               onClick={() => props.onShowVersion(props.versions!.currentIndex - 1)}
             >
@@ -95,7 +96,7 @@ export function UserMessage(props: UserMessageProps) {
             <Button
               variant="ghost"
               size="icon-xs"
-              aria-label="Nächste Version"
+              aria-label={t("Nächste Version")}
               disabled={props.versions.currentIndex === props.versions.total - 1}
               onClick={() => props.onShowVersion(props.versions!.currentIndex + 1)}
             >

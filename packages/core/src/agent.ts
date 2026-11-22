@@ -16,6 +16,7 @@ import { agentCommands } from "./slash-commands.ts";
 import { agentPluginOptions } from "./plugins.ts";
 import { recordClaudeMcpServers } from "./mcp-discovery.ts";
 import { teamContextFor, teamStore } from "./agents.ts";
+import { t } from "./i18n.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
@@ -154,10 +155,10 @@ export const agentRuntime = {
 
   async runTurn({ sessionId, text, permissionMode, model, attachments = [] }: TurnRequest): Promise<TurnOutcome> {
     const session = sessionStore.get(sessionId);
-    if (!session) throw new Error("Session nicht gefunden");
+    if (!session) throw new Error(t("Session nicht gefunden"));
     const project = projectStore.get(session.projectId);
-    if (!project) throw new Error("Projekt nicht gefunden");
-    if (runningTurns.has(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
+    if (!project) throw new Error(t("Projekt nicht gefunden"));
+    if (runningTurns.has(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
     const claudeExecutablePath = await claudeExecutable();
     const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
     const agentSetup = await environmentStore.agentSetupFor(project.id);

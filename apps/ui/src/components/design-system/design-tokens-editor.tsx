@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api";
 import type { DesignSystemDetail, FlatToken, TokenTree } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 type DesignTokensEditorProps = {
   designSystem: DesignSystemDetail;
@@ -16,12 +17,12 @@ type DesignTokensEditorProps = {
 type SectionKey = "colors" | "typography" | "spacing" | "radius" | "shadow" | "other";
 
 const sectionTitles: Record<SectionKey, string> = {
-  colors: "Farben",
-  typography: "Typografie",
-  spacing: "Abstände",
-  radius: "Radien",
-  shadow: "Schatten",
-  other: "Weitere",
+  colors: t("Farben"),
+  typography: t("Typografie"),
+  spacing: t("Abstände"),
+  radius: t("Radien"),
+  shadow: t("Schatten"),
+  other: t("Weitere"),
 };
 
 function sectionOf(flatToken: FlatToken): SectionKey {
@@ -107,7 +108,7 @@ function ColorTokenCard(props: { flatToken: FlatToken; inherited: boolean; onCom
               window.clearTimeout(commitTimer.current);
               commitTimer.current = window.setTimeout(() => props.onCommit(pickedColor), 350);
             }}
-            aria-label={`Farbe ${props.flatToken.path}`}
+            aria-label={t("Farbe {0}", props.flatToken.path)}
           />
         )}
       </label>
@@ -133,9 +134,9 @@ function TokenPreview(props: { flatToken: FlatToken; section: SectionKey }) {
     case "shadow":
       return <div className="h-10 w-16 rounded-md bg-card transition-shadow duration-200" style={{ boxShadow: resolvedValue }} />;
     case "typography":
-      if (props.flatToken.type === "fontFamily") return <span className="truncate text-[17px]" style={{ fontFamily: resolvedValue }}>Aa Bb Cc 123</span>;
-      if (props.flatToken.type === "fontWeight") return <span className="text-[16px]" style={{ fontWeight: Number(resolvedValue) || resolvedValue }}>Gewicht</span>;
-      if (/px|rem|em$/.test(resolvedValue)) return <span className="truncate leading-none" style={{ fontSize: `min(${resolvedValue}, 40px)` }}>Aa</span>;
+      if (props.flatToken.type === "fontFamily") return <span className="truncate text-[17px]" style={{ fontFamily: resolvedValue }}>{t("Aa Bb Cc 123")}</span>;
+      if (props.flatToken.type === "fontWeight") return <span className="text-[16px]" style={{ fontWeight: Number(resolvedValue) || resolvedValue }}>{t("Gewicht")}</span>;
+      if (/px|rem|em$/.test(resolvedValue)) return <span className="truncate leading-none" style={{ fontSize: `min(${resolvedValue}, 40px)` }}>{t("Aa")}</span>;
       return null;
     default:
       return null;
@@ -215,7 +216,7 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
   return (
     <div className="animate-in fade-in duration-200">
         {designSystemData.error && <p className="mt-3 rounded-lg border border-destructive/40 px-3 py-2 text-[12.5px] text-destructive">{designSystemData.error}</p>}
-        {mode && <p className="mb-2 text-[12px] text-muted-foreground">Grau = vom hellen Modus geerbt.</p>}
+        {mode && <p className="mb-2 text-[12px] text-muted-foreground">{t("Grau = vom hellen Modus geerbt.")}</p>}
 
         {sections.map(({ sectionKey, tokens }) => (
           <section key={sectionKey} className="mt-7">
@@ -246,10 +247,10 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
         ))}
 
         <section className="mt-7 pb-6">
-          <h3 className="mb-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Komponenten</h3>
+          <h3 className="mb-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{t("Komponenten")}</h3>
           {designSystemData.components.length === 0 ? (
             <p className="text-[13px] text-muted-foreground">
-              Keine Komponenten in <code className="font-mono text-[12px]">components/</code>.
+              {t("Keine Komponenten in")} <code className="font-mono text-[12px]">components/</code>.
             </p>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">

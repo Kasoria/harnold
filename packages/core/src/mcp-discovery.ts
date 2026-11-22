@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { projectStore, type Project } from "./db.ts";
 import { mcpServerStore, type McpServerInput } from "./integrations.ts";
+import { t } from "./i18n.ts";
 
 /**
  * MCP servers the user already set up in other AI tools. Claude Code's own (user/project scope, claude.ai connectors)
@@ -122,10 +123,10 @@ export function discoverExternalMcpServers(project: Project | null): ExternalMcp
 /** Copies one server (incl. its env/headers, stored encrypted) into Harnold. */
 export function importExternalMcpServer(sourceId: ExternalMcpSourceId, name: string, projectId: string | null): void {
   const definition = sourceDefinitions[sourceId];
-  if (!definition) throw new Error("Unbekannte Quelle");
+  if (!definition) throw new Error(t("Unbekannte Quelle"));
   const project = projectId ? (projectStore.get(projectId) ?? null) : null;
   const rawServer = definition.read(project)[name];
   const serverInput = rawServer && toInput(name, rawServer, project, sourceId);
-  if (!serverInput) throw new Error(`Server „${name}“ nicht gefunden`);
+  if (!serverInput) throw new Error(t("Server „{0}“ nicht gefunden", name));
   mcpServerStore.save(serverInput);
 }

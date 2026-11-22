@@ -7,6 +7,7 @@ import { z } from "zod";
 import { settingsStore } from "./settings.ts";
 import { eventHub } from "./events.ts";
 import { agentRuntimes, type AgentRuntimeStatus } from "./agent-runtimes.ts";
+import { t } from "./i18n.ts";
 
 /**
  * How the agent talks to Claude:
@@ -86,7 +87,7 @@ const secretsKey = "claude.secrets";
 /** Claude Code to start (system install, SDK copy or Harnold download – see agent-runtimes). */
 export async function claudeExecutable(): Promise<string> {
   const executablePath = await agentRuntimes.executable("claude-code");
-  if (!executablePath) throw new Error("Claude Code ist nicht installiert – Einstellungen → Claude");
+  if (!executablePath) throw new Error(t("Claude Code ist nicht installiert – Einstellungen → Claude"));
   return executablePath;
 }
 
@@ -190,7 +191,7 @@ export const claudeAuth = {
       if (pendingLogins.get(profile.key) === loginState) finishLogin(profile);
     });
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Keine Anmelde-URL von Claude Code erhalten")), 20_000);
+      const timeout = setTimeout(() => reject(new Error(t("Keine Anmelde-URL von Claude Code erhalten"))), 20_000);
       const handleOutput = (chunk: Buffer) => {
         loginState.output += chunk.toString();
         const urlMatch = loginState.output.match(/https:\/\/\S+/);
@@ -210,12 +211,12 @@ export const claudeAuth = {
 
   submitLoginCode(code: string, profile: ClaudeProfile = defaultClaudeProfile): Promise<ClaudeAuthStatus> {
     const loginState = pendingLogins.get(profile.key);
-    if (!loginState) throw new Error("Keine Anmeldung aktiv – bitte neu starten");
+    if (!loginState) throw new Error(t("Keine Anmeldung aktiv – bitte neu starten"));
     return new Promise((resolve, reject) => {
       const outputBefore = loginState.output.length;
       const timeout = setTimeout(() => {
         loginState.child.kill();
-        reject(new Error("Anmeldung hat zu lange gedauert"));
+        reject(new Error(t("Anmeldung hat zu lange gedauert")));
       }, 60_000);
       loginState.child.once("exit", (exitCode) => {
         clearTimeout(timeout);
@@ -240,8 +241,8 @@ export const claudeAuth = {
   /** Friendly error before a turn when nothing is connected. */
   async assertReady(): Promise<void> {
     const currentStatus = await claudeAuth.status();
-    if (!currentStatus.runtime.found) throw new Error("Claude Code ist nicht installiert – Einstellungen → Claude");
+    if (!currentStatus.runtime.found) throw new Error(t("Claude Code ist nicht installiert – Einstellungen → Claude"));
     // Unknown CLI state (status failed) is not a reason to block – the SDK reports real auth errors itself.
-    if (!currentStatus.ready && !currentStatus.cliError) throw new Error("Claude ist nicht verbunden – Einstellungen → Claude");
+    if (!currentStatus.ready && !currentStatus.cliError) throw new Error(t("Claude ist nicht verbunden – Einstellungen → Claude"));
   },
 };

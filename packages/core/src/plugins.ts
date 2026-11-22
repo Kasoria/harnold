@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Settings, SdkPluginConfig } from "@anthropic-ai/claude-agent-sdk";
 import { settingsStore } from "./settings.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Plugins (skills, commands, agents, hooks, MCP servers as one bundle) from three places:
@@ -95,7 +96,7 @@ export const pluginStore = {
 
   addFolder(folderPath: string): PluginInfo {
     const resolvedPath = path.resolve(folderPath.replace(/^~(?=$|\/)/, os.homedir()));
-    if (!manifestOf(resolvedPath)) throw new Error("Kein Plugin-Ordner (.claude-plugin/plugin.json fehlt)");
+    if (!manifestOf(resolvedPath)) throw new Error(t("Kein Plugin-Ordner (.claude-plugin/plugin.json fehlt)"));
     if (!addedFolders().includes(resolvedPath)) settingsStore.write("plugins.folders", [...addedFolders(), resolvedPath]);
     return pluginStore.list().find((plugin) => plugin.id === `folder:${resolvedPath}`)!;
   },

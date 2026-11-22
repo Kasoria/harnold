@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SegmentedControl } from "@/components/segmented-control";
 import { FileTree } from "./file-tree";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
+import { t } from "@/lib/i18n";
 
 type WorkspaceView = "canvas" | "preview" | "code";
 
@@ -117,7 +118,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   return (
     <section className="flex h-full min-w-0 flex-col bg-canvas">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
-        <IconAction label={filePanelOpen ? "Dateien ausblenden" : "Dateien einblenden"} onClick={() => setFilePanelOpen((open) => !open)}>
+        <IconAction label={filePanelOpen ? t("Dateien ausblenden") : t("Dateien einblenden")} onClick={() => setFilePanelOpen((open) => !open)}>
           <PanelLeft className="size-4" />
         </IconAction>
         <nav className="flex min-w-0 items-center gap-1 text-[13px]">
@@ -137,32 +138,32 @@ export function WorkspacePane(props: WorkspacePaneProps) {
               value={activeView}
               onValueChange={setActiveView}
               options={[
-                { value: "canvas", label: "Canvas" },
-                { value: "preview", label: "Preview" },
+                { value: "canvas", label: t("Canvas") },
+                { value: "preview", label: t("Preview") },
                 { value: "code", label: editorIsDirty ? "Code •" : "Code" },
               ]}
             />
           {isDesignFile && selectedPath && (activeView === "preview" || activeView === "code") && (
             <Button size="sm" variant="secondary" className="h-7 text-[12px]" onClick={() => props.onImplementDesign(selectedPath)}>
-              <Wand2 className="size-3.5" /> In Code übernehmen
+              <Wand2 className="size-3.5" /> {t("In Code übernehmen")}
             </Button>
           )}
           {activeView === "code" && editorIsDirty && (
-            <IconAction label="Speichern (⌘S)" onClick={saveFile}>
+            <IconAction label={t("Speichern (⌘S)")} onClick={saveFile}>
               <Save className="size-4" />
             </IconAction>
           )}
           {activeView === "preview" && selectedPath && (
             <>
-              <IconAction label="Neu laden" onClick={() => setPreviewReloadKey((previous) => previous + 1)}>
+              <IconAction label={t("Neu laden")} onClick={() => setPreviewReloadKey((previous) => previous + 1)}>
                 <RotateCw className="size-4" />
               </IconAction>
-              <IconAction label="Extern öffnen" href={api.previewUrl(project.id, selectedPath)}>
+              <IconAction label={t("Extern öffnen")} href={api.previewUrl(project.id, selectedPath)}>
                 <ExternalLink className="size-4" />
               </IconAction>
             </>
           )}
-          <IconAction label="Workspace schließen" onClick={props.onClose}>
+          <IconAction label={t("Workspace schließen")} onClick={props.onClose}>
             <X className="size-4" />
           </IconAction>
         </div>
@@ -179,7 +180,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             {fileTree.length ? (
               <FileTree nodes={fileTree} selectedPath={selectedPath} onSelect={selectFile} onReference={props.onReferenceFile} />
             ) : (
-              <p className="p-2 text-[12.5px] text-muted-foreground">Noch keine Entwürfe.</p>
+              <p className="p-2 text-[12.5px] text-muted-foreground">{t("Noch keine Entwürfe.")}</p>
             )}
           </div>
         </nav>
@@ -199,14 +200,14 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             />
           ) : !selectedPath ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-muted-foreground">
-              Datei wählen. Neue Entwürfe des Agents erscheinen hier automatisch.
+              {t("Datei wählen. Neue Entwürfe des Agents erscheinen hier automatisch.")}
             </div>
           ) : activeView === "preview" ? (
             <div key={selectedPath} className="absolute inset-0 animate-in fade-in p-3 duration-200">
               <iframe
                 key={previewReloadKey}
                 className="size-full rounded-lg border bg-white shadow-xs"
-                title="Preview"
+                title={t("Preview")}
                 sandbox="allow-scripts allow-forms allow-popups allow-modals"
                 src={api.previewUrl(project.id, selectedPath)}
               />

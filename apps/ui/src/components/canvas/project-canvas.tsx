@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { CanvasElementView } from "./canvas-element-view";
 import { CanvasToolbar, canvasTools, type CanvasTool } from "./canvas-toolbar";
 import { ImageGenerationPanel } from "./image-generation-panel";
+import { t } from "@/lib/i18n";
 
 type ProjectCanvasProps = {
   projectId: string;
@@ -265,7 +266,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
       case "frame":
       case "rect":
         setElements((previous) => {
-          const newElement: CanvasElement = { id: newElementId, type: activeTool, x: startPoint.x, y: startPoint.y, width: 1, height: 1, ...(activeTool === "frame" ? { title: "Frame" } : {}) };
+          const newElement: CanvasElement = { id: newElementId, type: activeTool, x: startPoint.x, y: startPoint.y, width: 1, height: 1, ...(activeTool === "frame" ? { title: t("Frame") } : {}) };
           // Frames go first so they render behind content.
           return activeTool === "frame" ? [newElement, ...previous] : [...previous, newElement];
         });
@@ -409,13 +410,13 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
         return `@${element.path} `;
       case "frame": {
         const childPaths = elements.filter((child) => child.frameId === element.id && child.path).map((child) => `@${child.path}`);
-        return `Canvas-Frame „${element.title || "Frame"}“${childPaths.length ? ` (${childPaths.join(" ")})` : ""}: `;
+        return t("Canvas-Frame „{0}“{1}: ", element.title || t("Frame"), childPaths.length ? ` (${childPaths.join(" ")})` : "");
       }
       case "note":
       case "text":
-        return `Canvas-Notiz: „${element.text ?? ""}“ – `;
+        return t("Canvas-Notiz: „{0}“ – ", element.text ?? "");
       default:
-        return "Canvas-Element: ";
+        return t("Canvas-Element: ");
     }
   };
 
@@ -490,7 +491,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
 
       {loaded && elements.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-[13px] text-muted-foreground">
-          Der Canvas ist leer. Entwürfe des Agents unter design/ erscheinen hier automatisch.
+          {t("Der Canvas ist leer. Entwürfe des Agents unter design/ erscheinen hier automatisch.")}
         </div>
       )}
 
@@ -502,18 +503,18 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
           onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
         >
           <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => props.onSendToAgent(describeForAgent(selectedElement))}>
-            <MessageSquarePlus className="size-3.5" /> An Agent
+            <MessageSquarePlus className="size-3.5" /> {t("An Agent")}
           </Button>
           {selectedElement.type === "artifact" && selectedElement.path && (
             <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => props.onOpenFile(selectedElement.path!)}>
-              <ExternalLink className="size-3.5" /> Öffnen
+              <ExternalLink className="size-3.5" /> {t("Öffnen")}
             </Button>
           )}
           <Button
             size="icon"
             variant="ghost"
             className="size-7 text-muted-foreground hover:text-destructive"
-            aria-label="Vom Canvas entfernen"
+            aria-label={t("Vom Canvas entfernen")}
             onClick={() => removeElement(selectedElement.id)}
           >
             <Trash2 className="size-3.5" />
@@ -548,20 +549,20 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
         className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-lg border bg-popover p-0.5 shadow-md"
         onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
       >
-        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label="Verkleinern" onClick={() => zoomAroundCenter(1 / 1.25)}>
+        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t("Verkleinern")} onClick={() => zoomAroundCenter(1 / 1.25)}>
           <Minus className="size-3.5" />
         </Button>
         <span className="w-11 text-center text-[11px] text-muted-foreground tabular-nums">{Math.round(viewport.zoom * 100)}%</span>
-        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label="Vergrößern" onClick={() => zoomAroundCenter(1.25)}>
+        <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t("Vergrößern")} onClick={() => zoomAroundCenter(1.25)}>
           <Plus className="size-3.5" />
         </Button>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label="Alles zeigen" onClick={() => fitToContent(elements, true)}>
+            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" aria-label={t("Alles zeigen")} onClick={() => fitToContent(elements, true)}>
               <Maximize className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="top">Alles zeigen</TooltipContent>
+          <TooltipContent side="top">{t("Alles zeigen")}</TooltipContent>
         </Tooltip>
       </div>
     </div>

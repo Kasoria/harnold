@@ -13,6 +13,7 @@ import { StatusDot } from "@/components/status-dot";
 import { FormField } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { PluginsView } from "./plugins-view";
+import { t } from "@/lib/i18n";
 
 
 type KeyValueRow = { key: string; value: string; stored: boolean };
@@ -78,17 +79,17 @@ function KeyValueEditor(props: { label: string; hint?: string; rows: KeyValueRow
             <Input
               type="password"
               className="flex-1 font-mono text-[12.5px]"
-              placeholder={row.stored ? "gespeichert" : "Wert"}
+              placeholder={row.stored ? "gespeichert" : t("Wert")}
               value={row.value}
               onChange={(changeEvent) => updateRow(rowIndex, { value: changeEvent.target.value })}
             />
-            <Button variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => props.onChange(props.rows.filter((_, index) => index !== rowIndex))} aria-label="Entfernen">
+            <Button variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => props.onChange(props.rows.filter((_, index) => index !== rowIndex))} aria-label={t("Entfernen")}>
               <X className="size-3.5" />
             </Button>
           </div>
         ))}
         <Button variant="ghost" size="sm" className="h-7 justify-self-start gap-1.5 px-2 text-[12px] text-muted-foreground" onClick={() => props.onChange([...props.rows, { key: "", value: "", stored: false }])}>
-          <Plus className="size-3.5" /> Hinzufügen
+          <Plus className="size-3.5" /> {t("Hinzufügen")}
         </Button>
       </div>
     </FormField>
@@ -132,14 +133,14 @@ function McpServerEditor(props: {
       }
       props.onDone(savedServerId);
     } catch (saveError) {
-      props.onError(saveError instanceof SyntaxError ? new Error("Ungültiges JSON") : saveError);
+      props.onError(saveError instanceof SyntaxError ? new Error(t("Ungültiges JSON")) : saveError);
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async () => {
-    if (!existingServer || !(await confirmAction({ title: `MCP-Server „${existingServer.name}“ entfernen?`, confirmLabel: "Entfernen" }))) return;
+    if (!existingServer || !(await confirmAction({ title: t("MCP-Server „{0}“ entfernen?", existingServer.name), confirmLabel: t("Entfernen") }))) return;
     await api.deleteMcpServer(existingServer.id).then(() => props.onDone(null)).catch(props.onError);
   };
 
@@ -148,31 +149,31 @@ function McpServerEditor(props: {
       {!existingServer && (
         <SegmentedControl
           options={[
-            { value: "form", label: "Formular" },
-            { value: "json", label: "JSON einfügen" },
+            { value: "form", label: t("Formular") },
+            { value: "json", label: t("JSON einfügen") },
           ]}
           value={jsonMode ? "json" : "form"}
           onValueChange={(value) => setJsonMode(value === "json")}
         />
       )}
 
-      <FormField label="Gültig für">
+      <FormField label={t("Gültig für")}>
         <Select value={serverInput.scope} onValueChange={(value) => updateInput({ scope: value as McpServerInput["scope"], projectId: value === "project" ? (props.project?.id ?? null) : null })}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {props.project && <SelectItem value="project">Projekt „{props.project.name}“</SelectItem>}
-            <SelectItem value="workspace">Alle Projekte</SelectItem>
+            {props.project && <SelectItem value="project">{t("Projekt „")}{props.project.name}“</SelectItem>}
+            <SelectItem value="workspace">{t("Alle Projekte")}</SelectItem>
           </SelectContent>
         </Select>
       </FormField>
 
       {jsonMode ? (
-        <FormField label="Konfiguration" hint="JSON wie in Claude Desktop (mcpServers).">
+        <FormField label={t("Konfiguration")} hint={t("JSON wie in Claude Desktop (mcpServers).")}>
           <Textarea
             className="min-h-40 animate-in font-mono text-[12.5px] fade-in duration-200"
-            placeholder={'{\n  "mcpServers": {\n    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }\n  }\n}'}
+            placeholder={t("{\n  \"mcpServers\": {\n    \"github\": { \"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-github\"] }\n  }\n}")}
             value={jsonText}
             onChange={(changeEvent) => setJsonText(changeEvent.target.value)}
           />
@@ -180,14 +181,14 @@ function McpServerEditor(props: {
       ) : (
         <>
           <div className="grid grid-cols-[1fr_auto] gap-3">
-            <FormField label="Name">
+            <FormField label={t("Name")}>
               <Input value={serverInput.name} placeholder="github" onChange={(changeEvent) => updateInput({ name: changeEvent.target.value })} />
             </FormField>
-            <FormField label="Verbindung">
+            <FormField label={t("Verbindung")}>
               <SegmentedControl
                 className="w-52"
                 options={[
-                  { value: "stdio", label: "Lokal" },
+                  { value: "stdio", label: t("Lokal") },
                   { value: "http", label: "HTTP" },
                   { value: "sse", label: "SSE" },
                 ]}
@@ -199,24 +200,24 @@ function McpServerEditor(props: {
 
           {serverInput.transport === "stdio" ? (
             <>
-              <FormField label="Befehl">
-                <Input className="font-mono text-[12.5px]" value={commandLine} placeholder="npx -y @modelcontextprotocol/server-github" onChange={(changeEvent) => setCommandLine(changeEvent.target.value)} />
+              <FormField label={t("Befehl")}>
+                <Input className="font-mono text-[12.5px]" value={commandLine} placeholder={t("npx -y @modelcontextprotocol/server-github")} onChange={(changeEvent) => setCommandLine(changeEvent.target.value)} />
               </FormField>
-              <KeyValueEditor label="Umgebungsvariablen" rows={envRows} keyPlaceholder="GITHUB_TOKEN" onChange={setEnvRows} />
+              <KeyValueEditor label={t("Umgebungsvariablen")} rows={envRows} keyPlaceholder="GITHUB_TOKEN" onChange={setEnvRows} />
             </>
           ) : (
             <>
               <FormField label="URL">
                 <Input className="font-mono text-[12.5px]" value={serverInput.url} placeholder="https://example.com/mcp" onChange={(changeEvent) => updateInput({ url: changeEvent.target.value })} />
               </FormField>
-              <KeyValueEditor label="Header" rows={headerRows} keyPlaceholder="Authorization" onChange={setHeaderRows} />
+              <KeyValueEditor label={t("Header")} rows={headerRows} keyPlaceholder="Authorization" onChange={setHeaderRows} />
             </>
           )}
 
           <label className="flex items-center justify-between gap-4 text-[13px]">
             <span>
-              Tools ohne Nachfrage erlauben
-              <span className="block text-[11.5px] text-muted-foreground">Sonst gilt der Permission-Modus der Session.</span>
+              {t("Tools ohne Nachfrage erlauben")}
+              <span className="block text-[11.5px] text-muted-foreground">{t("Sonst gilt der Permission-Modus der Session.")}</span>
             </span>
             <Switch checked={serverInput.autoAllow} onCheckedChange={(autoAllow) => updateInput({ autoAllow })} />
           </label>
@@ -225,14 +226,14 @@ function McpServerEditor(props: {
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={saving} onClick={() => void save()}>
-          {existingServer ? "Speichern" : jsonMode ? "Importieren" : "Hinzufügen"}
+          {existingServer ? t("Speichern") : jsonMode ? t("Importieren") : t("Hinzufügen")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => props.onDone(null)}>
-          Abbrechen
+          {t("Abbrechen")}
         </Button>
         {existingServer && (
           <Button size="sm" variant="ghost" className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => void remove()}>
-            <Trash2 className="size-3.5" /> Entfernen
+            <Trash2 className="size-3.5" /> {t("Entfernen")}
           </Button>
         )}
       </div>
@@ -273,7 +274,7 @@ function McpServerDetail(props: { server: McpServer; project: Project | null; on
       }
       actions={
         <Button size="sm" variant="secondary" disabled={testing} onClick={() => void runTest()}>
-          {testing ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />} Testen
+          {testing ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />} {t("Testen")}
         </Button>
       }
     >
@@ -281,7 +282,7 @@ function McpServerDetail(props: { server: McpServer; project: Project | null; on
         <div className="mb-5 animate-in rounded-xl border p-3 fade-in duration-200">
           <div className="flex items-center gap-2 text-[12.5px]">
             <StatusDot status={server.lastTest.ok ? "running" : "error"} />
-            {server.lastTest.ok ? `${server.lastTest.tools.length} Tools verfügbar` : "Verbindung fehlgeschlagen"}
+            {server.lastTest.ok ? t("{0} Tools verfügbar", server.lastTest.tools.length) : t("Verbindung fehlgeschlagen")}
           </div>
           {server.lastTest.error && <p className="mt-1.5 text-[12px] text-destructive">{server.lastTest.error}</p>}
           {server.lastTest.tools.length > 0 && (
@@ -328,27 +329,27 @@ function ExternalMcpServers(props: { project: Project | null; changeCounter: num
 
   return (
     <div className="mt-4 grid gap-0.5">
-      <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Mitgebracht</div>
+      <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{t("Mitgebracht")}</div>
       {externalServers.map((server) => (
         <div key={`${server.sourceId}:${server.name}`} className="flex items-center gap-2 rounded-md px-2 py-1.5" title={server.target}>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px]">{server.name}</div>
             <div className="truncate text-[11.5px] text-muted-foreground">
               {server.sourceLabel}
-              {server.activeViaClaude && " · aktiv über Claude"}
+              {server.activeViaClaude && t(" · aktiv über Claude")}
             </div>
           </div>
           {server.imported ? (
-            <span className="text-[11.5px] text-muted-foreground">Übernommen</span>
+            <span className="text-[11.5px] text-muted-foreground">{t("Übernommen")}</span>
           ) : server.importable ? (
             <Button size="sm" variant="ghost" className="h-7 text-[12px]" disabled={importingKey !== null} onClick={() => void importServer(server)}>
-              {importingKey === `${server.sourceId}:${server.name}` ? <Loader2 className="size-3.5 animate-spin" /> : "Übernehmen"}
+              {importingKey === `${server.sourceId}:${server.name}` ? <Loader2 className="size-3.5 animate-spin" /> : t("Übernehmen")}
             </Button>
           ) : null}
         </div>
       ))}
       <p className="px-2 pt-1 text-[11.5px] leading-snug text-muted-foreground">
-        „Aktiv über Claude“ nutzt der Agent bereits. Übernehmen macht einen Server unabhängig vom Anbieter und testbar.
+        {t("„Aktiv über Claude“ nutzt der Agent bereits. Übernehmen macht einen Server unabhängig vom Anbieter und testbar.")}
       </p>
     </div>
   );
@@ -373,18 +374,18 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
 
   const detail =
     props.selectedItemId === "new" ? (
-      <DetailPane detailKey="new" title="MCP-Server hinzufügen" subtitle="Lokal per Befehl oder entfernt per HTTP/SSE. Schon eingerichtete Server aus anderen Tools stehen links unter „Mitgebracht“.">
+      <DetailPane detailKey="new" title={t("MCP-Server hinzufügen")} subtitle={t("Lokal per Befehl oder entfernt per HTTP/SSE. Schon eingerichtete Server aus anderen Tools stehen links unter „Mitgebracht“.")}>
         <McpServerEditor server={null} project={props.project} onDone={props.onSelect} onError={props.onError} />
       </DetailPane>
     ) : selectedServer ? (
       <McpServerDetail server={selectedServer} project={props.project} onDone={props.onSelect} onError={props.onError} />
     ) : (
       <EmptyState
-        title={visibleServers.length ? "Server wählen" : "Noch keine MCP-Server"}
-        description="Zusätzliche Tools für den Agent."
+        title={visibleServers.length ? t("Server wählen") : t("Noch keine MCP-Server")}
+        description={t("Zusätzliche Tools für den Agent.")}
         action={
           <Button size="sm" onClick={() => props.onSelect("new")}>
-            <Plus className="size-3.5" /> MCP-Server hinzufügen
+            <Plus className="size-3.5" /> {t("MCP-Server hinzufügen")}
           </Button>
         }
       />
@@ -401,23 +402,23 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
       list={
         <>
         {visibleServers.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine eigenen MCP-Server.</p>
+          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Noch keine eigenen MCP-Server.")}</p>
         ) : (
           visibleServers.map((server) => (
             <ListRow
               key={server.id}
               selected={server.id === props.selectedItemId}
               onSelect={() => props.onSelect(server.id)}
-              leading={<Switch checked={server.enabled} onCheckedChange={(enabled) => void toggleEnabled(server, enabled)} aria-label="Aktiv" />}
+              leading={<Switch checked={server.enabled} onCheckedChange={(enabled) => void toggleEnabled(server, enabled)} aria-label={t("Aktiv")} />}
             >
               <div className="flex items-center gap-2">
                 <span className="truncate text-[13px] font-medium">{server.name}</span>
                 <StatusDot status={!server.enabled || !server.lastTest ? "idle" : server.lastTest.ok ? "running" : "error"} />
-                {server.lastTest?.ok && <span className="text-[11px] text-muted-foreground">{server.lastTest.tools.length} Tools</span>}
+                {server.lastTest?.ok && <span className="text-[11px] text-muted-foreground">{server.lastTest.tools.length} {t("Tools")}</span>}
               </div>
               <div className="truncate text-[11.5px] text-muted-foreground">
-                {server.scope === "workspace" ? "Alle Projekte" : "Nur dieses Projekt"}
-                {server.autoAllow && " · ohne Nachfrage"}
+                {server.scope === "workspace" ? t("Alle Projekte") : t("Nur dieses Projekt")}
+                {server.autoAllow && t(" · ohne Nachfrage")}
               </div>
             </ListRow>
           ))
@@ -483,36 +484,36 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
 
   const detail =
     props.selectedItemId === "new" ? (
-      <DetailPane detailKey="new" title="Skill anlegen" subtitle="Format wie Claude Code (SKILL.md) – nutzbar in Harnold und Claude Code.">
+      <DetailPane detailKey="new" title={t("Skill anlegen")} subtitle={t("Format wie Claude Code (SKILL.md) – nutzbar in Harnold und Claude Code.")}>
         <div className="grid gap-4">
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Name">
+            <FormField label={t("Name")}>
               <Input value={newSkill.name} placeholder="release-notes" onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, name: changeEvent.target.value.toLowerCase() }))} />
             </FormField>
-            <FormField label="Ablage">
+            <FormField label={t("Ablage")}>
               <Select value={newSkill.scope} onValueChange={(value) => setNewSkill((previous) => ({ ...previous, scope: value as SkillScope }))}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {props.project && <SelectItem value="project">Projekt (.claude/skills)</SelectItem>}
-                  <SelectItem value="user">Nutzer (~/.claude/skills)</SelectItem>
+                  {props.project && <SelectItem value="project">{t("Projekt (.claude/skills)")}</SelectItem>}
+                  <SelectItem value="user">{t("Nutzer (~/.claude/skills)")}</SelectItem>
                 </SelectContent>
               </Select>
             </FormField>
           </div>
-          <FormField label="Wann nutzen?">
-            <Input value={newSkill.description} placeholder="z. B. wenn Release Notes geschrieben werden" onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, description: changeEvent.target.value }))} />
+          <FormField label={t("Wann nutzen?")}>
+            <Input value={newSkill.description} placeholder={t("z. B. wenn Release Notes geschrieben werden")} onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, description: changeEvent.target.value }))} />
           </FormField>
-          <FormField label="Anleitung (Markdown)">
+          <FormField label={t("Anleitung (Markdown)")}>
             <Textarea className="min-h-48 font-mono text-[12.5px]" value={newSkill.instructions} onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, instructions: changeEvent.target.value }))} />
           </FormField>
           <div className="flex gap-2">
             <Button size="sm" disabled={saving || !newSkill.name.trim() || !newSkill.description.trim()} onClick={() => void createSkill()}>
-              Anlegen
+              {t("Anlegen")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => props.onSelect(null)}>
-              Abbrechen
+              {t("Abbrechen")}
             </Button>
           </div>
         </div>
@@ -521,10 +522,10 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
       <DetailPane
         detailKey={skillKeyOf(selectedSkill)}
         title={selectedSkill.name}
-        subtitle={`${selectedSkill.scope === "project" ? "Projekt" : "Nutzer"} · ${selectedSkill.description || "Keine Beschreibung"}`}
+        subtitle={`${selectedSkill.scope === "project" ? t("Projekt") : t("Nutzer")} · ${selectedSkill.description || t("Keine Beschreibung")}`}
         actions={
           <label className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-            Aktiv
+            {t("Aktiv")}
             <Switch checked={selectedSkill.enabled} onCheckedChange={(enabled) => void api.setSkillEnabled(selectedSkill.name, enabled).catch(props.onError)} />
           </label>
         }
@@ -534,15 +535,15 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
             <Textarea className="min-h-[420px] font-mono text-[12.5px]" value={skillContent.content} onChange={(changeEvent) => setSkillContent({ ...skillContent, content: changeEvent.target.value })} />
             <div className="flex items-center gap-2">
               <Button size="sm" disabled={saving || skillContent.content === skillContent.savedContent} onClick={() => void saveSkill()}>
-                Speichern
+                {t("Speichern")}
               </Button>
               <span className="text-[11.5px] text-muted-foreground">
                 {skillContent.content === skillContent.savedContent ? (
                   <span className="inline-flex items-center gap-1">
-                    <Check className="size-3" /> Gespeichert
+                    <Check className="size-3" /> {t("Gespeichert")}
                   </span>
                 ) : (
-                  "Ungespeichert"
+                  t("Ungespeichert")
                 )}
               </span>
             </div>
@@ -551,11 +552,11 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
       </DetailPane>
     ) : (
       <EmptyState
-        title={skills.length ? "Skill wählen" : "Keine Skills gefunden"}
-        description="Aus ~/.claude/skills und .claude/skills im Projekt."
+        title={skills.length ? t("Skill wählen") : t("Keine Skills gefunden")}
+        description={t("Aus ~/.claude/skills und .claude/skills im Projekt.")}
         action={
           <Button size="sm" onClick={() => props.onSelect("new")}>
-            <Plus className="size-3.5" /> Skill anlegen
+            <Plus className="size-3.5" /> {t("Skill anlegen")}
           </Button>
         }
       />
@@ -565,20 +566,20 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
     <MasterDetail
       list={
         skills.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Keine Skills.</p>
+          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Keine Skills.")}</p>
         ) : (
           skills.map((skill) => (
             <ListRow
               key={skillKeyOf(skill)}
               selected={skillKeyOf(skill) === props.selectedItemId}
               onSelect={() => props.onSelect(skillKeyOf(skill))}
-              leading={<Switch checked={skill.enabled} onCheckedChange={(enabled) => void api.setSkillEnabled(skill.name, enabled).catch(props.onError)} aria-label="Aktiv" />}
+              leading={<Switch checked={skill.enabled} onCheckedChange={(enabled) => void api.setSkillEnabled(skill.name, enabled).catch(props.onError)} aria-label={t("Aktiv")} />}
             >
               <div className="flex items-center gap-2">
                 <span className="truncate text-[13px] font-medium">{skill.name}</span>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10.5px] font-medium text-muted-foreground">{skill.scope === "project" ? "Projekt" : "Nutzer"}</span>
+                <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10.5px] font-medium text-muted-foreground">{skill.scope === "project" ? t("Projekt") : t("Nutzer")}</span>
               </div>
-              <div className="line-clamp-2 text-[11.5px] text-muted-foreground">{skill.description || "Keine Beschreibung"}</div>
+              <div className="line-clamp-2 text-[11.5px] text-muted-foreground">{skill.description || t("Keine Beschreibung")}</div>
             </ListRow>
           ))
         )
@@ -591,14 +592,14 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
 export function IntegrationsScreen(props: IntegrationsScreenProps) {
   return (
     <ScreenLayout
-      title="Integrationen"
+      title={t("Integrationen")}
       tabs={
         <SegmentedControl
           className="w-72"
           options={[
-            { value: "mcp", label: "MCP-Server" },
-            { value: "skills", label: "Skills" },
-            { value: "plugins", label: "Plugins" },
+            { value: "mcp", label: t("MCP-Server") },
+            { value: "skills", label: t("Skills") },
+            { value: "plugins", label: t("Plugins") },
           ]}
           value={props.activeTab}
           onValueChange={(tab) => props.onNavigate(tab, null)}
@@ -606,7 +607,7 @@ export function IntegrationsScreen(props: IntegrationsScreenProps) {
       }
       actions={
         <Button size="sm" variant="secondary" onClick={() => props.onNavigate(props.activeTab, "new")}>
-          <Plus className="size-3.5" /> {props.activeTab === "mcp" ? "MCP-Server hinzufügen" : props.activeTab === "plugins" ? "Ordner hinzufügen" : "Skill anlegen"}
+          <Plus className="size-3.5" /> {props.activeTab === "mcp" ? t("MCP-Server hinzufügen") : props.activeTab === "plugins" ? t("Ordner hinzufügen") : t("Skill anlegen")}
         </Button>
       }
     >

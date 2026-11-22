@@ -6,6 +6,7 @@ import { resolveInsideProject } from "./files.ts";
 import { settingsStore } from "./settings.ts";
 import { voiceConfig } from "./voice.ts";
 import { placeImagesOnCanvas } from "./canvas.ts";
+import { t } from "./i18n.ts";
 
 export const imageProviders = ["none", "gemini", "openai"] as const;
 export const aspectRatios = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
@@ -73,7 +74,7 @@ const extensionByMimeType: Record<string, string> = { "image/png": "png", "image
 function readReferenceImages(project: Project, referencePaths: string[]): (GeneratedImage & { fileName: string })[] {
   return referencePaths.map((referencePath) => {
     const mimeType = mimeTypeByExtension[path.extname(referencePath).toLowerCase()];
-    if (!mimeType) throw new Error(`Referenz ist kein Bild: ${referencePath}`);
+    if (!mimeType) throw new Error(t("Referenz ist kein Bild: {0}", referencePath));
     return { data: fs.readFileSync(resolveInsideProject(project, referencePath)), mimeType, fileName: path.basename(referencePath) };
   });
 }
@@ -161,7 +162,7 @@ async function generateWithGemini(request: ImageRequest, references: GeneratedIm
       const errorText = await readErrorText(response.clone());
       if (/imageConfig|aspect/i.test(errorText)) response = await requestOnce(false);
     }
-    if (!response.ok) throw new Error(`Gemini: ${response.status} ${await readErrorText(response)}`);
+    if (!response.ok) throw new Error(t("Gemini: {0} {1}", response.status, await readErrorText(response)));
     const responseBody = (await response.json()) as {
       candidates?: { content?: { parts?: { inlineData?: { mimeType: string; data: string }; text?: string }[] }; finishReason?: string }[];
       promptFeedback?: { blockReason?: string };
@@ -170,7 +171,7 @@ async function generateWithGemini(request: ImageRequest, references: GeneratedIm
     const imagePart = parts.find((part) => part.inlineData);
     if (!imagePart?.inlineData) {
       const reason = responseBody.promptFeedback?.blockReason ?? responseBody.candidates?.[0]?.finishReason ?? parts.find((part) => part.text)?.text ?? "kein Bild erhalten";
-      throw new Error(`Gemini: ${reason}`);
+      throw new Error(t("Gemini: {0}", reason));
     }
     return { data: Buffer.from(imagePart.inlineData.data, "base64"), mimeType: imagePart.inlineData.mimeType };
   };
@@ -203,7 +204,7 @@ async function generateWithOpenai(request: ImageRequest, references: (GeneratedI
   return Promise.all(
     responseBody.data.map(async (imageEntry) => {
       if (imageEntry.b64_json) return { data: Buffer.from(imageEntry.b64_json, "base64"), mimeType: "image/png" };
-      if (!imageEntry.url) throw new Error("OpenAI: kein Bild erhalten");
+      if (!imageEntry.url) throw new Error(t("OpenAI: kein Bild erhalten"));
       const imageResponse = await fetch(imageEntry.url);
       return { data: Buffer.from(await imageResponse.arrayBuffer()), mimeType: imageResponse.headers.get("content-type") ?? "image/png" };
     }),
@@ -215,9 +216,9 @@ async function generateWithOpenai(request: ImageRequest, references: (GeneratedI
 /** Generates images, stores them under assets/generated/ and places them on the canvas. Returns project paths. */
 export async function generateImages(project: Project, request: ImageRequest): Promise<string[]> {
   const imageSettings = imageConfig.read();
-  if (imageSettings.provider === "none") throw new Error("Bild-Generierung zuerst in Einstellungen → Bilder einrichten.");
+  if (imageSettings.provider === "none") throw new Error(t("Bild-Generierung zuerst in Einstellungen → Bilder einrichten."));
   const apiKey = imageConfig.apiKeyFor(imageSettings.provider);
-  if (!apiKey) throw new Error("API-Key für die Bild-Generierung fehlt (Einstellungen → Bilder).");
+  if (!apiKey) throw new Error(t("API-Key für die Bild-Generierung fehlt (Einstellungen → Bilder)."));
   const references = readReferenceImages(project, request.referencePaths);
 
   const generatedImages =

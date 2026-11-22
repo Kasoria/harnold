@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 /** Harnold-Symbol (Kleingrößen-Schnitt aus docs/brand): Hantel als grinsendes H. Farbe über currentColor. */
 function SymbolShapes() {
@@ -22,7 +23,7 @@ export function HarnoldSymbol(props: { className?: string }) {
 /** Symbol (Primärfarbe) + Wortmarke (Textfarbe). Höhe über className steuern, z. B. h-5. */
 export function HarnoldLogo(props: { className?: string }) {
   return (
-    <svg viewBox="0 0 1155 256" role="img" aria-label="Harnold" className={cn("w-auto", props.className)}>
+    <svg viewBox="0 0 1155 256" role="img" aria-label={t("Harnold")} className={cn("w-auto", props.className)}>
       <g className="text-primary">
         <SymbolShapes />
       </g>

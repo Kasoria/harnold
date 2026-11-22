@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { t } from "@/lib/i18n";
 
 type TextPromptOptions = { title: string; initialValue?: string; placeholder?: string; confirmLabel?: string };
 type PendingPrompt = TextPromptOptions & { resolve: (value: string | null) => void };
@@ -53,10 +54,10 @@ export function TextPromptDialogHost() {
           <Input autoFocus value={value} placeholder={pendingPrompt?.placeholder} onFocus={(focusEvent) => focusEvent.target.select()} onChange={(changeEvent) => setValue(changeEvent.target.value)} />
           <DialogFooter>
             <Button type="submit" disabled={!value.trim()}>
-              {pendingPrompt?.confirmLabel ?? "Speichern"}
+              {pendingPrompt?.confirmLabel ?? t("Speichern")}
             </Button>
             <Button type="button" variant="ghost" onClick={() => answer(false)}>
-              Abbrechen
+              {t("Abbrechen")}
             </Button>
           </DialogFooter>
         </form>

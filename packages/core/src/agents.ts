@@ -4,6 +4,7 @@ import { z } from "zod";
 import { database, sessionStore, type Project } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { environmentStore } from "./environments.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Team: several agents (experts) per environment – each with its own role, instructions and model. Every conversation
@@ -57,11 +58,11 @@ export const teamStore = {
   save(agentInput: TeamAgentInput, agentId?: string): TeamAgent {
     if (agentInput.environmentId) environmentStore.get(agentInput.environmentId);
     const existing = agentId ? teamStore.get(agentId) : undefined;
-    if (agentId && !existing) throw new Error("Agent nicht gefunden");
+    if (agentId && !existing) throw new Error(t("Agent nicht gefunden"));
     const duplicate = teamStore
       .list()
       .find((agent) => agent.id !== agentId && agent.name.toLowerCase() === agentInput.name.toLowerCase() && agent.environmentId === agentInput.environmentId);
-    if (duplicate) throw new Error(`Name „${agentInput.name}“ gibt es in diesem Team schon`);
+    if (duplicate) throw new Error(t("Name „{0}“ gibt es in diesem Team schon", agentInput.name));
     const id = existing?.id ?? randomUUID();
     database
       .prepare(

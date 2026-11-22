@@ -1,3 +1,4 @@
+import { currentLanguage } from "@/lib/i18n";
 import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
@@ -18,6 +19,7 @@ async function request<ResponseBody>(method: string, path: string, body?: unknow
     headers: {
       ...(body ? { "content-type": "application/json" } : {}),
       ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      "x-harnold-language": currentLanguage,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -116,6 +118,8 @@ export const api = {
   setDesignSystemLinks: (designSystemId: string, links: DesignSystemLinkTarget[]) =>
     request<DesignSystemDetail>("PUT", `/api/design-systems/${designSystemId}/links`, { links }),
   /** environmentId: the own Claude login of that environment instead of the workspace one. */
+  /** Language of Core messages (errors, channel replies). */
+  saveLanguage: (language: string) => request<{ ok: true }>("PUT", "/api/settings/language", { language }),
   readDefaultModel: () => request<{ defaultModel: string }>("GET", "/api/settings/model"),
   saveDefaultModel: (defaultModel: string) => request<{ defaultModel: string }>("PUT", "/api/settings/model", { defaultModel }),
   readClaudeStatus: (refresh = false, environmentId?: string) =>

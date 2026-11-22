@@ -4,6 +4,7 @@ import { api } from "@/api";
 import type { ImageAspectRatio, ImageSettingsView } from "@/types";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/segmented-control";
+import { t } from "@/lib/i18n";
 
 type ImageGenerationPanelProps = {
   projectId: string;
@@ -70,14 +71,14 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
     >
       <div className="mb-2 flex items-center gap-2">
         <Sparkles className="size-3.5 text-muted-foreground" />
-        <span className="text-[13px] font-medium">Bild generieren</span>
-        <Button variant="ghost" size="icon" className="ml-auto size-6 text-muted-foreground" onClick={props.onClose} aria-label="Schließen">
+        <span className="text-[13px] font-medium">{t("Bild generieren")}</span>
+        <Button variant="ghost" size="icon" className="ml-auto size-6 text-muted-foreground" onClick={props.onClose} aria-label={t("Schließen")}>
           <X className="size-3.5" />
         </Button>
       </div>
 
       {imageSettings && !imageSettings.ready ? (
-        <p className="py-3 text-[12.5px] text-muted-foreground">Zuerst in Einstellungen → Bilder einen Anbieter und API-Key eintragen.</p>
+        <p className="py-3 text-[12.5px] text-muted-foreground">{t("Zuerst in Einstellungen → Bilder einen Anbieter und API-Key eintragen.")}</p>
       ) : (
         <>
           <textarea
@@ -85,7 +86,7 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
             rows={3}
             value={prompt}
             disabled={generating}
-            placeholder="Was soll entstehen? Motiv, Stil, Licht, Stimmung …"
+            placeholder={t("Was soll entstehen? Motiv, Stil, Licht, Stimmung …")}
             onChange={(changeEvent) => setPrompt(changeEvent.target.value)}
             className="w-full resize-none rounded-lg border bg-background px-2.5 py-2 text-[13px] outline-none transition-shadow duration-150 placeholder:text-muted-foreground focus:ring-1 focus:ring-ring/40"
           />
@@ -99,7 +100,7 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
                   <button
                     className="rounded text-muted-foreground transition-colors hover:text-foreground"
                     onClick={() => setReferencePaths((previous) => previous.filter((path) => path !== referencePath))}
-                    aria-label="Vorlage entfernen"
+                    aria-label={t("Vorlage entfernen")}
                   >
                     <X className="size-3" />
                   </button>
@@ -112,7 +113,7 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
                   className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground"
                   onClick={() => setReferencePaths((previous) => [...previous, props.selectedImagePath!])}
                 >
-                  <ImagePlus className="size-3.5" /> Auswahl als Vorlage
+                  <ImagePlus className="size-3.5" /> {t("Auswahl als Vorlage")}
                 </Button>
               )}
             </div>
@@ -123,10 +124,10 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
             <SegmentedControl className="w-28" options={countOptions} value={imageCount} onValueChange={setImageCount} />
             <Button size="sm" className="ml-auto gap-1.5" disabled={!prompt.trim() || generating} onClick={() => void generate()}>
               {generating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-              {generating ? "Erzeuge …" : "Erzeugen"}
+              {generating ? t("Erzeuge …") : t("Erzeugen")}
             </Button>
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">⌘↵ erzeugen</p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{t("⌘↵ erzeugen")}</p>
         </>
       )}
     </div>

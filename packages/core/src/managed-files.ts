@@ -6,6 +6,7 @@ import { environmentStore } from "./environments.ts";
 import { environmentMemoryDirectory, memoryConfig, type MemoryScope } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
 import { mimeTypeOf } from "./attachments.ts";
+import { t } from "./i18n.ts";
 
 /**
  * All files Harnold itself creates – chat attachments, generated images, memory files – across projects,
@@ -67,18 +68,18 @@ function rootDirectoryOf(scope: MemoryScope, ownerId: string): string {
   if (scope === "workspace") return memoryConfig.workspaceDirectory();
   if (scope === "environment") return environmentMemoryDirectory(ownerId);
   const project = projectStore.get(ownerId);
-  if (!project) throw new Error("Projekt nicht gefunden");
+  if (!project) throw new Error(t("Projekt nicht gefunden"));
   return project.path;
 }
 
 /** Absolute path of a managed file id; refuses anything outside its root. */
 export function resolveManagedFile(fileId: string): string {
   const [scope, ownerId, relativePath] = fileId.split("|");
-  if (!["project", "environment", "workspace"].includes(scope) || !relativePath) throw new Error("Ungültige Datei");
+  if (!["project", "environment", "workspace"].includes(scope) || !relativePath) throw new Error(t("Ungültige Datei"));
   const rootDirectory = path.resolve(rootDirectoryOf(scope as MemoryScope, ownerId));
   const absolutePath = path.resolve(rootDirectory, relativePath);
-  if (!absolutePath.startsWith(rootDirectory + path.sep)) throw new Error("Pfad liegt außerhalb");
-  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) throw new Error("Datei nicht gefunden");
+  if (!absolutePath.startsWith(rootDirectory + path.sep)) throw new Error(t("Pfad liegt außerhalb"));
+  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) throw new Error(t("Datei nicht gefunden"));
   return absolutePath;
 }
 

@@ -11,6 +11,7 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { HarnoldLogo } from "@/components/harnold-logo";
 import { ActionContextMenu, ActionMenuButton, type MenuAction } from "@/components/action-menu";
+import { t } from "@/lib/i18n";
 
 type AppSidebarProps = {
   projects: Project[];
@@ -41,15 +42,15 @@ type AppSidebarProps = {
 };
 
 const featureScreens: { screen: ScreenName; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { screen: "today", label: "Heute", icon: Inbox },
-  { screen: "tasks", label: "Tasks", icon: CalendarClock },
-  { screen: "channels", label: "Channels", icon: MessagesSquare },
-  { screen: "memory", label: "Memory", icon: Brain },
-  { screen: "files", label: "Dateien", icon: FolderOpen },
-  { screen: "integrations", label: "Integrationen", icon: Blocks },
-  { screen: "design", label: "Design Systems", icon: Palette },
-  { screen: "environments", label: "Umgebungen", icon: Layers },
-  { screen: "team", label: "Team", icon: Users },
+  { screen: "today", label: t("Heute"), icon: Inbox },
+  { screen: "tasks", label: t("Tasks"), icon: CalendarClock },
+  { screen: "channels", label: t("Channels"), icon: MessagesSquare },
+  { screen: "memory", label: t("Memory"), icon: Brain },
+  { screen: "files", label: t("Dateien"), icon: FolderOpen },
+  { screen: "integrations", label: t("Integrationen"), icon: Blocks },
+  { screen: "design", label: t("Design Systems"), icon: Palette },
+  { screen: "environments", label: t("Umgebungen"), icon: Layers },
+  { screen: "team", label: t("Team"), icon: Users },
 ];
 
 const activeRowClassName = "bg-foreground/[0.07] font-medium";
@@ -92,20 +93,20 @@ function EnvironmentSwitcher(props: Pick<AppSidebarProps, "environments" | "acti
     <DropdownMenu>
       <DropdownMenuTrigger className={cn(rowClassName, "mb-1 h-8 border bg-background font-medium hover:bg-foreground/[0.04]")}>
         {activeEnvironment ? <ProjectAvatar name={activeEnvironment.name} icon={activeEnvironment.icon} /> : <Layers className="size-4 text-muted-foreground" />}
-        <span className="truncate">{activeEnvironment?.name ?? "Alle Umgebungen"}</span>
+        <span className="truncate">{activeEnvironment?.name ?? t("Alle Umgebungen")}</span>
         <ChevronsUpDown className="ml-auto size-3.5 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
         {[null, ...props.environments].map((environment) => (
           <DropdownMenuItem key={environment?.id ?? "all"} className="text-[13px]" onSelect={() => props.onActiveEnvironmentChange(environment?.id ?? null)}>
             {environment ? <ProjectAvatar name={environment.name} icon={environment.icon} /> : <Layers className="size-4" />}
-            <span className="truncate">{environment?.name ?? "Alle Umgebungen"}</span>
+            <span className="truncate">{environment?.name ?? t("Alle Umgebungen")}</span>
             {(environment?.id ?? null) === props.activeEnvironmentId && <Check className="ml-auto size-3.5" />}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-[13px] text-muted-foreground" onSelect={() => props.onOpenScreen("environments")}>
-          <Settings className="size-4" /> Umgebungen verwalten
+          <Settings className="size-4" /> {t("Umgebungen verwalten")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -135,7 +136,7 @@ function ConversationList({ projectId, className, ...props }: AppSidebarProps & 
               <StatusDot status={conversationStatus(conversationMembers(session.id, projectSessions), props.sessionStatusFor)} className="mx-1" />
               <span className="truncate">{session.title}</span>
               <span className="ml-auto flex">
-                <ActionMenuButton label="Aktionen" actions={props.sessionActions(session)} />
+                <ActionMenuButton label={t("Aktionen")} actions={props.sessionActions(session)} />
               </span>
             </button>
           </ActionContextMenu>
@@ -157,8 +158,8 @@ function ProjectTreeItem({ project, ...props }: AppSidebarProps & { project: Pro
             <span className="truncate">{project.name}</span>
             <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", expanded && "rotate-90")} />
             <span className="ml-auto flex items-center gap-0.5">
-              <ActionMenuButton label="Projekt-Aktionen" actions={props.projectActions(project)} />
-              <HoverAction label="Neue Session" onClick={() => props.onCreateSession(project.id)}>
+              <ActionMenuButton label={t("Projekt-Aktionen")} actions={props.projectActions(project)} />
+              <HoverAction label={t("Neue Session")} onClick={() => props.onCreateSession(project.id)}>
                 <Plus className="size-3.5" />
               </HoverAction>
             </span>
@@ -170,7 +171,7 @@ function ProjectTreeItem({ project, ...props }: AppSidebarProps & { project: Pro
           ) : (
             <div className="py-0.5 pl-3">
               <button className={cn(rowClassName, "text-muted-foreground")} onClick={() => props.onCreateSession(project.id)}>
-                <Plus className="size-3.5" /> Neue Session
+                <Plus className="size-3.5" /> {t("Neue Session")}
               </button>
             </div>
           )}
@@ -214,7 +215,7 @@ export function AppSidebar(props: AppSidebarProps) {
           onClick={props.onNewQuickChat}
         >
           <MessageSquarePlus className="size-4" />
-          Quick Chat
+          {t("Quick Chat")}
         </button>
         {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
           <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>
@@ -238,10 +239,10 @@ export function AppSidebar(props: AppSidebarProps) {
             onOpenScreen={props.onOpenScreen}
           />
         )}
-        <SectionHeader label="Projekte" actionLabel="Neues Projekt" onAction={props.onNewProject} />
+        <SectionHeader label={t("Projekte")} actionLabel={t("Neues Projekt")} onAction={props.onNewProject} />
 
         {visibleProjects.length === 0 && (
-          <p className="px-2 py-1 text-[13px] text-muted-foreground">{activeEnvironment ? `Noch keine Projekte in ${activeEnvironment.name}.` : "Noch keine Projekte."}</p>
+          <p className="px-2 py-1 text-[13px] text-muted-foreground">{activeEnvironment ? t("Noch keine Projekte in {0}.", activeEnvironment.name) : t("Noch keine Projekte.")}</p>
         )}
 
         <ul className="space-y-0.5">
@@ -252,7 +253,7 @@ export function AppSidebar(props: AppSidebarProps) {
 
         {quickChatProject && hasQuickChats && (
           <div className="mt-3">
-            <SectionHeader label="Quick Chats" actionLabel="Neuer Quick Chat" onAction={props.onNewQuickChat} />
+            <SectionHeader label={t("Quick Chats")} actionLabel={t("Neuer Quick Chat")} onAction={props.onNewQuickChat} />
             <ConversationList projectId={quickChatProject.id} {...props} />
           </div>
         )}
@@ -263,11 +264,11 @@ export function AppSidebar(props: AppSidebarProps) {
           className={cn(rowClassName, props.activeScreen === "settings" ? activeRowClassName : "text-muted-foreground hover:text-foreground")}
           onClick={() => props.onOpenScreen("settings")}
         >
-          <Settings className="size-4" /> Einstellungen
+          <Settings className="size-4" /> {t("Einstellungen")}
         </button>
-        <label className="flex shrink-0 items-center gap-1.5 px-1 text-muted-foreground" title="Hell / Dunkel">
+        <label className="flex shrink-0 items-center gap-1.5 px-1 text-muted-foreground" title={t("Hell / Dunkel")}>
           <Sun className={cn("size-3.5 transition-opacity duration-200", props.darkMode && "opacity-40")} />
-          <Switch checked={props.darkMode} onCheckedChange={props.onDarkModeChange} aria-label="Dunkler Modus" />
+          <Switch checked={props.darkMode} onCheckedChange={props.onDarkModeChange} aria-label={t("Dunkler Modus")} />
           <Moon className={cn("size-3.5 transition-opacity duration-200", !props.darkMode && "opacity-40")} />
         </label>
       </div>

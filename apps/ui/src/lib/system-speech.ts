@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 /**
  * Free speech-to-text built into the browser / OS (Web Speech API): in the macOS app WebKit uses Apple's speech
  * recognition, Chrome and Edge use their own service. Not available in Firefox.
@@ -30,7 +31,7 @@ export type SystemSpeechSession = {
 
 export function startSystemSpeech(language: string): SystemSpeechSession {
   const Recognition = recognitionConstructor();
-  if (!Recognition) throw new Error("Spracherkennung des Systems ist hier nicht verfügbar.");
+  if (!Recognition) throw new Error(t("Spracherkennung des Systems ist hier nicht verfügbar."));
   const recognition = new Recognition();
   recognition.lang = language === "en" ? "en-US" : language === "de" ? "de-DE" : language;
   recognition.continuous = true;
@@ -58,7 +59,7 @@ export function startSystemSpeech(language: string): SystemSpeechSession {
       recognition.stop();
       await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, 3000))]);
       if (recognitionError && !transcript) {
-        throw new Error(recognitionError === "not-allowed" || recognitionError === "service-not-allowed" ? "Kein Zugriff auf Mikrofon oder Spracherkennung." : `Spracherkennung: ${recognitionError}`);
+        throw new Error(recognitionError === "not-allowed" || recognitionError === "service-not-allowed" ? t("Kein Zugriff auf Mikrofon oder Spracherkennung.") : t("Spracherkennung: {0}", recognitionError));
       }
       return transcript;
     },

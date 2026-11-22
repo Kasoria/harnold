@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 
 export type ConfirmOptions = {
   title: string;
@@ -88,10 +89,10 @@ export function ConfirmDialogHost() {
           }}
         >
           <Button ref={confirmButtonRef} variant={pendingConfirmation?.destructive === false ? "default" : "destructive"} onClick={() => answer(true)}>
-            {pendingConfirmation?.confirmLabel ?? "Löschen"}
+            {pendingConfirmation?.confirmLabel ?? t("Löschen")}
           </Button>
           <Button variant="ghost" onClick={() => answer(false)}>
-            Abbrechen
+            {t("Abbrechen")}
           </Button>
         </DialogFooter>
       </DialogContent>

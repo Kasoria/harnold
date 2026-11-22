@@ -31,6 +31,7 @@ import { ImageGallery, imagePathsIn } from "./attachment-views";
 import { ProjectQuickSelect } from "./project-quick-select";
 import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
+import { t } from "@/lib/i18n";
 
 type ChatPaneProps = {
   /** Team of this project; empty = no agent picker. */
@@ -74,7 +75,7 @@ type RenderBlock =
   | { type: "item"; chatItem: ChatItem }
   | { type: "tools"; key: string; toolUses: ToolUseItem[] };
 
-const statusLabels: Record<SessionStatus, string> = { idle: "Idle", running: "Läuft", waiting: "Wartet", error: "Fehler" };
+const statusLabels: Record<SessionStatus, string> = { idle: t("Idle"), running: t("Läuft"), waiting: t("Wartet"), error: t("Fehler") };
 
 /** Groups consecutive tool calls into one collapsible line. */
 function buildRenderBlocks(chatItems: ChatItem[]): RenderBlock[] {
@@ -110,7 +111,7 @@ export function ChatPane(props: ChatPaneProps) {
   };
 
   const clearSession = async () => {
-    if (await confirmAction({ title: "Kontext leeren?", description: "Verlauf und Agent-Kontext dieser Session werden zurückgesetzt.", confirmLabel: "Leeren" })) props.onClearSession();
+    if (await confirmAction({ title: t("Kontext leeren?"), description: t("Verlauf und Agent-Kontext dieser Session werden zurückgesetzt."), confirmLabel: t("Leeren") })) props.onClearSession();
   };
 
   /** Slash commands Harnold handles itself; false = send to the agent. */
@@ -223,8 +224,8 @@ export function ChatPane(props: ChatPaneProps) {
       {dragActive && (
         <div className="pointer-events-none absolute inset-2 z-30 flex animate-in flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary bg-primary/10 text-[13px] font-medium text-foreground backdrop-blur-[2px] fade-in duration-150">
           <Paperclip className="size-5 text-primary" />
-          Dateien hier ablegen
-          <span className="text-[12px] font-normal text-muted-foreground">Bilder, PDFs, Text- und Office-Dateien</span>
+          {t("Dateien hier ablegen")}
+          <span className="text-[12px] font-normal text-muted-foreground">{t("Bilder, PDFs, Text- und Office-Dateien")}</span>
         </div>
       )}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
@@ -239,11 +240,11 @@ export function ChatPane(props: ChatPaneProps) {
               if (keyboardEvent.key === "Escape") setTitleDraft(null);
             }}
             className="min-w-0 flex-1 rounded-md bg-muted px-2 py-0.5 text-[14px] font-semibold outline-none"
-            aria-label="Session-Titel"
+            aria-label={t("Session-Titel")}
           />
         ) : (
           <h1 className="truncate text-[14px] font-semibold" onDoubleClick={() => props.session && setTitleDraft(props.session.title)}>
-            {props.session?.title ?? props.project?.name ?? "Harnold"}
+            {props.session?.title ?? props.project?.name ?? t("Harnold")}
           </h1>
         )}
         {props.session && (
@@ -255,14 +256,14 @@ export function ChatPane(props: ChatPaneProps) {
         {props.session && props.teamAgents.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" aria-label="Agent dieser Session">
+              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" aria-label={t("Agent dieser Session")}>
                 <Users className="size-3.5" />
-                {props.teamAgents.find((agent) => agent.id === props.session?.agentId)?.name ?? "Harnold"}
+                {props.teamAgents.find((agent) => agent.id === props.session?.agentId)?.name ?? t("Harnold")}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-52">
               <DropdownMenuRadioGroup value={props.session.agentId ?? "default"} onValueChange={(agentId) => props.onSetAgent(agentId === "default" ? null : agentId)}>
-                <DropdownMenuRadioItem value="default">Harnold (Standard)</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="default">{t("Harnold (Standard)")}</DropdownMenuRadioItem>
                 {props.teamAgents.map((agent) => (
                   <DropdownMenuRadioItem key={agent.id} value={agent.id}>
                     <span className="truncate">{agent.name}</span>
@@ -277,20 +278,20 @@ export function ChatPane(props: ChatPaneProps) {
           {props.session && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label="Session-Menü">
+                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={t("Session-Menü")}>
                   <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-52">
                 <DropdownMenuItem onSelect={() => setTitleDraft(props.session!.title)}>
-                  <Pencil /> Umbenennen
+                  <Pencil /> {t("Umbenennen")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setMoveDialogOpen(true)}>
-                  <ArrowRightLeft /> Verschieben …
+                  <ArrowRightLeft /> {t("Verschieben …")}
                 </DropdownMenuItem>
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
-                    <Layers /> Umgebung: {projectEnvironment?.name ?? "keine"}
+                    <Layers /> {t("Umgebung:")} {projectEnvironment?.name ?? "keine"}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuRadioGroup
@@ -302,16 +303,16 @@ export function ChatPane(props: ChatPaneProps) {
                           {environment.name}
                         </DropdownMenuRadioItem>
                       ))}
-                      <DropdownMenuRadioItem value="none">Keine</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="none">{t("Keine")}</DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuItem disabled={running} onSelect={() => void clearSession()}>
-                  <Eraser /> Kontext leeren
+                  <Eraser /> {t("Kontext leeren")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={props.onDeleteSession}>
-                  <Trash2 /> Löschen
+                  <Trash2 /> {t("Löschen")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -319,11 +320,11 @@ export function ChatPane(props: ChatPaneProps) {
           {!props.workspaceOpen && props.project && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={props.onOpenWorkspace} aria-label="Workspace öffnen">
+                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={props.onOpenWorkspace} aria-label={t("Workspace öffnen")}>
                   <PanelRight className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Workspace öffnen</TooltipContent>
+              <TooltipContent>{t("Workspace öffnen")}</TooltipContent>
             </Tooltip>
           )}
         </div>
@@ -331,7 +332,7 @@ export function ChatPane(props: ChatPaneProps) {
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed">
-          {!props.project && <p className="text-muted-foreground">Lege links ein Projekt an, um zu starten.</p>}
+          {!props.project && <p className="text-muted-foreground">{t("Lege links ein Projekt an, um zu starten.")}</p>}
 
           {renderBlocks.map((renderBlock) => {
             if (renderBlock.type === "tools") {
@@ -370,7 +371,7 @@ export function ChatPane(props: ChatPaneProps) {
                     <div className="mt-0.5 flex items-center gap-1">
                     <CopyButton
                       readText={() => chatItem.text}
-                      label="Kopieren"
+                      label={t("Kopieren")}
                       className="h-6 px-1 text-[11.5px] opacity-0 transition-opacity duration-150 group-hover/answer:opacity-100 focus-visible:opacity-100"
                     />
                     {props.ttsReady && (
@@ -392,7 +393,7 @@ export function ChatPane(props: ChatPaneProps) {
                         ) : (
                           <Volume2 className="size-3" />
                         )}
-                        {speechPlayback.speakingKey === chatItem.id ? "Stopp" : "Vorlesen"}
+                        {speechPlayback.speakingKey === chatItem.id ? t("Stopp") : t("Vorlesen")}
                       </Button>
                     )}
                     </div>
@@ -411,11 +412,11 @@ export function ChatPane(props: ChatPaneProps) {
               case "turn_result":
                 return chatItem.success ? (
                   <div key={chatItem.id} className="text-[11px] text-muted-foreground">
-                    {(chatItem.durationMs / 1000).toFixed(1)} s · ${chatItem.costUsd.toFixed(4)}
+                    {(chatItem.durationMs / 1000).toFixed(1)} {t("s · $")}{chatItem.costUsd.toFixed(4)}
                   </div>
                 ) : (
                   <div key={chatItem.id} className="animate-in fade-in text-[13px] text-destructive duration-200">
-                    Fehler: {chatItem.errorText || "unbekannt"}
+                    {t("Fehler:")} {chatItem.errorText || "unbekannt"}
                   </div>
                 );
               default:
@@ -425,7 +426,7 @@ export function ChatPane(props: ChatPaneProps) {
 
           {props.streamingThinking && <ThinkingBlock text={props.streamingThinking} live />}
           {props.streamingDraft && <ChatMarkdown text={props.streamingDraft} />}
-          {showActivity && <ActivityIndicator label={toolPending ? "Führt aus" : "Arbeitet"} startedAt={lastUserItem?.createdAt ?? Date.now()} />}
+          {showActivity && <ActivityIndicator label={toolPending ? t("Führt aus") : t("Arbeitet")} startedAt={lastUserItem?.createdAt ?? Date.now()} />}
 
           {props.permissionRequests.map((permissionRequest) =>
             isQuestionRequest(permissionRequest.toolName) ? (
@@ -443,7 +444,7 @@ export function ChatPane(props: ChatPaneProps) {
               <div className="flex items-center gap-2 text-[13px]">
                 <ShieldAlert className="size-4 text-status-waiting" />
                 <span>
-                  <strong className="font-medium">{permissionRequest.toolName}</strong> möchte ausgeführt werden
+                  <strong className="font-medium">{permissionRequest.toolName}</strong> {t("möchte ausgeführt werden")}
                 </span>
               </div>
               <div className="mt-1.5 truncate font-mono text-[12px] text-muted-foreground">
@@ -451,10 +452,10 @@ export function ChatPane(props: ChatPaneProps) {
               </div>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => props.onAnswerPermission(permissionRequest.requestId, true)}>
-                  Erlauben
+                  {t("Erlauben")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => props.onAnswerPermission(permissionRequest.requestId, false)}>
-                  Ablehnen
+                  {t("Ablehnen")}
                 </Button>
               </div>
             </div>
@@ -466,7 +467,7 @@ export function ChatPane(props: ChatPaneProps) {
       {props.project && (
         <div className={cn("mx-auto w-full max-w-3xl")}>
           <Composer
-            placeholder={`Nachricht an ${props.project.name} …`}
+            placeholder={t("Nachricht an {0} …", props.project.name)}
             running={running}
             inheritedModel={props.inheritedModel}
             insertion={props.composerInsertion}

@@ -4,6 +4,7 @@ import { api } from "@/api";
 import type { Attachment } from "@/types";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { t } from "@/lib/i18n";
 
 const imagePathPattern = /\.(png|jpe?g|gif|webp|avif|svg)$/i;
 export const isImagePath = (filePath: string) => imagePathPattern.test(filePath);
@@ -56,7 +57,7 @@ export function ImageGallery({ projectId, imagePaths, className }: { projectId: 
           <DialogTitle className="flex items-center gap-2 pr-8 font-mono text-[12px] font-normal text-muted-foreground">
             <span className="truncate">{openedPath}</span>
             {openedPath && (
-              <a href={api.previewUrl(projectId, openedPath)} target="_blank" rel="noreferrer" className="shrink-0 hover:text-foreground" aria-label="In neuem Tab öffnen">
+              <a href={api.previewUrl(projectId, openedPath)} target="_blank" rel="noreferrer" className="shrink-0 hover:text-foreground" aria-label={t("In neuem Tab öffnen")}>
                 <ExternalLink className="size-3.5" />
               </a>
             )}
@@ -106,7 +107,7 @@ export function AttachmentChip(props: { name: string; mimeType: string; size?: n
       )}
       <span className="min-w-0">
         <span className="block truncate font-medium">{props.name}</span>
-        <span className="block text-[10.5px] text-muted-foreground">{props.failed ? "Fehlgeschlagen" : props.uploading ? "Lädt hoch …" : props.size ? formatFileSize(props.size) : ""}</span>
+        <span className="block text-[10.5px] text-muted-foreground">{props.failed ? t("Fehlgeschlagen") : props.uploading ? t("Lädt hoch …") : props.size ? formatFileSize(props.size) : ""}</span>
       </span>
       {props.onRemove && (
         <button

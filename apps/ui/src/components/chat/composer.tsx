@@ -12,6 +12,7 @@ import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
 import { permissionModeOptions } from "@/components/form-field";
 import { agentModels, ModelSelect, type InheritedModel } from "@/components/model-select";
+import { t } from "@/lib/i18n";
 
 const fieldSizingSupported = CSS.supports("field-sizing", "content");
 
@@ -19,12 +20,12 @@ type ComposerCommand = AgentCommand & { source: "harnold" | "agent" };
 
 /** Harnold's own commands; /compact etc. go to the agent. */
 const harnoldCommands: ComposerCommand[] = [
-  { name: "clear", description: "Verlauf und Kontext leeren", argumentHint: "", source: "harnold" },
-  { name: "new", description: "Neue Session", argumentHint: "", source: "harnold" },
-  { name: "rename", description: "Session umbenennen", argumentHint: "<Titel>", source: "harnold" },
-  { name: "move", description: "In anderes Projekt / andere Umgebung verschieben", argumentHint: "", source: "harnold" },
-  { name: "model", description: "Modell wechseln", argumentHint: agentModels.map((agentModel) => agentModel.label.split(" ")[0].toLowerCase()).join(" | "), source: "harnold" },
-  { name: "plan", description: "Plan-Modus an/aus", argumentHint: "", source: "harnold" },
+  { name: "clear", description: t("Verlauf und Kontext leeren"), argumentHint: "", source: "harnold" },
+  { name: "new", description: t("Neue Session"), argumentHint: "", source: "harnold" },
+  { name: "rename", description: t("Session umbenennen"), argumentHint: "<Titel>", source: "harnold" },
+  { name: "move", description: t("In anderes Projekt / andere Umgebung verschieben"), argumentHint: "", source: "harnold" },
+  { name: "model", description: t("Modell wechseln"), argumentHint: agentModels.map((agentModel) => agentModel.label.split(" ")[0].toLowerCase()).join(" | "), source: "harnold" },
+  { name: "plan", description: t("Plan-Modus an/aus"), argumentHint: "", source: "harnold" },
 ];
 
 function parseCommand(text: string): { name: string; commandArguments: string } | null {
@@ -88,9 +89,9 @@ export function Composer(props: ComposerProps) {
       const isImage = file.type.startsWith("image/");
       setPendingAttachments((previous) => [
         ...previous,
-        { localId, name: file.name || "Einfügung.png", mimeType: file.type, size: file.size, previewUrl: isImage ? URL.createObjectURL(file) : undefined, status: "uploading" },
+        { localId, name: file.name || t("Einfügung.png"), mimeType: file.type, size: file.size, previewUrl: isImage ? URL.createObjectURL(file) : undefined, status: "uploading" },
       ]);
-      const namedFile = file.name ? file : new File([file], `Einfügung-${Date.now()}.png`, { type: file.type });
+      const namedFile = file.name ? file : new File([file], t("Einfügung-{0}.png", Date.now()), { type: file.type });
       api
         .uploadAttachments(props.projectId, [namedFile])
         .then(([attachment]) =>
@@ -179,7 +180,7 @@ export function Composer(props: ComposerProps) {
       const wantedModel = commandArguments.toLowerCase();
       const matchedModel = agentModels.find((agentModel) => agentModel.value.includes(wantedModel) || agentModel.label.toLowerCase().includes(wantedModel));
       if (!wantedModel || !matchedModel) {
-        props.onError(new Error(`Modell: ${agentModels.map((agentModel) => agentModel.label).join(", ")}`));
+        props.onError(new Error(t("Modell: {0}", agentModels.map((agentModel) => agentModel.label).join(", "))));
         return true;
       }
       setModel(matchedModel.value);
@@ -226,14 +227,14 @@ export function Composer(props: ComposerProps) {
 
   const startRecording = async () => {
     if (props.sttMode === "off") {
-      props.onError(new Error("Spracherkennung zuerst in Einstellungen → Voice einrichten."));
+      props.onError(new Error(t("Spracherkennung zuerst in Einstellungen → Voice einrichten.")));
       return;
     }
     try {
       await voiceRecorder.start();
       if (props.sttMode === "system") systemSpeechRef.current = startSystemSpeech(props.sttLanguage);
     } catch (microphoneError) {
-      props.onError(microphoneError instanceof Error && microphoneError.name === "NotAllowedError" ? new Error("Kein Zugriff auf das Mikrofon.") : microphoneError);
+      props.onError(microphoneError instanceof Error && microphoneError.name === "NotAllowedError" ? new Error(t("Kein Zugriff auf das Mikrofon.")) : microphoneError);
     }
   };
 
@@ -313,7 +314,7 @@ export function Composer(props: ComposerProps) {
               changeEvent.target.value = "";
             }}
           />
-          <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label="Datei anhängen" onClick={() => fileInputRef.current?.click()}>
+          <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label={t("Datei anhängen")} onClick={() => fileInputRef.current?.click()}>
             <Paperclip className="size-4" />
           </Button>
           {voiceRecorder.recording ? (
@@ -338,7 +339,7 @@ export function Composer(props: ComposerProps) {
               ref={textareaRef}
               rows={1}
               value={composerText}
-              placeholder={transcribing ? "Transkribiere …" : props.placeholder}
+              placeholder={transcribing ? t("Transkribiere …") : props.placeholder}
               disabled={transcribing}
               onChange={(changeEvent) => setComposerText(changeEvent.target.value)}
               onPaste={(clipboardEvent) => {
@@ -377,10 +378,10 @@ export function Composer(props: ComposerProps) {
 
           {voiceRecorder.recording ? (
             <>
-              <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={cancelRecording} aria-label="Aufnahme verwerfen">
+              <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={cancelRecording} aria-label={t("Aufnahme verwerfen")}>
                 <X className="size-4" />
               </Button>
-              <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={() => void finishRecording()} aria-label="Aufnahme beenden">
+              <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={() => void finishRecording()} aria-label={t("Aufnahme beenden")}>
                 <ArrowUp className="size-4" />
               </Button>
             </>
@@ -394,15 +395,15 @@ export function Composer(props: ComposerProps) {
                     className="size-8 shrink-0 rounded-full text-muted-foreground"
                     disabled={transcribing}
                     onClick={() => void startRecording()}
-                    aria-label="Sprachnachricht aufnehmen"
+                    aria-label={t("Sprachnachricht aufnehmen")}
                   >
                     {transcribing ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{props.sttMode !== "off" ? "Sprachnachricht" : "Voice in den Einstellungen einrichten"}</TooltipContent>
+                <TooltipContent>{props.sttMode !== "off" ? t("Sprachnachricht") : t("Voice in den Einstellungen einrichten")}</TooltipContent>
               </Tooltip>
               {props.running ? (
-                <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label="Stopp">
+                <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label={t("Stopp")}>
                   <Square className="size-3 fill-current" />
                 </Button>
               ) : (
@@ -411,7 +412,7 @@ export function Composer(props: ComposerProps) {
                   className={cn("size-8 shrink-0 rounded-full transition-opacity duration-150", !canSend && "opacity-30")}
                   disabled={!canSend}
                   onClick={submit}
-                  aria-label="Senden"
+                  aria-label={t("Senden")}
                 >
                   <ArrowUp className="size-4" />
                 </Button>
@@ -433,10 +434,10 @@ export function Composer(props: ComposerProps) {
                 onClick={() => props.onReadAloudChange(!props.readAloud)}
               >
                 {props.readAloud ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-                Vorlesen
+                {t("Vorlesen")}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Antworten automatisch vorlesen</TooltipContent>
+            <TooltipContent>{t("Antworten automatisch vorlesen")}</TooltipContent>
           </Tooltip>
         )}
         <ModelSelect compact value={model} onChange={setModel} inherited={props.inheritedModel} />

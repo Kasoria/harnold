@@ -34,6 +34,7 @@ import { Copy, FolderOpen, FolderInput, Layers, MessageSquarePlus, Pencil, Smile
 import { TeamScreen } from "@/screens/team-screen";
 import { conversationMembers, latestVersionId } from "@/lib/session-versions";
 import { systemSpeechAvailable } from "@/lib/system-speech";
+import { t } from "@/lib/i18n";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
@@ -278,10 +279,10 @@ export function App() {
           case "task_run_finished":
             setTodayReloadCounter((previous) => previous + 1);
             setToast({
-              message: `Task „${serverEvent.taskName}“ ${serverEvent.success ? "fertig" : "fehlgeschlagen"}`,
+              message: t("Task „{0}“ {1}", serverEvent.taskName, serverEvent.success ? t("fertig") : t("fehlgeschlagen")),
               tone: serverEvent.success ? "info" : "error",
               action: {
-                label: "Öffnen",
+                label: t("Öffnen"),
                 run: () => {
                   setActiveProjectId(serverEvent.projectId);
                   setActiveSessionId(serverEvent.sessionId);
@@ -418,7 +419,7 @@ export function App() {
   const isDesktopApp = "__TAURI_INTERNALS__" in window;
 
   const renameProject = async (project: Project) => {
-    const name = await askForText({ title: "Projekt umbenennen", initialValue: project.name });
+    const name = await askForText({ title: t("Projekt umbenennen"), initialValue: project.name });
     if (!name || name === project.name) return;
     api
       .updateProject(project.id, { name })
@@ -429,9 +430,9 @@ export function App() {
   const removeProject = async (project: Project) => {
     const sessionCount = (sessionsByProjectId[project.id] ?? []).length;
     const confirmed = await confirmAction({
-      title: `Projekt „${project.name}“ aus Harnold entfernen?`,
-      description: `${sessionCount ? `${sessionCount} Session(s) und zugehörige Tasks werden gelöscht. ` : ""}Der Ordner ${project.path} bleibt mit allen Dateien erhalten.`,
-      confirmLabel: "Entfernen",
+      title: t("Projekt „{0}“ aus Harnold entfernen?", project.name),
+      description: t("{0}Der Ordner {1} bleibt mit allen Dateien erhalten.", sessionCount ? t("{0} Session(s) und zugehörige Tasks werden gelöscht. ", sessionCount) : "", project.path),
+      confirmLabel: t("Entfernen"),
     });
     if (!confirmed) return;
     try {
@@ -449,17 +450,17 @@ export function App() {
   };
 
   const projectActions = (project: Project): MenuAction[] => [
-    { label: "Neue Session", icon: MessageSquarePlus, onSelect: () => void createSession(project.id) },
+    { label: t("Neue Session"), icon: MessageSquarePlus, onSelect: () => void createSession(project.id) },
     {
-      label: "Neue Session mit",
+      label: t("Neue Session mit"),
       icon: Users,
       hidden: teamForProject(project.id).length === 0,
       children: teamForProject(project.id).map((agent) => ({ label: agent.name, onSelect: () => void createSession(project.id, agent.id) })),
     },
-    { label: "Umbenennen", icon: Pencil, onSelect: () => void renameProject(project), separated: true },
-    { label: "Icon ändern", icon: Smile, onSelect: () => setIconDialogProject(project) },
+    { label: t("Umbenennen"), icon: Pencil, onSelect: () => void renameProject(project), separated: true },
+    { label: t("Icon ändern"), icon: Smile, onSelect: () => setIconDialogProject(project) },
     {
-      label: "Umgebung",
+      label: t("Umgebung"),
       icon: Layers,
       hidden: environments.length === 0,
       children: [null, ...environments].map((environment) => ({
@@ -468,22 +469,22 @@ export function App() {
         onSelect: () => api.setProjectEnvironment(project.id, environment?.id ?? null).then(() => refreshEnvironments()).catch(reportError),
       })),
     },
-    { label: "Im Finder zeigen", icon: FolderOpen, hidden: !isDesktopApp, onSelect: () => api.revealProject(project.id).catch(reportError), separated: true },
-    { label: "Pfad kopieren", icon: Copy, onSelect: () => void navigator.clipboard.writeText(project.path).catch(reportError), separated: !isDesktopApp },
-    { label: "Aus Harnold entfernen", icon: Trash2, destructive: true, onSelect: () => void removeProject(project), separated: true },
+    { label: t("Im Finder zeigen"), icon: FolderOpen, hidden: !isDesktopApp, onSelect: () => api.revealProject(project.id).catch(reportError), separated: true },
+    { label: t("Pfad kopieren"), icon: Copy, onSelect: () => void navigator.clipboard.writeText(project.path).catch(reportError), separated: !isDesktopApp },
+    { label: t("Aus Harnold entfernen"), icon: Trash2, destructive: true, onSelect: () => void removeProject(project), separated: true },
   ];
 
   const sessionActions = (session: Session): MenuAction[] => [
     {
-      label: "Umbenennen",
+      label: t("Umbenennen"),
       icon: Pencil,
       onSelect: async () => {
-        const title = await askForText({ title: "Session umbenennen", initialValue: session.title });
+        const title = await askForText({ title: t("Session umbenennen"), initialValue: session.title });
         if (title && title !== session.title) api.updateSession(session.id, { title }).catch(reportError);
       },
     },
     {
-      label: "Verschieben nach",
+      label: t("Verschieben nach"),
       icon: FolderInput,
       children: projects
         .filter((project) => project.id !== session.projectId)
@@ -492,27 +493,27 @@ export function App() {
           onSelect: () =>
             api
               .updateSession(session.id, { projectId: project.id })
-              .then((moveResult) => moveResult.deferred && setToast({ message: "Wird nach diesem Durchlauf verschoben", tone: "info" }))
+              .then((moveResult) => moveResult.deferred && setToast({ message: t("Wird nach diesem Durchlauf verschoben"), tone: "info" }))
               .catch(reportError),
         })),
     },
-    { label: "Löschen", icon: Trash2, destructive: true, separated: true, onSelect: () => void deleteSession(session) },
+    { label: t("Löschen"), icon: Trash2, destructive: true, separated: true, onSelect: () => void deleteSession(session) },
   ];
 
   const deleteSession = async (session: Session) => {
     const projectSessions = sessionsByProjectId[session.projectId] ?? [];
     const removedSessionIds = new Set(conversationMembers(session.id, projectSessions).map((member) => member.id));
-    const description = removedSessionIds.size > 1 ? `Der Verlauf inkl. ${removedSessionIds.size - 1} bearbeiteter Version(en) geht verloren.` : "Der Verlauf geht verloren.";
+    const description = removedSessionIds.size > 1 ? t("Der Verlauf inkl. {0} bearbeiteter Version(en) geht verloren.", removedSessionIds.size - 1) : t("Der Verlauf geht verloren.");
     // Files only this conversation uses: offered as an opt-in, never deleted by default.
     const exclusiveFiles = await api.listSessionExclusiveFiles(session.id).catch(() => []);
     const exclusiveBytes = exclusiveFiles.reduce((total, file) => total + file.size, 0);
     const confirmation = await confirmWithOption({
-      title: `Session „${session.title}“ löschen?`,
+      title: t("Session „{0}“ löschen?", session.title),
       description,
       option: exclusiveFiles.length
         ? {
-            label: `Auch ${exclusiveFiles.length === 1 ? "die Datei" : `${exclusiveFiles.length} Dateien`} dieser Session löschen (${formatFileSize(exclusiveBytes)})`,
-            hint: "Anhänge und generierte Bilder, die keine andere Session und keine Design-Datei nutzt. Sonst bleiben sie im Projekt.",
+            label: t("Auch {0} dieser Session löschen ({1})", exclusiveFiles.length === 1 ? "die Datei" : `${exclusiveFiles.length} Dateien`, formatFileSize(exclusiveBytes)),
+            hint: t("Anhänge und generierte Bilder, die keine andere Session und keine Design-Datei nutzt. Sonst bleiben sie im Projekt."),
           }
         : undefined,
     });
@@ -797,7 +798,7 @@ export function App() {
                 activeSessionId &&
                 api
                   .updateSession(activeSessionId, { projectId })
-                  .then((moveResult) => moveResult.deferred && setToast({ message: "Wird nach diesem Durchlauf verschoben", tone: "info" }))
+                  .then((moveResult) => moveResult.deferred && setToast({ message: t("Wird nach diesem Durchlauf verschoben"), tone: "info" }))
                   .catch(reportError)
               }
               onSetProjectEnvironment={(environmentId) =>
@@ -841,7 +842,7 @@ export function App() {
                 onReferenceFile={(filePath) => setComposerInsertion({ text: `@${filePath} `, nonce: Date.now() })}
                 onInsertIntoComposer={(text) => setComposerInsertion({ text, nonce: Date.now() })}
                 onImplementDesign={(filePath) =>
-                  sendToAgent(`Setze den Entwurf @${filePath} im Projekt-Code um. Nutze vorhandene Struktur und das Design System.`, "acceptEdits")
+                  sendToAgent(t("Setze den Entwurf @{0} im Projekt-Code um. Nutze vorhandene Struktur und das Design System.", filePath), "acceptEdits")
                 }
                 onClose={() => setWorkspaceVisibility(false)}
                 onError={reportError}

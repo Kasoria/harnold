@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { config } from "./config.ts";
+import { t } from "./i18n.ts";
 
 /** AES-256-GCM with a per-workspace key file (chmod 600). Protects secrets at rest in the DB. */
 const keyFilePath = path.join(config.dataDirectory, "secret.key");
@@ -24,7 +25,7 @@ export function encryptSecret(plainText: string): string {
 
 export function decryptSecret(cipherText: string): string {
   const [version, initializationVector, authTag, encrypted] = cipherText.split(":");
-  if (version !== "v1") throw new Error("Unbekanntes Secret-Format");
+  if (version !== "v1") throw new Error(t("Unbekanntes Secret-Format"));
   const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(initializationVector, "base64"));
   decipher.setAuthTag(Buffer.from(authTag, "base64"));
   return Buffer.concat([decipher.update(Buffer.from(encrypted, "base64")), decipher.final()]).toString("utf8");

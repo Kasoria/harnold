@@ -4,6 +4,7 @@ import type { Project } from "./db.ts";
 import { memoryRootDirectory, type MemoryScope } from "./memory.ts";
 import { environmentStore } from "./environments.ts";
 import { mimeTypeOf } from "./attachments.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Files in memory (PDFs, images, documents …) next to the Markdown notes. They are not indexed;
@@ -21,7 +22,7 @@ const rootOf = memoryRootDirectory;
 function resolveInside(rootDirectory: string, relativePath: string): string {
   const resolvedRoot = path.resolve(rootDirectory);
   const absolutePath = path.resolve(resolvedRoot, relativePath.replace(/^\/+/, ""));
-  if (!absolutePath.startsWith(resolvedRoot + path.sep)) throw new Error("Pfad liegt außerhalb des Memory-Ordners");
+  if (!absolutePath.startsWith(resolvedRoot + path.sep)) throw new Error(t("Pfad liegt außerhalb des Memory-Ordners"));
   return absolutePath;
 }
 
@@ -58,7 +59,7 @@ export const memoryFiles = {
   /** Saves into `dateien/` of the memory folder; an existing name gets a numbered suffix. */
   save(scope: MemoryScope, project: Project | null, fileName: string, bytes: Buffer): MemoryFile {
     const safeName = path.basename(fileName).replace(/[^\w.\- ()äöüÄÖÜß]+/g, "_").trim() || "datei";
-    if (isNoteFile(safeName)) throw new Error("Markdown bitte als Notiz anlegen");
+    if (isNoteFile(safeName)) throw new Error(t("Markdown bitte als Notiz anlegen"));
     const rootDirectory = rootOf(scope, project);
     const extension = path.extname(safeName);
     const baseName = path.basename(safeName, extension);
@@ -72,7 +73,7 @@ export const memoryFiles = {
 
   absolutePath(scope: MemoryScope, project: Project | null, relativePath: string): string {
     const absolutePath = resolveInside(rootOf(scope, project), relativePath);
-    if (isNoteFile(absolutePath) || !fs.existsSync(absolutePath)) throw new Error("Datei nicht gefunden");
+    if (isNoteFile(absolutePath) || !fs.existsSync(absolutePath)) throw new Error(t("Datei nicht gefunden"));
     return absolutePath;
   },
 

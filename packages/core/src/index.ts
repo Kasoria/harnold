@@ -33,6 +33,7 @@ import { saveAttachment } from "./attachments.ts";
 import { memoryFiles } from "./memory-files.ts";
 import { createProjectRecord } from "./setup-tools.ts";
 import { managedFiles, resolveManagedFile } from "./managed-files.ts";
+import { languageSettings, parseLanguage, runWithLanguage, t } from "./i18n.ts";
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -57,20 +58,23 @@ const mimeTypesByExtension: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+// Messages in the language of the app that sent the request.
+app.use("*", (context, next) => runWithLanguage(parseLanguage(context.req.header("x-harnold-language")) ?? languageSettings.read(), next));
+
 // --- Auth (only active when HARNOLD_TOKEN is set) ---
 app.use("*", async (context, next) => {
   if (!config.accessToken) return next();
   const bearerToken = context.req.header("authorization")?.replace(/^Bearer /, "");
   const queryToken = context.req.query("token");
   if (bearerToken === config.accessToken || queryToken === config.accessToken) return next();
-  return context.json({ error: "Nicht autorisiert" }, 401);
+  return context.json({ error: t("Nicht autorisiert") }, 401);
 });
 
 app.onError((requestError, context) => context.json({ error: requestError.message }, 400));
 
 const requireProject = (projectId: string) => {
   const project = projectStore.get(projectId);
-  if (!project) throw new Error("Projekt nicht gefunden");
+  if (!project) throw new Error(t("Projekt nicht gefunden"));
   return project;
 };
 
@@ -92,7 +96,7 @@ app.patch("/api/projects/:projectId", async (context) => {
 });
 
 app.delete("/api/projects/:projectId", (context) => {
-  if (requireProject(context.req.param("projectId")).kind === "quick") throw new Error("Quick Chats lassen sich nicht entfernen");
+  if (requireProject(context.req.param("projectId")).kind === "quick") throw new Error(t("Quick Chats lassen sich nicht entfernen"));
   // Removes only Harnold's record; the folder on disk stays untouched.
   unwatchProject(context.req.param("projectId"));
   environmentStore.assignProject(context.req.param("projectId"), null);
@@ -170,7 +174,7 @@ app.get("/api/projects/:projectId/sessions", (context) =>
 /** "New session" reuses a still empty session of the project instead of piling up empty ones. */
 /** Reuses an unused empty session (switching it to the requested team agent) or creates one. */
 function emptyOrNewSession(projectId: string, agentId: string | null = null) {
-  if (agentId && !teamStore.forProject(projectId).some((agent) => agent.id === agentId)) throw new Error("Agent gehört nicht zum Team dieses Projekts");
+  if (agentId && !teamStore.forProject(projectId).some((agent) => agent.id === agentId)) throw new Error(t("Agent gehört nicht zum Team dieses Projekts"));
   const emptySession = sessionStore
     .listByProject(projectId)
     .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0 && !session.title.startsWith("Team · "));
@@ -232,8 +236,8 @@ app.patch("/api/sessions/:sessionId", async (context) => {
   if (body.title) sessionActions.rename(sessionId, body.title);
   if (body.agentId !== undefined) {
     const session = sessionStore.get(sessionId);
-    if (!session) throw new Error("Session nicht gefunden");
-    if (body.agentId && !teamStore.forProject(session.projectId).some((agent) => agent.id === body.agentId)) throw new Error("Agent gehört nicht zum Team dieses Projekts");
+    if (!session) throw new Error(t("Session nicht gefunden"));
+    if (body.agentId && !teamStore.forProject(session.projectId).some((agent) => agent.id === body.agentId)) throw new Error(t("Agent gehört nicht zum Team dieses Projekts"));
     // A different agent = a different persona: the next turn starts a fresh agent context, the timeline stays.
     sessionStore.update(sessionId, { agentId: body.agentId, agentSessionId: null });
     eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
@@ -259,7 +263,7 @@ app.post("/api/projects/:projectId/attachments", async (context) => {
   const project = requireProject(context.req.param("projectId"));
   const formBody = await context.req.parseBody({ all: true });
   const uploadedFiles = [formBody.files].flat().filter((entry): entry is File => entry instanceof File);
-  if (!uploadedFiles.length) throw new Error("Keine Datei erhalten");
+  if (!uploadedFiles.length) throw new Error(t("Keine Datei erhalten"));
   const attachments = await Promise.all(
     uploadedFiles.map(async (uploadedFile) => saveAttachment(project, uploadedFile.name, uploadedFile.type, Buffer.from(await uploadedFile.arrayBuffer()))),
   );
@@ -272,9 +276,9 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
     .refine((body) => body.text.trim() || body.attachments?.length, "Nachricht ist leer")
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
-  if (agentRuntime.isRunning(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
+  if (agentRuntime.isRunning(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
   const session = sessionStore.get(sessionId);
-  if (!session) throw new Error("Session nicht gefunden");
+  if (!session) throw new Error(t("Session nicht gefunden"));
   await environmentStore.agentSetupFor(session.projectId); // friendly error when Claude access is missing
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
   return context.json({ ok: true });
@@ -286,7 +290,7 @@ app.post("/api/sessions/:sessionId/edit", async (context) => {
     .object({ itemId: z.string(), text: z.string().min(1), permissionMode: permissionModeSchema.default("default"), model: z.string().optional() })
     .parse(await context.req.json());
   const session = sessionStore.get(context.req.param("sessionId"));
-  if (!session) throw new Error("Session nicht gefunden");
+  if (!session) throw new Error(t("Session nicht gefunden"));
   await environmentStore.agentSetupFor(session.projectId);
   const editedItem = chatItemStore.list(session.id).find((chatItem) => chatItem.id === body.itemId);
   const forkedSession = sessionActions.forkForEdit(session.id, body.itemId);
@@ -373,7 +377,7 @@ app.post("/api/tasks", async (context) => {
 
 app.put("/api/tasks/:taskId", async (context) => {
   const taskId = context.req.param("taskId");
-  if (!taskStore.get(taskId)) throw new Error("Task nicht gefunden");
+  if (!taskStore.get(taskId)) throw new Error(t("Task nicht gefunden"));
   const task = taskStore.save(taskInputSchema.parse(await context.req.json()), taskId);
   scheduleTask(task);
   eventHub.publish({ type: "tasks_changed" });
@@ -431,7 +435,7 @@ app.post("/api/channels", async (context) => {
 
 app.put("/api/channels/:channelId", async (context) => {
   const channelId = context.req.param("channelId");
-  if (!channelStore.get(channelId)) throw new Error("Channel nicht gefunden");
+  if (!channelStore.get(channelId)) throw new Error(t("Channel nicht gefunden"));
   const channel = channelStore.save(parseChannelInput(await context.req.json()), channelId);
   await channelManager.start(channel.id);
   return context.json(presentChannel(channel));
@@ -458,8 +462,8 @@ app.put("/api/settings/voice", async (context) => {
 app.post("/api/voice/transcribe", async (context) => {
   const mimeType = context.req.header("content-type") ?? "audio/webm";
   const audioData = Buffer.from(await context.req.arrayBuffer());
-  if (!audioData.length) throw new Error("Keine Audiodaten empfangen");
-  if (audioData.length > 25 * 1024 * 1024) throw new Error("Aufnahme zu lang (max. 25 MB)");
+  if (!audioData.length) throw new Error(t("Keine Audiodaten empfangen"));
+  if (audioData.length > 25 * 1024 * 1024) throw new Error(t("Aufnahme zu lang (max. 25 MB)"));
   return context.json({ text: await transcribe({ data: audioData, mimeType }) });
 });
 
@@ -513,7 +517,7 @@ app.post("/api/memory/files", async (context) => {
   const project = memoryProjectOf(context.req.query("projectId"));
   const formBody = await context.req.parseBody({ all: true });
   const uploadedFiles = [formBody.files].flat().filter((entry): entry is File => entry instanceof File);
-  if (!uploadedFiles.length) throw new Error("Keine Datei erhalten");
+  if (!uploadedFiles.length) throw new Error(t("Keine Datei erhalten"));
   const savedFiles = [];
   for (const uploadedFile of uploadedFiles) savedFiles.push(memoryFiles.save(scope, project, uploadedFile.name, Buffer.from(await uploadedFile.arrayBuffer())));
   return context.json(savedFiles);
@@ -649,6 +653,13 @@ app.post("/api/runtimes/:runtimeId/download", (context) => {
   return context.json({ ok: true });
 });
 
+app.put("/api/settings/language", async (context) => {
+  const language = parseLanguage(((await context.req.json()) as { language?: string }).language);
+  if (!language) throw new Error(t("Unbekannte Sprache"));
+  languageSettings.write(language);
+  return context.json({ language });
+});
+
 app.get("/api/settings/model", (context) => context.json({ defaultModel: agentModelSettings.read() }));
 app.put("/api/settings/model", async (context) => {
   const body = z.object({ defaultModel: z.string().trim().min(1) }).parse(await context.req.json());
@@ -721,7 +732,7 @@ app.delete("/api/mcp-servers/:serverId", (context) => {
 
 app.post("/api/mcp-servers/:serverId/test", async (context) => {
   const server = mcpServerStore.get(context.req.param("serverId"));
-  if (!server) throw new Error("Server nicht gefunden");
+  if (!server) throw new Error(t("Server nicht gefunden"));
   return context.json(await testMcpServer(server));
 });
 

@@ -7,6 +7,7 @@ import { config } from "./config.ts";
 import { agentRuntime } from "./agent.ts";
 import { environmentStore } from "./environments.ts";
 import { claudeProfileForEnvironment } from "./claude-auth.ts";
+import { t } from "./i18n.ts";
 
 const userClaudeDirectory = () => process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 const environmentAccountsDirectory = () => path.join(config.dataDirectory, "claude-accounts");
@@ -59,7 +60,7 @@ function appendNotice(sessionId: string, text: string): void {
 
 function requireSession(sessionId: string) {
   const session = sessionStore.get(sessionId);
-  if (!session) throw new Error("Session nicht gefunden");
+  if (!session) throw new Error(t("Session nicht gefunden"));
   return session;
 }
 
@@ -67,7 +68,7 @@ function moveNow(sessionId: string, targetProjectId: string): void {
   const session = requireSession(sessionId);
   const fromProject = projectStore.get(session.projectId);
   const toProject = projectStore.get(targetProjectId);
-  if (!fromProject || !toProject) throw new Error("Projekt nicht gefunden");
+  if (!fromProject || !toProject) throw new Error(t("Projekt nicht gefunden"));
   if (fromProject.id === toProject.id) return;
   const contextKept = session.agentSessionId ? carryTranscriptOver(session.agentSessionId, fromProject.path, toProject.id, toProject.path) : true;
   sessionStore.update(sessionId, { projectId: toProject.id, ...(contextKept ? {} : { agentSessionId: null }) });
@@ -106,7 +107,7 @@ export const sessionActions = {
     const session = requireSession(sessionId);
     const chatItems = chatItemStore.list(sessionId);
     const editedIndex = chatItems.findIndex((chatItem) => chatItem.id === itemId && chatItem.kind === "user_text");
-    if (editedIndex < 0) throw new Error("Nachricht nicht gefunden");
+    if (editedIndex < 0) throw new Error(t("Nachricht nicht gefunden"));
     const keptItems = chatItems.slice(0, editedIndex);
     const lastTurnResult = [...keptItems].reverse().find((chatItem) => chatItem.kind === "turn_result");
     let pendingFork: PendingFork | null = null;
@@ -128,7 +129,7 @@ export const sessionActions = {
   /** Moves a session (and its agent context) into another project – and thereby into that project's environment. */
   move(sessionId: string, targetProjectId: string): { deferred: boolean } {
     requireSession(sessionId);
-    if (!projectStore.get(targetProjectId)) throw new Error("Projekt nicht gefunden");
+    if (!projectStore.get(targetProjectId)) throw new Error(t("Projekt nicht gefunden"));
     if (agentRuntime.isRunning(sessionId)) {
       agentRuntime.afterTurn(sessionId, () => moveNow(sessionId, targetProjectId));
       return { deferred: true };
@@ -140,7 +141,7 @@ export const sessionActions = {
   /** Like /clear in Claude Code: empty timeline, fresh agent context. */
   clear(sessionId: string): void {
     const session = requireSession(sessionId);
-    if (agentRuntime.isRunning(sessionId)) throw new Error("Erst den laufenden Durchlauf stoppen");
+    if (agentRuntime.isRunning(sessionId)) throw new Error(t("Erst den laufenden Durchlauf stoppen"));
     chatItemStore.clear(sessionId);
     sessionStore.update(sessionId, { agentSessionId: null });
     eventHub.publish({ type: "session_cleared", sessionId });

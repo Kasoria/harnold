@@ -3,6 +3,7 @@ import { MessageCircleQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 type QuestionOption = { label: string; description?: string };
 type AgentQuestion = { question: string; header?: string; options: QuestionOption[]; multiSelect?: boolean };
@@ -55,7 +56,7 @@ export function QuestionCard(props: { input: unknown; onAnswer: (answers: Record
             })}
             <Input
               value={ownAnswers[question.question] ?? ""}
-              placeholder="Eigene Antwort …"
+              placeholder={t("Eigene Antwort …")}
               className="h-8 text-[13px]"
               onChange={(changeEvent) => setOwnAnswers((previous) => ({ ...previous, [question.question]: changeEvent.target.value }))}
             />
@@ -64,10 +65,10 @@ export function QuestionCard(props: { input: unknown; onAnswer: (answers: Record
       ))}
       <div className="flex gap-2 pl-6">
         <Button size="sm" disabled={!complete} onClick={() => props.onAnswer(Object.fromEntries(questions.map((question) => [question.question, answerFor(question)])))}>
-          Antworten
+          {t("Antworten")}
         </Button>
         <Button size="sm" variant="ghost" onClick={props.onSkip}>
-          Überspringen
+          {t("Überspringen")}
         </Button>
       </div>
     </div>

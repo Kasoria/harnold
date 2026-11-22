@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { config } from "./config.ts";
 import { eventHub } from "./events.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Agent programs (e.g. Claude Code) that Harnold drives. Never shipped with the desktop app:
@@ -162,12 +163,12 @@ async function downloadRuntime(runtimeId: AgentRuntimeId, downloadState: Downloa
   const definition = runtimeDefinitions[runtimeId];
   const { packageName, version, pathInArchive } = definition.downloadPackage();
   const metadataResponse = await fetch(`https://registry.npmjs.org/${packageName.replace("/", "%2f")}/${version}`);
-  if (!metadataResponse.ok) throw new Error(`Paketinfo nicht abrufbar (${metadataResponse.status})`);
+  if (!metadataResponse.ok) throw new Error(t("Paketinfo nicht abrufbar ({0})", metadataResponse.status));
   const { dist } = (await metadataResponse.json()) as { dist: { tarball: string; integrity: string } };
   const [hashAlgorithm, expectedHash] = dist.integrity.split("-", 2) as [string, string];
 
   const archiveResponse = await fetch(dist.tarball);
-  if (!archiveResponse.ok || !archiveResponse.body) throw new Error(`Download fehlgeschlagen (${archiveResponse.status})`);
+  if (!archiveResponse.ok || !archiveResponse.body) throw new Error(t("Download fehlgeschlagen ({0})", archiveResponse.status));
   downloadState.totalBytes = Number(archiveResponse.headers.get("content-length") ?? 0);
 
   const runtimeDirectory = downloadsDirectory(runtimeId);
@@ -191,7 +192,7 @@ async function downloadRuntime(runtimeId: AgentRuntimeId, downloadState: Downloa
     } finally {
       fs.closeSync(archiveFile);
     }
-    if (archiveHash.digest("base64") !== expectedHash) throw new Error("Prüfsumme stimmt nicht – Download verworfen");
+    if (archiveHash.digest("base64") !== expectedHash) throw new Error(t("Prüfsumme stimmt nicht – Download verworfen"));
 
     await new Promise<void>((resolve, reject) =>
       execFile("tar", ["-xzf", archivePath, "-C", workDirectory, pathInArchive], (extractError) => (extractError ? reject(extractError) : resolve())),

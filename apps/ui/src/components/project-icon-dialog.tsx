@@ -7,6 +7,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { entityIcons, formatEntityIcon, hueForName, isSymbolGlyph, parseEntityIcon, pickerHues, symbolIconValue, tileColor, type IconBackground } from "@/lib/entity-icons";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 const suggestedEmojis = ["🚀", "💡", "🎨", "🛠️", "📱", "🌐", "🧪", "📊", "🛒", "📚", "🎵", "🎬", "🏠", "🌱", "🔥", "⚡", "🧠", "🤖", "🔒", "💬", "📝", "🗂️", "🎯", "🏢", "🐞", "☕", "🍵", "🌙", "⭐", "❤️"];
 
@@ -64,19 +65,19 @@ export function ProjectIconDialog({ target, onOpenChange, onSave }: ProjectIconD
         >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[15px]">
-              <ProjectAvatar name={target?.name ?? ""} icon={iconValue} /> Icon für {target?.name}
+              <ProjectAvatar name={target?.name ?? ""} icon={iconValue} /> {t("Icon für")} {target?.name}
             </DialogTitle>
           </DialogHeader>
           <SegmentedControl
             options={[
-              { value: "symbol", label: "Symbole" },
-              { value: "emoji", label: "Emoji" },
+              { value: "symbol", label: t("Symbole") },
+              { value: "emoji", label: t("Emoji") },
             ]}
             value={iconKind}
             onValueChange={setIconKind}
           />
           {iconKind === "symbol" ? (
-            <div key="symbol" className="grid animate-in grid-cols-8 gap-1 fade-in duration-150" role="listbox" aria-label="Symbole">
+            <div key="symbol" className="grid animate-in grid-cols-8 gap-1 fade-in duration-150" role="listbox" aria-label={t("Symbole")}>
               {Object.entries(entityIcons).map(([iconName, SymbolIcon]) => {
                 const symbolValue = symbolIconValue(iconName);
                 return (
@@ -97,7 +98,7 @@ export function ProjectIconDialog({ target, onOpenChange, onSave }: ProjectIconD
             </div>
           ) : (
             <div key="emoji" className="grid animate-in gap-3 fade-in duration-150">
-              <div className="grid grid-cols-10 gap-1" role="listbox" aria-label="Emojis">
+              <div className="grid grid-cols-10 gap-1" role="listbox" aria-label={t("Emojis")}>
                 {suggestedEmojis.map((emoji) => (
                   <button
                     key={emoji}
@@ -114,21 +115,21 @@ export function ProjectIconDialog({ target, onOpenChange, onSave }: ProjectIconD
               <Input
                 value={isSymbolGlyph(glyphDraft) ? "" : glyphDraft}
                 maxLength={16}
-                placeholder="Eigenes Emoji (⌃⌘Leertaste)"
+                placeholder={t("Eigenes Emoji (⌃⌘Leertaste)")}
                 onChange={(changeEvent) => pickGlyph(changeEvent.target.value)}
               />
             </div>
           )}
 
           <div className="flex items-center gap-3">
-            <span className="text-[12.5px] text-muted-foreground">Hintergrund</span>
-            <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Hintergrund">
+            <span className="text-[12.5px] text-muted-foreground">{t("Hintergrund")}</span>
+            <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label={t("Hintergrund")}>
               <button
                 type="button"
                 role="radio"
                 aria-checked={backgroundDraft === "none"}
-                aria-label="Ohne Hintergrund"
-                title="Ohne Hintergrund"
+                aria-label={t("Ohne Hintergrund")}
+                title={t("Ohne Hintergrund")}
                 disabled={!glyph}
                 onClick={() => setBackgroundDraft("none")}
                 className={cn(swatchClassName, "border text-muted-foreground disabled:opacity-40", backgroundDraft === "none" && "ring-2 ring-primary")}
@@ -141,8 +142,8 @@ export function ProjectIconDialog({ target, onOpenChange, onSave }: ProjectIconD
                   type="button"
                   role="radio"
                   aria-checked={backgroundDraft !== "none" && selectedHue === hue}
-                  aria-label={hue === nameHue ? "Standardfarbe" : `Farbe ${hue}`}
-                  title={hue === nameHue ? "Standardfarbe" : undefined}
+                  aria-label={hue === nameHue ? t("Standardfarbe") : t("Farbe {0}", hue)}
+                  title={hue === nameHue ? t("Standardfarbe") : undefined}
                   onClick={() => setBackgroundDraft(hue === nameHue ? "auto" : hue)}
                   className={cn(swatchClassName, backgroundDraft !== "none" && selectedHue === hue && "ring-2 ring-primary")}
                   style={{ background: tileColor(hue) }}
@@ -153,9 +154,9 @@ export function ProjectIconDialog({ target, onOpenChange, onSave }: ProjectIconD
 
           <DialogFooter>
             <Button type="button" variant="ghost" className="sm:mr-auto" disabled={!target?.icon} onClick={() => save(null)}>
-              Buchstabe verwenden
+              {t("Buchstabe verwenden")}
             </Button>
-            <Button type="submit">Speichern</Button>
+            <Button type="submit">{t("Speichern")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

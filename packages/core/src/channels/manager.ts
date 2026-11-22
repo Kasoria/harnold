@@ -10,6 +10,7 @@ import { createTelegramAdapter } from "./telegram.ts";
 import { createDiscordAdapter } from "./discord.ts";
 import { createSlackAdapter } from "./slack.ts";
 import { createEmailAdapter } from "./email.ts";
+import { t } from "../i18n.ts";
 
 export type ChannelStatus = { state: "connected" | "connecting" | "error" | "stopped"; error?: string };
 
@@ -72,7 +73,7 @@ async function handleProjectCommand(channel: Channel, inboundMessage: InboundMes
   const commandMatch = commandText.match(/^\/(projekte|projects|projekt|project|allgemein|general)\b\s*(.*)$/i);
   if (!commandMatch) return false;
   if (channel.scope !== "workspace") {
-    await reply("Dieser Channel ist fest mit einem Projekt verbunden.");
+    await reply(t("Dieser Channel ist fest mit einem Projekt verbunden."));
     return true;
   }
   const [, command, argument] = commandMatch;
@@ -80,7 +81,7 @@ async function handleProjectCommand(channel: Channel, inboundMessage: InboundMes
   const activeProjectId = currentProjectId(channel, inboundMessage.chatId);
   if (/^(projekte|projects)$/i.test(command) || (!argument.trim() && !/^(allgemein|general)$/i.test(command))) {
     const lines = projects.map((project, projectIndex) => `${projectIndex + 1}. ${project.name}${project.id === activeProjectId ? " ←" : ""}`);
-    await reply(lines.length ? `Projekte:\n${lines.join("\n")}\n\nWechseln: /projekt <Name oder Nr.> · Zurück: /allgemein` : "Noch keine Projekte.");
+    await reply(lines.length ? t("Projekte:\n{0}\n\nWechseln: /projekt <Name oder Nr.> · Zurück: /allgemein", lines.join("\n")) : t("Noch keine Projekte."));
     return true;
   }
   const searchText = argument.trim().toLowerCase();
@@ -88,13 +89,13 @@ async function handleProjectCommand(channel: Channel, inboundMessage: InboundMes
     ? projectStore.get(channel.projectId)
     : (projects[Number(searchText) - 1] ?? projects.find((project) => project.name.toLowerCase() === searchText) ?? projects.find((project) => project.name.toLowerCase().includes(searchText)));
   if (!targetProject) {
-    await reply(`Kein Projekt „${argument.trim()}“. /projekte zeigt alle.`);
+    await reply(t("Kein Projekt „{0}“. /projekte zeigt alle.", argument.trim()));
     return true;
   }
   // The conversation moves along (history stays); a fresh one starts if there is none yet.
   const sessionId = sessionForConversation(channel, inboundMessage);
   const moveResult = sessionActions.move(sessionId, targetProject.id);
-  await reply(`${moveResult.deferred ? "Nach dieser Antwort weiter" : "Weiter"} in „${targetProject.kind === "quick" ? "Allgemein" : targetProject.name}“.`);
+  await reply(t("{0} in „{1}“.", moveResult.deferred ? t("Nach dieser Antwort weiter") : t("Weiter"), targetProject.kind === "quick" ? t("Allgemein") : targetProject.name));
   return true;
 }
 
@@ -106,11 +107,11 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
 
   if (!channel.allowedSenders.includes(inboundMessage.senderId)) {
     // Never answer unknown e-mail senders (spam); chat platforms get their ID so the owner can allow it.
-    if (channel.type !== "email") await reply(`Nicht freigeschaltet. Deine ID: ${inboundMessage.senderId}`);
+    if (channel.type !== "email") await reply(t("Nicht freigeschaltet. Deine ID: {0}", inboundMessage.senderId));
     return;
   }
   if (!projectStore.get(currentProjectId(channel, inboundMessage.chatId))) {
-    await reply("Das verknüpfte Projekt existiert nicht mehr.");
+    await reply(t("Das verknüpfte Projekt existiert nicht mehr."));
     return;
   }
 
@@ -120,26 +121,26 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
     try {
       const transcript = await transcribe(inboundMessage.audio);
       if (!transcript) {
-        await reply("Ich konnte in der Sprachnachricht nichts verstehen.");
+        await reply(t("Ich konnte in der Sprachnachricht nichts verstehen."));
         return;
       }
       await reply(`🎙 „${transcript}“`);
       trimmedText = [trimmedText, transcript].filter(Boolean).join("\n\n");
     } catch (transcriptionError) {
-      await reply(`⚠️ Sprachnachricht nicht verarbeitet: ${transcriptionError instanceof Error ? transcriptionError.message : String(transcriptionError)}`);
+      await reply(t("⚠️ Sprachnachricht nicht verarbeitet: {0}", transcriptionError instanceof Error ? transcriptionError.message : String(transcriptionError)));
       return;
     }
   }
   if (/^\/(neu|new)\b/i.test(trimmedText)) {
     sessionForConversation(channel, inboundMessage, true);
-    await reply("Neue Session gestartet.");
+    await reply(t("Neue Session gestartet."));
     return;
   }
   if (/^\/(start|hilfe|help)\b/i.test(trimmedText)) {
     await reply(
       channel.scope === "workspace"
-        ? "Hallo! Schreib mir einfach – ich habe Zugriff auf ganz Harnold. /projekte zeigt alle Projekte, /projekt <Name> wechselt dorthin, /allgemein zurück, /neu startet eine neue Session."
-        : "Hallo! Schreib mir einfach. /neu startet eine neue Session.",
+        ? t("Hallo! Schreib mir einfach – ich habe Zugriff auf ganz Harnold. /projekte zeigt alle Projekte, /projekt <Name> wechselt dorthin, /allgemein zurück, /neu startet eine neue Session.")
+        : t("Hallo! Schreib mir einfach. /neu startet eine neue Session."),
     );
     return;
   }
@@ -163,7 +164,7 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
 
   const sessionId = sessionForConversation(channel, inboundMessage);
   if (agentRuntime.isRunning(sessionId)) {
-    await reply("Ich arbeite noch an der letzten Nachricht …");
+    await reply(t("Ich arbeite noch an der letzten Nachricht …"));
     return;
   }
 
@@ -171,7 +172,7 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
   const typingInterval = setInterval(() => void adapter.indicateTyping?.(inboundMessage.chatId), 4500);
   try {
     const turnOutcome = await agentRuntime.runTurn({ sessionId, text: trimmedText, permissionMode: channel.permissionMode });
-    const replyText = turnOutcome.success ? turnOutcome.finalText || "Erledigt." : `⚠️ ${turnOutcome.errorText || "Fehlgeschlagen"}`;
+    const replyText = turnOutcome.success ? turnOutcome.finalText || t("Erledigt.") : `⚠️ ${turnOutcome.errorText || t("Fehlgeschlagen")}`;
     await reply(replyText);
 
     const wantsSpokenReply = channel.voiceReplies === "always" || (channel.voiceReplies === "voice" && receivedVoice);
@@ -224,7 +225,7 @@ export const channelManager = {
 
   async sendTo(channelId: string, chatId: string, text: string): Promise<void> {
     const adapter = activeAdapters.get(channelId);
-    if (!adapter) throw new Error("Channel ist nicht verbunden");
+    if (!adapter) throw new Error(t("Channel ist nicht verbunden"));
     await adapter.sendMessage(chatId, text);
   },
 
@@ -243,7 +244,7 @@ export const channelManager = {
           const questionText = questions
             .map((question) => `❓ ${question.question}\n${(question.options ?? []).map((option, optionIndex) => `${optionIndex + 1}. ${option.label}`).join("\n")}`)
             .join("\n\n");
-          void adapter.sendMessage(conversation.chatId, `${questionText}\n\nAntworte einfach mit deiner Wahl${questions.length > 1 ? " (eine Zeile pro Frage)" : ""}.`).catch((sendError) => console.error("[channels] question failed:", sendError));
+          void adapter.sendMessage(conversation.chatId, t("{0}\n\nAntworte einfach mit deiner Wahl{1}.", questionText, questions.length > 1 ? t(" (eine Zeile pro Frage)") : "")).catch((sendError) => console.error("[channels] question failed:", sendError));
           return;
         }
         pendingPermissionByConversation.set(conversationKey(conversation.channelId, conversation.chatId), serverEvent.requestId);

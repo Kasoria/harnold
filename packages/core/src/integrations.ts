@@ -14,6 +14,7 @@ import { database, projectStore, type Project } from "./db.ts";
 import { decryptSecret, encryptSecret } from "./secrets.ts";
 import { eventHub } from "./events.ts";
 import { settingsStore } from "./settings.ts";
+import { t } from "./i18n.ts";
 
 // ---------------------------------------------------------------- MCP servers
 
@@ -106,9 +107,9 @@ function mergeSecretValues(submitted: Record<string, string>, stored: Record<str
 }
 
 function validateServerInput(serverInput: McpServerInput, existingId?: string): void {
-  if (serverInput.scope === "project" && !(serverInput.projectId && projectStore.get(serverInput.projectId))) throw new Error("Projekt fehlt");
-  if (serverInput.transport === "stdio" && !serverInput.command.trim()) throw new Error("Befehl fehlt");
-  if (serverInput.transport !== "stdio" && !/^https?:\/\//.test(serverInput.url.trim())) throw new Error("URL muss mit http(s):// beginnen");
+  if (serverInput.scope === "project" && !(serverInput.projectId && projectStore.get(serverInput.projectId))) throw new Error(t("Projekt fehlt"));
+  if (serverInput.transport === "stdio" && !serverInput.command.trim()) throw new Error(t("Befehl fehlt"));
+  if (serverInput.transport !== "stdio" && !/^https?:\/\//.test(serverInput.url.trim())) throw new Error(t("URL muss mit http(s):// beginnen"));
   const duplicate = mcpServerStore
     .list()
     .find(
@@ -118,7 +119,7 @@ function validateServerInput(serverInput: McpServerInput, existingId?: string): 
         server.scope === serverInput.scope &&
         (serverInput.scope === "workspace" || server.projectId === serverInput.projectId),
     );
-  if (duplicate) throw new Error(`Name „${serverInput.name}“ ist bereits vergeben`);
+  if (duplicate) throw new Error(t("Name „{0}“ ist bereits vergeben", serverInput.name));
 }
 
 export const mcpServerStore = {
@@ -132,7 +133,7 @@ export const mcpServerStore = {
   save(serverInput: McpServerInput, serverId?: string): McpServer {
     validateServerInput(serverInput, serverId);
     const existingServer = serverId ? mcpServerStore.get(serverId) : undefined;
-    if (serverId && !existingServer) throw new Error("Server nicht gefunden");
+    if (serverId && !existingServer) throw new Error(t("Server nicht gefunden"));
     const storedSecrets: StoredSecrets = {
       env: mergeSecretValues(serverInput.env, existingServer?.env ?? {}),
       headers: mergeSecretValues(serverInput.headers, existingServer?.headers ?? {}),
@@ -220,7 +221,7 @@ export async function testMcpServer(server: McpServer): Promise<McpServerTestRes
   let testResult: McpServerTestResult;
   try {
     const timeout = new Promise<never>((_resolve, reject) => {
-      timeoutTimer = setTimeout(() => reject(new Error("Zeitüberschreitung (30 s)")), 30_000);
+      timeoutTimer = setTimeout(() => reject(new Error(t("Zeitüberschreitung (30 s)"))), 30_000);
     });
     await Promise.race([client.connect(transport), timeout]);
     const toolList = await Promise.race([client.listTools(), timeout]);
@@ -249,7 +250,7 @@ const skillNamePattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function skillsRootOf(scope: SkillScope, project: Project | null): string {
   if (scope === "user") return path.join(os.homedir(), ".claude", "skills");
-  if (!project) throw new Error("Projekt fehlt");
+  if (!project) throw new Error(t("Projekt fehlt"));
   return path.join(project.path, ".claude", "skills");
 }
 
@@ -308,7 +309,7 @@ function skillOptionFor(project: Project): string[] | "all" {
 }
 
 function resolveSkillFile(scope: SkillScope, project: Project | null, skillDirectory: string): string {
-  if (!/^[A-Za-z0-9._-]+$/.test(skillDirectory) || skillDirectory.startsWith(".")) throw new Error("Ungültiger Skill-Name");
+  if (!/^[A-Za-z0-9._-]+$/.test(skillDirectory) || skillDirectory.startsWith(".")) throw new Error(t("Ungültiger Skill-Name"));
   return path.join(skillsRootOf(scope, project), skillDirectory, "SKILL.md");
 }
 
@@ -327,9 +328,9 @@ export const skillStore = {
     eventHub.publish({ type: "integrations_changed" });
   },
   create(scope: SkillScope, project: Project | null, name: string, description: string, instructions: string): void {
-    if (!skillNamePattern.test(name)) throw new Error("Skill-Name: Kleinbuchstaben, Ziffern und -");
+    if (!skillNamePattern.test(name)) throw new Error(t("Skill-Name: Kleinbuchstaben, Ziffern und -"));
     const skillFile = resolveSkillFile(scope, project, name);
-    if (fs.existsSync(skillFile)) throw new Error(`Skill „${name}“ existiert bereits`);
+    if (fs.existsSync(skillFile)) throw new Error(t("Skill „{0}“ existiert bereits", name));
     const escapedDescription = description.replace(/\s+/g, " ").trim().replace(/"/g, '\\"');
     skillStore.write(scope, project, name, `---\nname: ${name}\ndescription: "${escapedDescription}"\n---\n\n${instructions.trim()}\n`);
   },

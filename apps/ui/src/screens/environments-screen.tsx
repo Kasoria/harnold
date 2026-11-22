@@ -13,6 +13,7 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
+import { t } from "@/lib/i18n";
 
 type EnvironmentsScreenProps = {
   workspaceDefaultModel: string;
@@ -29,8 +30,8 @@ type EnvironmentsScreenProps = {
 };
 
 const accountSummary = (environment: Environment) =>
-  [environment.claudeMode !== "inherit" && "eigenes Claude", environment.model && modelLabel(environment.model), ...environment.accounts.map((account) => account.label), environment.sshKeyPath && "SSH", environment.variables.length && `${environment.variables.length} Variablen`].filter(Boolean).join(" · ") ||
-  "noch keine Konten";
+  [environment.claudeMode !== "inherit" && t("eigenes Claude"), environment.model && modelLabel(environment.model), ...environment.accounts.map((account) => account.label), environment.sshKeyPath && "SSH", environment.variables.length && t("{0} Variablen", environment.variables.length)].filter(Boolean).join(" · ") ||
+  t("noch keine Konten");
 
 export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
   const [providers, setProviders] = useState<EnvironmentProvider[]>([]);
@@ -46,17 +47,17 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
   };
   return (
     <ScreenLayout
-      title="Umgebungen"
+      title={t("Umgebungen")}
       actions={
         <Button size="sm" className="gap-1.5" onClick={() => props.onSelect("new")}>
-          <Plus className="size-3.5" /> Neue Umgebung
+          <Plus className="size-3.5" /> {t("Neue Umgebung")}
         </Button>
       }
     >
       <MasterDetail
         list={
           props.environments.length === 0 ? (
-            <p className="p-3 text-[12.5px] text-muted-foreground">Noch keine Umgebungen.</p>
+            <p className="p-3 text-[12.5px] text-muted-foreground">{t("Noch keine Umgebungen.")}</p>
           ) : (
             props.environments.map((environment) => (
               <ListRow
@@ -67,7 +68,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
               >
                 <div className="truncate text-[13px] font-medium">{environment.name}</div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
-                  {environment.projectIds.length} Projekte · {accountSummary(environment)}
+                  {environment.projectIds.length} {t("Projekte ·")} {accountSummary(environment)}
                 </div>
               </ListRow>
             ))
@@ -87,7 +88,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
               onSaved={(savedEnvironment) => {
                 props.onEnvironmentsChange();
                 props.onSelect(savedEnvironment.id);
-                props.onSaved(`Umgebung „${savedEnvironment.name}“ gespeichert`);
+                props.onSaved(t("Umgebung „{0}“ gespeichert", savedEnvironment.name));
               }}
               onDeleted={() => {
                 props.onEnvironmentsChange();
@@ -98,10 +99,10 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
             />
           ) : (
             <EmptyState
-              title={props.environments.length ? "Umgebung auswählen" : "Noch keine Umgebung"}
+              title={props.environments.length ? t("Umgebung auswählen") : t("Noch keine Umgebung")}
               action={
                 <Button size="sm" onClick={() => props.onSelect("new")}>
-                  <Plus className="size-3.5" /> Neue Umgebung
+                  <Plus className="size-3.5" /> {t("Neue Umgebung")}
                 </Button>
               }
             />
@@ -125,19 +126,19 @@ function TokenField(props: { label: string; id: string; hint?: string; stored: b
           autoComplete="off"
           className="font-mono text-[12.5px]"
           value={props.value ?? ""}
-          placeholder={removed ? "wird entfernt" : props.stored ? "gespeichert – leer lassen zum Behalten" : props.placeholder}
+          placeholder={removed ? t("wird entfernt") : props.stored ? t("gespeichert – leer lassen zum Behalten") : props.placeholder}
           onChange={(changeEvent) => props.onChange(changeEvent.target.value || undefined)}
         />
         {props.stored && !removed && (
           <Button type="button" variant="ghost" size="sm" className="h-9 text-muted-foreground" onClick={() => props.onChange("")}>
-            Entfernen
+            {t("Entfernen")}
           </Button>
         )}
       </div>
       {props.check && (
         <p className={`flex animate-in items-center gap-1.5 text-[12px] fade-in duration-150 ${props.check.ok ? "text-status-running" : "text-destructive"}`}>
           {props.check.ok ? <CheckCircle2 className="size-3.5" /> : <CircleAlert className="size-3.5" />}
-          {props.check.ok ? `Verbunden als ${props.check.detail}` : props.check.detail}
+          {props.check.ok ? t("Verbunden als {0}", props.check.detail) : props.check.detail}
         </p>
       )}
     </FormField>
@@ -225,7 +226,7 @@ function EnvironmentEditor(props: {
   };
 
   const remove = async () => {
-    if (!existing || !(await confirmAction({ title: `Umgebung „${existing.name}“ löschen?`, description: "Ihre Projekte nutzen danach die Konten des Rechners. Gespeicherte Tokens gehen verloren." }))) return;
+    if (!existing || !(await confirmAction({ title: t("Umgebung „{0}“ löschen?", existing.name), description: t("Ihre Projekte nutzen danach die Konten des Rechners. Gespeicherte Tokens gehen verloren.") }))) return;
     api.deleteEnvironment(existing.id).then(props.onDeleted).catch(props.onError);
   };
 
@@ -236,11 +237,11 @@ function EnvironmentEditor(props: {
   return (
     <DetailPane
       detailKey={existing?.id ?? "new"}
-      title={existing ? existing.name : "Neue Umgebung"}
+      title={existing ? existing.name : t("Neue Umgebung")}
       actions={
         existing && (
           <>
-            <Button size="icon" variant="ghost" className="size-7" aria-label="Icon ändern" title="Icon ändern" onClick={() => props.onEditIcon(existing)}>
+            <Button size="icon" variant="ghost" className="size-7" aria-label={t("Icon ändern")} title={t("Icon ändern")} onClick={() => props.onEditIcon(existing)}>
               <ProjectAvatar name={existing.name} icon={existing.icon} className="size-5" />
             </Button>
             <Button
@@ -248,15 +249,15 @@ function EnvironmentEditor(props: {
               variant="secondary"
               className="h-7 gap-1.5 px-2 text-[12px]"
               disabled={!existing.projectIds.length}
-              title={existing.projectIds.length ? "Notizen und Dateien für alle Projekte dieser Umgebung" : "Erst ein Projekt zuordnen"}
+              title={existing.projectIds.length ? t("Notizen und Dateien für alle Projekte dieser Umgebung") : t("Erst ein Projekt zuordnen")}
               onClick={() => props.onOpenMemory(existing)}
             >
-              <BookOpen className="size-3.5" /> Kontext
+              <BookOpen className="size-3.5" /> {t("Kontext")}
             </Button>
             <Button size="sm" variant="secondary" className="h-7 gap-1.5 px-2 text-[12px]" disabled={checking || !existing.accounts.some((account) => props.providers.find((provider) => provider.id === account.provider)?.checkable)} onClick={() => void checkAccounts()}>
-              {checking ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />} Konten prüfen
+              {checking ? <Loader2 className="size-3.5 animate-spin" /> : <ShieldCheck className="size-3.5" />} {t("Konten prüfen")}
             </Button>
-            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={remove} aria-label="Löschen">
+            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={remove} aria-label={t("Löschen")}>
               <Trash2 className="size-3.5" />
             </Button>
           </>
@@ -270,8 +271,8 @@ function EnvironmentEditor(props: {
           void save();
         }}
       >
-        <FormField label="Name" htmlFor="environment-name">
-          <Input id="environment-name" autoFocus={!existing} value={draft.name} placeholder="z. B. Kasoria" onChange={(changeEvent) => update({ name: changeEvent.target.value })} />
+        <FormField label={t("Name")} htmlFor="environment-name">
+          <Input id="environment-name" autoFocus={!existing} value={draft.name} placeholder={t("z. B. Kasoria")} onChange={(changeEvent) => update({ name: changeEvent.target.value })} />
         </FormField>
 
         <AiSection
@@ -296,22 +297,22 @@ function EnvironmentEditor(props: {
         />
 
         <section className="grid gap-4">
-          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Git</h3>
+          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">{t("Git")}</h3>
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Name" htmlFor="environment-git-name">
-              <Input id="environment-git-name" value={draft.gitName} placeholder="Commit-Autor" onChange={(changeEvent) => update({ gitName: changeEvent.target.value })} />
+            <FormField label={t("Name")} htmlFor="environment-git-name">
+              <Input id="environment-git-name" value={draft.gitName} placeholder={t("Commit-Autor")} onChange={(changeEvent) => update({ gitName: changeEvent.target.value })} />
             </FormField>
-            <FormField label="E-Mail" htmlFor="environment-git-email">
+            <FormField label={t("E-Mail")} htmlFor="environment-git-email">
               <Input id="environment-git-email" value={draft.gitEmail} placeholder="name@firma.de" onChange={(changeEvent) => update({ gitEmail: changeEvent.target.value })} />
             </FormField>
           </div>
-          <FormField label="SSH-Key" htmlFor="environment-ssh">
+          <FormField label={t("SSH-Key")} htmlFor="environment-ssh">
             <Input id="environment-ssh" className="font-mono text-[12.5px]" value={draft.sshKeyPath} placeholder="~/.ssh/id_ed25519" onChange={(changeEvent) => update({ sshKeyPath: changeEvent.target.value })} />
           </FormField>
         </section>
 
         <section className="grid gap-2">
-          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Variablen</h3>
+          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">{t("Variablen")}</h3>
           {draft.variables.map((variable, variableIndex) => (
             <div key={variableIndex} className="flex animate-in gap-1.5 fade-in duration-150">
               <Input className="w-2/5 font-mono text-[12.5px]" placeholder="SUPABASE_ACCESS_TOKEN" value={variable.key} onChange={(changeEvent) => updateVariable(variableIndex, { key: changeEvent.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} />
@@ -319,7 +320,7 @@ function EnvironmentEditor(props: {
                 type={variable.secret ? "password" : "text"}
                 autoComplete="off"
                 className="flex-1 font-mono text-[12.5px]"
-                placeholder={variable.secret && storedSecretKeys.has(variable.key) ? "gespeichert" : "Wert"}
+                placeholder={variable.secret && storedSecretKeys.has(variable.key) ? "gespeichert" : t("Wert")}
                 value={variable.value}
                 onChange={(changeEvent) => updateVariable(variableIndex, { value: changeEvent.target.value })}
               />
@@ -328,24 +329,24 @@ function EnvironmentEditor(props: {
                 variant="ghost"
                 size="icon"
                 className="size-9 shrink-0 text-muted-foreground"
-                title={variable.secret ? "Geheim (verschlüsselt)" : "Sichtbar"}
+                title={variable.secret ? t("Geheim (verschlüsselt)") : t("Sichtbar")}
                 onClick={() => updateVariable(variableIndex, { secret: !variable.secret })}
-                aria-label="Geheim umschalten"
+                aria-label={t("Geheim umschalten")}
               >
                 {variable.secret ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
               </Button>
-              <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => update({ variables: draft.variables.filter((_, index) => index !== variableIndex) })} aria-label="Entfernen">
+              <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => update({ variables: draft.variables.filter((_, index) => index !== variableIndex) })} aria-label={t("Entfernen")}>
                 <X className="size-3.5" />
               </Button>
             </div>
           ))}
           <Button type="button" variant="ghost" size="sm" className="h-7 justify-self-start gap-1.5 px-2 text-[12px] text-muted-foreground" onClick={() => update({ variables: [...draft.variables, { key: "", value: "", secret: true }] })}>
-            <Plus className="size-3.5" /> Variable
+            <Plus className="size-3.5" /> {t("Variable")}
           </Button>
         </section>
 
         <section className="grid gap-2">
-          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Projekte</h3>
+          <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">{t("Projekte")}</h3>
           <div className="flex flex-wrap items-center gap-1.5">
             {draft.projectIds.map((projectId) => {
               const project = props.projects.find((candidate) => candidate.id === projectId);
@@ -354,7 +355,7 @@ function EnvironmentEditor(props: {
                 <span key={projectId} className="inline-flex animate-in items-center gap-1.5 rounded-md border bg-background py-0.5 pr-1 pl-1.5 text-[12px] fade-in duration-150">
                   <ProjectAvatar name={project.name} icon={project.icon} className="size-4 text-[9px]" />
                   <span className="max-w-56 truncate">{project.name}</span>
-                  <button type="button" className="rounded text-muted-foreground transition-colors hover:text-foreground" onClick={() => toggleProject(projectId)} aria-label="Entfernen">
+                  <button type="button" className="rounded text-muted-foreground transition-colors hover:text-foreground" onClick={() => toggleProject(projectId)} aria-label={t("Entfernen")}>
                     <X className="size-3" />
                   </button>
                 </span>
@@ -363,13 +364,13 @@ function EnvironmentEditor(props: {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" size="sm" variant="ghost" className="h-6 gap-1 px-1.5 text-[12px] text-muted-foreground">
-                  <Plus className="size-3.5" /> Projekt zuordnen
+                  <Plus className="size-3.5" /> {t("Projekt zuordnen")}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
-                <DropdownMenuLabel className="text-[11.5px] font-normal text-muted-foreground">Ein Projekt gehört zu genau einer Umgebung. Rechts: aktuelle.</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-[11.5px] font-normal text-muted-foreground">{t("Ein Projekt gehört zu genau einer Umgebung. Rechts: aktuelle.")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {props.projects.length === 0 && <p className="px-2 py-1.5 text-[12.5px] text-muted-foreground">Keine Projekte.</p>}
+                {props.projects.length === 0 && <p className="px-2 py-1.5 text-[12.5px] text-muted-foreground">{t("Keine Projekte.")}</p>}
                 {props.projects.map((project) => (
                   <DropdownMenuCheckboxItem
                     key={project.id}
@@ -389,11 +390,11 @@ function EnvironmentEditor(props: {
 
         <div className="flex gap-2 border-t pt-4">
           <Button type="submit" size="sm" disabled={!draft.name.trim() || saving}>
-            {saving && <Loader2 className="size-3.5 animate-spin" />} {existing ? "Speichern" : "Anlegen"}
+            {saving && <Loader2 className="size-3.5 animate-spin" />} {existing ? t("Speichern") : t("Anlegen")}
           </Button>
           {!existing && (
             <Button type="button" size="sm" variant="ghost" onClick={props.onCancel}>
-              Abbrechen
+              {t("Abbrechen")}
             </Button>
           )}
         </div>
@@ -424,13 +425,13 @@ function AiSection(props: {
   return (
     <section className="grid gap-4">
       <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">KI</h3>
-      <FormField label="Claude-Zugang">
+      <FormField label={t("Claude-Zugang")}>
         <SegmentedControl
           className="w-96"
           options={[
-            { value: "inherit", label: "Wie Einstellungen" },
-            { value: "subscription", label: "Claude-Konto" },
-            { value: "apiKey", label: "API-Key" },
+            { value: "inherit", label: t("Wie Einstellungen") },
+            { value: "subscription", label: t("Claude-Konto") },
+            { value: "apiKey", label: t("API-Key") },
           ]}
           value={props.claudeMode}
           onValueChange={(claudeMode) => props.onChange({ claudeMode })}
@@ -445,12 +446,12 @@ function AiSection(props: {
             <div className="h-16" />
           )
         ) : (
-          <p className="text-[12px] text-muted-foreground">Nach dem Anlegen anmelden.</p>
+          <p className="text-[12px] text-muted-foreground">{t("Nach dem Anlegen anmelden.")}</p>
         ))}
 
       {props.claudeMode === "apiKey" && (
         <TokenField
-          label="Anthropic API-Key"
+          label={t("Anthropic API-Key")}
           id="environment-claude-key"
           stored={props.environment?.claudeApiKeySet ?? false}
           value={props.claudeApiKey}
@@ -459,7 +460,7 @@ function AiSection(props: {
         />
       )}
 
-      <FormField label="Modell">
+      <FormField label={t("Modell")}>
         <ModelSelect value={props.model} onChange={(model) => props.onChange({ model })} inherited={{ model: props.workspaceDefaultModel, source: "Einstellungen" }} />
       </FormField>
     </section>
@@ -500,17 +501,17 @@ function AccountsSection(props: {
   return (
     <section className="grid gap-3">
       <div className="flex items-center gap-2">
-        <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">Konten</h3>
+        <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">{t("Konten")}</h3>
         <div className="ml-auto flex items-center gap-1">
           {props.onImport && (
             <Button type="button" size="sm" variant="ghost" className="h-6 gap-1 px-1.5 text-[12px] text-muted-foreground" disabled={props.importing} onClick={props.onImport}>
-              {props.importing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} Vom Rechner übernehmen
+              {props.importing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} {t("Vom Rechner übernehmen")}
             </Button>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" size="sm" variant="ghost" className="h-6 gap-1 px-1.5 text-[12px] text-muted-foreground" disabled={availableProviders.length === 0}>
-                <Plus className="size-3.5" /> Konto
+                <Plus className="size-3.5" /> {t("Konto")}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-96 w-52 overflow-y-auto">
@@ -526,7 +527,7 @@ function AccountsSection(props: {
 
       {props.importResult && (
         <p className="animate-in text-[12px] text-muted-foreground fade-in duration-150">
-          Übernommen: {props.importResult.found.join(", ") || "nichts gefunden"}
+          {t("Übernommen:")} {props.importResult.found.join(", ") || t("nichts gefunden")}
         </p>
       )}
 
@@ -548,7 +549,7 @@ function AccountsSection(props: {
                 type="button"
                 className="ml-auto rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => props.onChange(props.accounts.filter((candidate) => candidate.provider !== account.provider))}
-                aria-label="Konto entfernen"
+                aria-label={t("Konto entfernen")}
               >
                 <X className="size-3.5" />
               </button>

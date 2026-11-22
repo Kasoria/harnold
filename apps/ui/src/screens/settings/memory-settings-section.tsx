@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FormField } from "@/components/form-field";
+import { t } from "@/lib/i18n";
 
 const embeddingProviderLabels: Record<EmbeddingProvider, string> = {
-  off: "Aus (nur Volltext)",
+  off: t("Aus (nur Volltext)"),
   openai: "OpenAI",
-  ollama: "Ollama (lokal)",
+  ollama: t("Ollama (lokal)"),
 };
 
 const defaultEmbeddingModels: Partial<Record<EmbeddingProvider, string>> = { openai: "text-embedding-3-small", ollama: "nomic-embed-text" };
@@ -52,11 +53,11 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
 
   return (
     <div className="grid gap-4">
-      <FormField label="Workspace-Memory-Ordner">
+      <FormField label={t("Workspace-Memory-Ordner")}>
         <Input value={settingsDraft.workspaceDirectory || settingsView.resolvedWorkspaceDirectory} onChange={(changeEvent) => updateDraft({ workspaceDirectory: changeEvent.target.value })} />
       </FormField>
 
-      <FormField label="Semantische Suche">
+      <FormField label={t("Semantische Suche")}>
         <Select value={settingsDraft.embeddingProvider} onValueChange={(value) => updateDraft({ embeddingProvider: value as EmbeddingProvider, embeddingModel: defaultEmbeddingModels[value as EmbeddingProvider] ?? "" })}>
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -72,7 +73,7 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
       </FormField>
 
       {settingsDraft.embeddingProvider !== "off" && (
-        <FormField label="Modell">
+        <FormField label={t("Modell")}>
           <Input
             value={settingsDraft.embeddingModel}
             onChange={(changeEvent) => updateDraft({ embeddingModel: changeEvent.target.value })}
@@ -80,24 +81,24 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
         </FormField>
       )}
       {settingsDraft.embeddingProvider === "openai" && (
-        <FormField label="OpenAI API-Key" hint={settingsView.openaiKeySet ? undefined : "Leer = OpenAI-Key aus Voice"}>
+        <FormField label={t("OpenAI API-Key")} hint={settingsView.openaiKeySet ? undefined : t("Leer = OpenAI-Key aus Voice")}>
           <Input
             type="password"
             value={openaiApiKey}
-            placeholder={settingsView.openaiKeySet ? "gespeichert – leer lassen zum Behalten" : ""}
+            placeholder={settingsView.openaiKeySet ? t("gespeichert – leer lassen zum Behalten") : ""}
             onChange={(changeEvent) => setOpenaiApiKey(changeEvent.target.value)}
           />
         </FormField>
       )}
       {settingsDraft.embeddingProvider === "ollama" && (
-        <FormField label="Ollama-Adresse">
+        <FormField label={t("Ollama-Adresse")}>
           <Input value={settingsDraft.ollamaUrl} onChange={(changeEvent) => updateDraft({ ollamaUrl: changeEvent.target.value })} />
         </FormField>
       )}
 
       <div className="flex gap-2">
         <Button size="sm" disabled={saving} onClick={() => void save()}>
-          Speichern
+          {t("Speichern")}
         </Button>
       </div>
     </div>

@@ -12,48 +12,49 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { FormField, permissionModeOptions } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
+import { t } from "@/lib/i18n";
 
 type FieldDefinition = { key: string; label: string; placeholder?: string; secret?: boolean };
 
 export const channelTypeDefinitions: Record<ChannelType, { label: string; hint: string; fields: FieldDefinition[] }> = {
   telegram: {
-    label: "Telegram",
-    hint: "Bot bei @BotFather anlegen und Token einfügen.",
-    fields: [{ key: "botToken", label: "Bot-Token", placeholder: "123456:ABC…", secret: true }],
+    label: t("Telegram"),
+    hint: t("Bot bei @BotFather anlegen und Token einfügen."),
+    fields: [{ key: "botToken", label: t("Bot-Token"), placeholder: "123456:ABC…", secret: true }],
   },
   discord: {
-    label: "Discord",
-    hint: "Developer Portal: App + Bot anlegen, „Message Content Intent“ aktivieren.",
-    fields: [{ key: "botToken", label: "Bot-Token", secret: true }],
+    label: t("Discord"),
+    hint: t("Developer Portal: App + Bot anlegen, „Message Content Intent“ aktivieren."),
+    fields: [{ key: "botToken", label: t("Bot-Token"), secret: true }],
   },
   slack: {
-    label: "Slack",
-    hint: "Slack-App mit Socket Mode. Scopes: chat:write, app_mentions:read, im:history, files:read.",
+    label: t("Slack"),
+    hint: t("Slack-App mit Socket Mode. Scopes: chat:write, app_mentions:read, im:history, files:read."),
     fields: [
-      { key: "botToken", label: "Bot-Token", placeholder: "xoxb-…", secret: true },
-      { key: "appToken", label: "App-Token", placeholder: "xapp-…", secret: true },
+      { key: "botToken", label: t("Bot-Token"), placeholder: "xoxb-…", secret: true },
+      { key: "appToken", label: t("App-Token"), placeholder: "xapp-…", secret: true },
     ],
   },
   email: {
-    label: "E-Mail",
-    hint: "IMAP zum Lesen, SMTP zum Antworten.",
+    label: t("E-Mail"),
+    hint: t("IMAP zum Lesen, SMTP zum Antworten."),
     fields: [
-      { key: "imapHost", label: "IMAP-Server", placeholder: "imap.example.com" },
-      { key: "imapPort", label: "IMAP-Port", placeholder: "993" },
-      { key: "smtpHost", label: "SMTP-Server", placeholder: "smtp.example.com" },
-      { key: "smtpPort", label: "SMTP-Port", placeholder: "465" },
-      { key: "username", label: "Benutzername" },
-      { key: "fromAddress", label: "Absender-Adresse", placeholder: "agent@example.com" },
-      { key: "password", label: "Passwort", secret: true },
+      { key: "imapHost", label: t("IMAP-Server"), placeholder: "imap.example.com" },
+      { key: "imapPort", label: t("IMAP-Port"), placeholder: "993" },
+      { key: "smtpHost", label: t("SMTP-Server"), placeholder: "smtp.example.com" },
+      { key: "smtpPort", label: t("SMTP-Port"), placeholder: "465" },
+      { key: "username", label: t("Benutzername") },
+      { key: "fromAddress", label: t("Absender-Adresse"), placeholder: "agent@example.com" },
+      { key: "password", label: t("Passwort"), secret: true },
     ],
   },
 };
 
 const statusLabels: Record<Channel["status"]["state"], string> = {
-  connected: "Verbunden",
-  connecting: "Verbindet …",
-  error: "Fehler",
-  stopped: "Aus",
+  connected: t("Verbunden"),
+  connecting: t("Verbindet …"),
+  error: t("Fehler"),
+  stopped: t("Aus"),
 };
 
 export function channelStatusDot(channel: Channel): SessionStatus {
@@ -64,7 +65,7 @@ export function channelStatusDot(channel: Channel): SessionStatus {
 }
 
 const workspaceScopeValue = "__workspace__";
-const workspaceScopeLabel = "Ganz Harnold (alle Projekte)";
+const workspaceScopeLabel = t("Ganz Harnold (alle Projekte)");
 const scopeLabelOf = (channel: Channel, projects: Project[]) =>
   channel.scope === "workspace" ? workspaceScopeLabel : (projects.find((project) => project.id === channel.projectId)?.name ?? "—");
 
@@ -107,7 +108,7 @@ function ChannelEditor(props: {
   return (
     <div className="grid gap-4 py-3">
       {!props.channel && (
-        <FormField label="Typ">
+        <FormField label={t("Typ")}>
           <Select
             value={channelInput.type}
             onValueChange={(value) =>
@@ -129,16 +130,16 @@ function ChannelEditor(props: {
       )}
       <p className="-mt-1 text-[12px] leading-snug text-muted-foreground">{typeDefinition.hint}</p>
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Name">
+        <FormField label={t("Name")}>
           <Input value={channelInput.name} onChange={(event) => updateInput({ name: event.target.value })} />
         </FormField>
-        <FormField label="Zugriff">
+        <FormField label={t("Zugriff")}>
           <Select
             value={channelInput.scope === "workspace" ? workspaceScopeValue : channelInput.projectId}
             onValueChange={(value) => updateInput(value === workspaceScopeValue ? { scope: "workspace", projectId: "" } : { scope: "project", projectId: value })}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Projekt wählen" />
+              <SelectValue placeholder={t("Projekt wählen")} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={workspaceScopeValue}>{workspaceScopeLabel}</SelectItem>
@@ -158,7 +159,7 @@ function ChannelEditor(props: {
               <Input
                 type={field.secret ? "password" : "text"}
                 autoComplete="off"
-                placeholder={field.secret && props.channel?.secretsSet[field.key] ? "•••••• (gespeichert)" : field.placeholder}
+                placeholder={field.secret && props.channel?.secretsSet[field.key] ? t("•••••• (gespeichert)") : field.placeholder}
                 value={field.secret ? (channelInput.secrets[field.key] ?? "") : (channelInput.settings[field.key] ?? "")}
                 onChange={(event) =>
                   field.secret
@@ -171,12 +172,12 @@ function ChannelEditor(props: {
         ))}
       </div>
       <FormField
-        label="Erlaubte Absender"
-        hint={channelInput.type === "email" ? undefined : "Unbekannte Absender erhalten ihre ID als Antwort."}
+        label={t("Erlaubte Absender")}
+        hint={channelInput.type === "email" ? undefined : t("Unbekannte Absender erhalten ihre ID als Antwort.")}
       >
         <Textarea rows={3} className="font-mono text-[12.5px]" value={allowedSendersText} onChange={(event) => setAllowedSendersText(event.target.value)} />
       </FormField>
-      <FormField label="Rechte des Agents">
+      <FormField label={t("Rechte des Agents")}>
         <Select value={channelInput.permissionMode} onValueChange={(value) => updateInput({ permissionMode: value as ChannelInput["permissionMode"] })}>
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -191,25 +192,25 @@ function ChannelEditor(props: {
         </Select>
       </FormField>
 
-      <FormField label="Sprachantworten">
+      <FormField label={t("Sprachantworten")}>
         <Select value={channelInput.voiceReplies} onValueChange={(value) => updateInput({ voiceReplies: value as ChannelInput["voiceReplies"] })}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="voice">Auf Sprachnachrichten per Sprache antworten</SelectItem>
-            <SelectItem value="always">Immer zusätzlich per Sprache</SelectItem>
-            <SelectItem value="off">Nur Text</SelectItem>
+            <SelectItem value="voice">{t("Auf Sprachnachrichten per Sprache antworten")}</SelectItem>
+            <SelectItem value="always">{t("Immer zusätzlich per Sprache")}</SelectItem>
+            <SelectItem value="off">{t("Nur Text")}</SelectItem>
           </SelectContent>
         </Select>
       </FormField>
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={saving || !channelInput.name.trim() || (channelInput.scope === "project" && !channelInput.projectId) || missingSecret} onClick={save}>
-          {props.channel ? "Speichern & neu verbinden" : "Verbinden"}
+          {props.channel ? t("Speichern & neu verbinden") : t("Verbinden")}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => props.onDone(null)}>
-          Abbrechen
+          {t("Abbrechen")}
         </Button>
         {props.channel && (
           <Button
@@ -217,12 +218,12 @@ function ChannelEditor(props: {
             variant="ghost"
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={async () => {
-              if (!(await confirmAction({ title: `Channel „${props.channel!.name}“ entfernen?`, confirmLabel: "Entfernen" }))) return;
+              if (!(await confirmAction({ title: t("Channel „{0}“ entfernen?", props.channel!.name), confirmLabel: t("Entfernen") }))) return;
               await api.deleteChannel(props.channel!.id).catch(props.onError);
               props.onDone(null);
             }}
           >
-            <Trash2 className="size-3.5" /> Entfernen
+            <Trash2 className="size-3.5" /> {t("Entfernen")}
           </Button>
         )}
       </div>
@@ -250,7 +251,7 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
 
   const detail =
     props.selectedChannelId === "new" ? (
-      <DetailPane detailKey="new" title="Channel hinzufügen" subtitle="Mit dem Agent über Telegram, Discord, Slack oder E-Mail sprechen.">
+      <DetailPane detailKey="new" title={t("Channel hinzufügen")} subtitle={t("Mit dem Agent über Telegram, Discord, Slack oder E-Mail sprechen.")}>
         <ChannelEditor channel={null} projects={props.projects} defaultProjectId={defaultProjectId} onDone={(savedId) => props.onSelectChannel(savedId)} onError={props.onError} />
       </DetailPane>
     ) : selectedChannel ? (
@@ -276,11 +277,11 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
       </DetailPane>
     ) : (
       <EmptyState
-        title={props.channels.length ? "Channel wählen" : "Noch keine Channels"}
-        description="Telegram, Discord, Slack oder E-Mail."
+        title={props.channels.length ? t("Channel wählen") : t("Noch keine Channels")}
+        description={t("Telegram, Discord, Slack oder E-Mail.")}
         action={
           <Button size="sm" disabled={!props.projects.length} onClick={() => props.onSelectChannel("new")}>
-            <Plus className="size-3.5" /> Channel hinzufügen
+            <Plus className="size-3.5" /> {t("Channel hinzufügen")}
           </Button>
         }
       />
@@ -288,24 +289,24 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
 
   return (
     <ScreenLayout
-      title="Channels"
+      title={t("Channels")}
       actions={
         <Button size="sm" variant="secondary" disabled={!props.projects.length} onClick={() => props.onSelectChannel("new")}>
-          <Plus className="size-3.5" /> Channel hinzufügen
+          <Plus className="size-3.5" /> {t("Channel hinzufügen")}
         </Button>
       }
     >
       <MasterDetail
         list={
           props.channels.length === 0 ? (
-            <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine Channels.</p>
+            <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Noch keine Channels.")}</p>
           ) : (
             props.channels.map((channel) => (
               <ListRow
                 key={channel.id}
                 selected={channel.id === props.selectedChannelId}
                 onSelect={() => props.onSelectChannel(channel.id)}
-                leading={<Switch checked={channel.enabled} onCheckedChange={(enabled) => void toggleEnabled(channel, enabled)} aria-label="Aktiv" />}
+                leading={<Switch checked={channel.enabled} onCheckedChange={(enabled) => void toggleEnabled(channel, enabled)} aria-label={t("Aktiv")} />}
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[13px] font-medium">{channel.name}</span>

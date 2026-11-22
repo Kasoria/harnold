@@ -1,11 +1,12 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 export const agentModels = [
-  { value: "claude-fable-5-2", label: "Fable 5.2" },
-  { value: "claude-opus-5-5", label: "Opus 5.5" },
-  { value: "claude-sonnet-5-5", label: "Sonnet 5.5" },
-  { value: "claude-haiku-5-5", label: "Haiku 5.5" },
+  { value: "claude-fable-5-2", label: t("Fable 5.2") },
+  { value: "claude-opus-5-5", label: t("Opus 5.5") },
+  { value: "claude-sonnet-5-5", label: t("Sonnet 5.5") },
+  { value: "claude-haiku-5-5", label: t("Haiku 5.5") },
 ] as const;
 
 export const modelLabel = (model: string) => agentModels.find((agentModel) => agentModel.value === model)?.label ?? model;

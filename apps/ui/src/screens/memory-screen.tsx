@@ -13,6 +13,7 @@ import { EmptyState, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
+import { t } from "@/lib/i18n";
 
 /** `{ scope, path }` of the open note, "new" for a draft, null for none. */
 export type MemorySelection = { scope: MemoryScope; path: string } | "new" | null;
@@ -34,7 +35,7 @@ type MemoryScreenProps = {
 type ScopeFilter = "all" | MemoryScope;
 type EditorState = { noteRef: MemoryNoteRef | null; draftScope: MemoryScope; draftPath: string; content: string; savedContent: string };
 
-const scopeLabels: Record<MemoryScope, string> = { workspace: "Workspace", environment: "Umgebung", project: "Projekt" };
+const scopeLabels: Record<MemoryScope, string> = { workspace: t("Workspace"), environment: t("Umgebung"), project: t("Projekt") };
 const scopeBadgeClassNames: Record<MemoryScope, string> = {
   project: "bg-primary/10 text-foreground",
   environment: "bg-primary/10 text-primary",
@@ -81,7 +82,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const [saving, setSaving] = useState(false);
   const searchRequestRef = useRef(0);
   const environmentName = props.environment?.name;
-  const scopeLabelOf = (scope: MemoryScope) => (scope === "environment" && environmentName ? `Umgebung „${environmentName}“` : scopeLabels[scope]);
+  const scopeLabelOf = (scope: MemoryScope) => (scope === "environment" && environmentName ? t("Umgebung „{0}“", environmentName) : scopeLabels[scope]);
   const [memoryFileList, setMemoryFileList] = useState<MemoryFile[]>([]);
   const [openedFile, setOpenedFile] = useState<MemoryFile | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -179,13 +180,13 @@ export function MemoryScreen(props: MemoryScreenProps) {
   };
 
   const openFile = async (memoryFile: MemoryFile) => {
-    if (dirty && !(await confirmAction({ title: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen" }))) return;
+    if (dirty && !(await confirmAction({ title: t("Ungespeicherte Änderungen verwerfen?"), confirmLabel: t("Verwerfen") }))) return;
     if (props.selection !== null) props.onSelect(null);
     setOpenedFile(memoryFile);
   };
 
   const deleteFile = async (memoryFile: MemoryFile) => {
-    if (!(await confirmAction({ title: `„${memoryFile.name}“ löschen?`, description: "Die Datei wird entfernt." }))) return;
+    if (!(await confirmAction({ title: t("„{0}“ löschen?", memoryFile.name), description: t("Die Datei wird entfernt.") }))) return;
     try {
       await api.deleteMemoryFile(memoryFile);
       setOpenedFile(null);
@@ -199,7 +200,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const dirty = editor ? editor.content !== editor.savedContent : false;
 
   const selectNote = async (selection: MemorySelection) => {
-    if (dirty && !(await confirmAction({ title: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen" }))) return;
+    if (dirty && !(await confirmAction({ title: t("Ungespeicherte Änderungen verwerfen?"), confirmLabel: t("Verwerfen") }))) return;
     props.onSelect(selection);
   };
 
@@ -224,7 +225,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   };
 
   const deleteNote = async (noteRef: MemoryNoteRef) => {
-    if (!(await confirmAction({ title: `„${noteRef.path}“ löschen?`, description: "Die Datei wird entfernt." }))) return;
+    if (!(await confirmAction({ title: t("„{0}“ löschen?", noteRef.path), description: t("Die Datei wird entfernt.") }))) return;
     try {
       await api.deleteMemoryNote(noteRef);
       props.onSelect(null);
@@ -235,9 +236,9 @@ export function MemoryScreen(props: MemoryScreenProps) {
 
   /** HARNOLD.md per level: permanent instructions, loaded automatically into every turn. */
   const instructionFiles = [
-    props.project && { scope: "project" as const, label: "Projekt-Anweisungen (HARNOLD.md)" },
-    props.project && props.environment && { scope: "environment" as const, label: `Umgebungs-Anweisungen „${props.environment.name}“` },
-    { scope: "workspace" as const, label: "Workspace-Anweisungen (HARNOLD.md)" },
+    props.project && { scope: "project" as const, label: t("Projekt-Anweisungen (HARNOLD.md)") },
+    props.project && props.environment && { scope: "environment" as const, label: t("Umgebungs-Anweisungen „{0}“", props.environment.name) },
+    { scope: "workspace" as const, label: t("Workspace-Anweisungen (HARNOLD.md)") },
   ].filter(Boolean) as { scope: MemoryScope; label: string }[];
 
   const list = (
@@ -245,14 +246,14 @@ export function MemoryScreen(props: MemoryScreenProps) {
       <div className="grid gap-2 border-b p-2">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input className="h-8 pl-8" placeholder="Suchen …" value={searchText} onChange={(changeEvent) => setSearchText(changeEvent.target.value)} />
+          <Input className="h-8 pl-8" placeholder={t("Suchen …")} value={searchText} onChange={(changeEvent) => setSearchText(changeEvent.target.value)} />
         </div>
         <SegmentedControl
           options={[
-            { value: "all", label: "Alle" },
-            { value: "project", label: "Projekt" },
-            ...(props.environment ? [{ value: "environment" as const, label: "Umgebung" }] : []),
-            { value: "workspace", label: "Workspace" },
+            { value: "all", label: t("Alle") },
+            { value: "project", label: t("Projekt") },
+            ...(props.environment ? [{ value: "environment" as const, label: t("Umgebung") }] : []),
+            { value: "workspace", label: t("Workspace") },
           ]}
           value={scopeFilter}
           onValueChange={setScopeFilter}
@@ -272,7 +273,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
           </button>
         ))}
         {visibleNotes.length === 0 && (
-          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{searchHits ? "Keine Treffer." : "Noch keine Notizen."}</p>
+          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{searchHits ? t("Keine Treffer.") : t("Noch keine Notizen.")}</p>
         )}
         {visibleNotes
           .filter((noteSummary) => noteSummary.path !== "HARNOLD.md")
@@ -301,7 +302,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
           })}
         {visibleFiles.length > 0 && (
           <>
-            <p className="px-2.5 pt-3 pb-1 text-[11px] font-medium text-muted-foreground">Dateien</p>
+            <p className="px-2.5 pt-3 pb-1 text-[11px] font-medium text-muted-foreground">{t("Dateien")}</p>
             {visibleFiles.map((memoryFile) => {
               const TypeIcon = fileIconFor(memoryFile.mimeType, memoryFile.name);
               const selected = openedFile !== null && openedFile.scope === memoryFile.scope && openedFile.path === memoryFile.path;
@@ -336,7 +337,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
       <div className="flex items-center gap-2 border-b px-4 py-2">
         <span className="truncate font-mono text-[12.5px]">{openedFile.path}</span>
         <ScopeBadge scope={openedFile.scope} environmentName={environmentName} />
-        <a href={api.memoryFileUrl(openedFile)} target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground hover:text-foreground" aria-label="In neuem Tab öffnen">
+        <a href={api.memoryFileUrl(openedFile)} target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground hover:text-foreground" aria-label={t("In neuem Tab öffnen")}>
           <ExternalLink className="size-3.5" />
         </a>
       </div>
@@ -347,12 +348,12 @@ export function MemoryScreen(props: MemoryScreenProps) {
           <iframe src={api.memoryFileUrl(openedFile)} title={openedFile.name} className="size-full border-0 bg-background" />
         ) : (
           <EmptyState
-            title="Keine Vorschau"
-            description="Der Agent liest die Datei bei Bedarf mit seinen Tools."
+            title={t("Keine Vorschau")}
+            description={t("Der Agent liest die Datei bei Bedarf mit seinen Tools.")}
             action={
               <Button size="sm" variant="secondary" asChild>
                 <a href={api.memoryFileUrl(openedFile)} target="_blank" rel="noreferrer">
-                  Öffnen
+                  {t("Öffnen")}
                 </a>
               </Button>
             }
@@ -360,9 +361,9 @@ export function MemoryScreen(props: MemoryScreenProps) {
         )}
       </div>
       <div className="flex items-center gap-2 border-t px-4 py-2.5">
-        <span className="text-[11.5px] text-muted-foreground">Im Kontext: der Agent sieht die Datei und öffnet sie, wenn sie relevant ist.</span>
+        <span className="text-[11.5px] text-muted-foreground">{t("Im Kontext: der Agent sieht die Datei und öffnet sie, wenn sie relevant ist.")}</span>
         <Button size="sm" variant="ghost" className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => void deleteFile(openedFile)}>
-          <Trash2 className="size-3.5" /> Löschen
+          <Trash2 className="size-3.5" /> {t("Löschen")}
         </Button>
       </div>
     </div>
@@ -372,10 +373,10 @@ export function MemoryScreen(props: MemoryScreenProps) {
     fileDetail
   ) : !editor ? (
     <EmptyState
-      title="Notiz wählen"
+      title={t("Notiz wählen")}
       action={
         <Button size="sm" onClick={() => selectNote("new")}>
-          <Plus className="size-3.5" /> Neue Notiz
+          <Plus className="size-3.5" /> {t("Neue Notiz")}
         </Button>
       }
     />
@@ -391,7 +392,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
           <>
             <Input
               className="h-8 flex-1 font-mono text-[12.5px]"
-              placeholder="pfad/zur-notiz.md (leer = aus Titel)"
+              placeholder={t("pfad/zur-notiz.md (leer = aus Titel)")}
               value={editor.draftPath}
               onChange={(changeEvent) => updateEditor({ draftPath: changeEvent.target.value })}
             />
@@ -400,9 +401,9 @@ export function MemoryScreen(props: MemoryScreenProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {projectId && <SelectItem value="project">Projekt</SelectItem>}
-                {projectId && props.environment && <SelectItem value="environment">Umgebung</SelectItem>}
-                <SelectItem value="workspace">Workspace</SelectItem>
+                {projectId && <SelectItem value="project">{t("Projekt")}</SelectItem>}
+                {projectId && props.environment && <SelectItem value="environment">{t("Umgebung")}</SelectItem>}
+                <SelectItem value="workspace">{t("Workspace")}</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -410,8 +411,8 @@ export function MemoryScreen(props: MemoryScreenProps) {
         <SegmentedControl
           className="ml-auto w-44 shrink-0"
           options={[
-            { value: "edit", label: "Bearbeiten" },
-            { value: "preview", label: "Vorschau" },
+            { value: "edit", label: t("Bearbeiten") },
+            { value: "preview", label: t("Vorschau") },
           ]}
           value={editorMode}
           onValueChange={setEditorMode}
@@ -443,12 +444,12 @@ export function MemoryScreen(props: MemoryScreenProps) {
 
       <div className="flex items-center gap-2 border-t px-4 py-2.5">
         <Button size="sm" disabled={saving || !dirty} onClick={() => void saveNote()}>
-          Speichern
+          {t("Speichern")}
         </Button>
-        <span className="text-[11.5px] text-muted-foreground">{dirty ? "Ungespeichert · ⌘S" : editor.noteRef ? "Gespeichert" : ""}</span>
+        <span className="text-[11.5px] text-muted-foreground">{dirty ? t("Ungespeichert · ⌘S") : editor.noteRef ? t("Gespeichert") : ""}</span>
         {editor.noteRef && (
           <Button size="sm" variant="ghost" className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => editor.noteRef && void deleteNote(editor.noteRef)}>
-            <Trash2 className="size-3.5" /> Löschen
+            <Trash2 className="size-3.5" /> {t("Löschen")}
           </Button>
         )}
       </div>
@@ -457,12 +458,12 @@ export function MemoryScreen(props: MemoryScreenProps) {
 
   return (
     <ScreenLayout
-      title="Memory"
+      title={t("Memory")}
       tabs={
         props.projects.length > 0 && (
           <Select value={props.project?.id ?? ""} onValueChange={props.onProjectChange}>
-            <SelectTrigger size="sm" className="h-7 min-w-40 text-[12.5px]" aria-label="Projekt">
-              <SelectValue placeholder="Projekt wählen" />
+            <SelectTrigger size="sm" className="h-7 min-w-40 text-[12.5px]" aria-label={t("Projekt")}>
+              <SelectValue placeholder={t("Projekt wählen")} />
             </SelectTrigger>
             <SelectContent>
               {props.projects.map((project) => (
@@ -478,7 +479,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
       actions={
         <>
           <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={props.onOpenSettings}>
-            <Settings2 className="size-3.5" /> Einstellungen
+            <Settings2 className="size-3.5" /> {t("Einstellungen")}
           </Button>
           <input
             ref={fileInputRef}
@@ -495,13 +496,13 @@ export function MemoryScreen(props: MemoryScreenProps) {
             variant="ghost"
             className="gap-1.5 text-muted-foreground"
             disabled={uploading}
-            title={`Landet im Gedächtnis: ${scopeLabelOf(uploadScope)}`}
+            title={t("Landet im Gedächtnis: {0}", scopeLabelOf(uploadScope))}
             onClick={() => fileInputRef.current?.click()}
           >
-            <Paperclip className="size-3.5" /> {uploading ? "Lädt hoch …" : "Datei hinzufügen"}
+            <Paperclip className="size-3.5" /> {uploading ? t("Lädt hoch …") : t("Datei hinzufügen")}
           </Button>
           <Button size="sm" variant="secondary" onClick={() => selectNote("new")}>
-            <Plus className="size-3.5" /> Neue Notiz
+            <Plus className="size-3.5" /> {t("Neue Notiz")}
           </Button>
         </>
       }
@@ -528,8 +529,8 @@ export function MemoryScreen(props: MemoryScreenProps) {
         {dragActive && (
           <div className="pointer-events-none absolute inset-2 z-30 flex animate-in flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-primary bg-primary/10 fade-in duration-150">
             <Paperclip className="size-6 text-primary" />
-            <p className="text-[14px] font-medium">Ablegen im Gedächtnis: {scopeLabelOf(uploadScope)}</p>
-            <p className="text-[12px] text-muted-foreground">PDFs, Bilder, Dokumente – der Agent liest sie bei Bedarf</p>
+            <p className="text-[14px] font-medium">{t("Ablegen im Gedächtnis:")} {scopeLabelOf(uploadScope)}</p>
+            <p className="text-[12px] text-muted-foreground">{t("PDFs, Bilder, Dokumente – der Agent liest sie bei Bedarf")}</p>
           </div>
         )}
       </div>

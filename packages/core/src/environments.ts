@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret } from "./secrets.ts";
 import { eventHub } from "./events.ts";
 import { claudeAuth, claudeProfileForEnvironment, removeClaudeProfile, subscriptionEnvironment } from "./claude-auth.ts";
 import { checkProviderAccount, detectGitIdentity, environmentProviders, findProvider, type AccountCheck } from "./environment-providers.ts";
+import { t } from "./i18n.ts";
 
 /**
  * Environments bundle accounts (any provider from the catalog), git identity, AI settings and variables. A project belongs to at most one
@@ -125,7 +126,7 @@ const readRow = (environmentId: string) => database.prepare("SELECT * FROM envir
 
 function requireRow(environmentId: string): Row {
   const row = readRow(environmentId);
-  if (!row) throw new Error("Umgebung nicht gefunden");
+  if (!row) throw new Error(t("Umgebung nicht gefunden"));
   return row;
 }
 
@@ -284,13 +285,13 @@ export const environmentStore = {
     }
     if (environment.claudeMode === "apiKey") {
       const claudeApiKey = readSecrets(requireRow(environment.id)).claudeApiKey;
-      if (!claudeApiKey) throw new Error(`Umgebung „${environment.name}“: kein Claude-API-Key hinterlegt – Umgebungen → ${environment.name}`);
+      if (!claudeApiKey) throw new Error(t("Umgebung „{0}“: kein Claude-API-Key hinterlegt – Umgebungen → {1}", environment.name, environment.name));
       return { env: { ...process.env, ...variables, ANTHROPIC_API_KEY: claudeApiKey }, model };
     }
     const profile = claudeProfileForEnvironment(environment.id);
     const accountStatus = await claudeAuth.status(false, profile);
-    if (!accountStatus.runtime.found) throw new Error("Claude Code ist nicht installiert – Einstellungen → Claude");
-    if (!accountStatus.ready && !accountStatus.cliError) throw new Error(`Umgebung „${environment.name}“: Claude-Konto nicht angemeldet – Umgebungen → ${environment.name}`);
+    if (!accountStatus.runtime.found) throw new Error(t("Claude Code ist nicht installiert – Einstellungen → Claude"));
+    if (!accountStatus.ready && !accountStatus.cliError) throw new Error(t("Umgebung „{0}“: Claude-Konto nicht angemeldet – Umgebungen → {1}", environment.name, environment.name));
     const env: NodeJS.ProcessEnv = { ...subscriptionEnvironment(profile), ...variables, CLAUDE_CONFIG_DIR: profile.configDirectory };
     delete env.ANTHROPIC_API_KEY;
     return { env, model };

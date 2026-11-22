@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import type { ChatItem } from "@/types";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { t } from "@/lib/i18n";
 
 export type ToolUseItem = Extract<ChatItem, { kind: "tool_use" }>;
 export type ToolResultItem = Extract<ChatItem, { kind: "tool_result" }>;
@@ -10,17 +11,17 @@ export type ToolResultItem = Extract<ChatItem, { kind: "tool_result" }>;
 type ToolCategory = { singular: string; plural: (count: number) => string };
 
 function categorizeTool(toolName: string): ToolCategory {
-  if (toolName === "Bash") return { singular: "Befehl ausgeführt", plural: (count) => `${count} Befehle ausgeführt` };
-  if (toolName === "Read") return { singular: "Datei gelesen", plural: (count) => `${count} Dateien gelesen` };
+  if (toolName === "Bash") return { singular: t("Befehl ausgeführt"), plural: (count) => t("{0} Befehle ausgeführt", count) };
+  if (toolName === "Read") return { singular: t("Datei gelesen"), plural: (count) => t("{0} Dateien gelesen", count) };
   if (["Edit", "Write", "MultiEdit", "NotebookEdit"].includes(toolName))
-    return { singular: "Datei bearbeitet", plural: (count) => `${count} Dateien bearbeitet` };
-  if (["Grep", "Glob"].includes(toolName)) return { singular: "Gesucht", plural: (count) => `${count}× gesucht` };
-  if (["WebSearch", "WebFetch"].includes(toolName)) return { singular: "Im Web recherchiert", plural: (count) => `${count}× im Web` };
-  if (toolName === "Skill") return { singular: "Skill genutzt", plural: (count) => `${count} Skills genutzt` };
-  if (["Task", "Agent"].includes(toolName)) return { singular: "Subagent gestartet", plural: (count) => `${count} Subagents gestartet` };
-  if (toolName.startsWith("mcp__harnold__")) return { singular: "Harnold genutzt", plural: (count) => `${count}× Harnold` };
-  if (toolName.startsWith("mcp__harnold_memory__")) return { singular: "Memory genutzt", plural: (count) => `${count}× Memory` };
-  if (toolName.startsWith("mcp__")) return { singular: "Integration genutzt", plural: (count) => `${count}× Integrationen` };
+    return { singular: t("Datei bearbeitet"), plural: (count) => t("{0} Dateien bearbeitet", count) };
+  if (["Grep", "Glob"].includes(toolName)) return { singular: t("Gesucht"), plural: (count) => t("{0}× gesucht", count) };
+  if (["WebSearch", "WebFetch"].includes(toolName)) return { singular: t("Im Web recherchiert"), plural: (count) => t("{0}× im Web", count) };
+  if (toolName === "Skill") return { singular: t("Skill genutzt"), plural: (count) => t("{0} Skills genutzt", count) };
+  if (["Task", "Agent"].includes(toolName)) return { singular: t("Subagent gestartet"), plural: (count) => t("{0} Subagents gestartet", count) };
+  if (toolName.startsWith("mcp__harnold__")) return { singular: t("Harnold genutzt"), plural: (count) => t("{0}× Harnold", count) };
+  if (toolName.startsWith("mcp__harnold_memory__")) return { singular: t("Memory genutzt"), plural: (count) => t("{0}× Memory", count) };
+  if (toolName.startsWith("mcp__")) return { singular: t("Integration genutzt"), plural: (count) => t("{0}× Integrationen", count) };
   return { singular: toolName, plural: (count) => `${toolName} ×${count}` };
 }
 
@@ -65,7 +66,7 @@ function ToolCallRow({ toolUse, toolResult }: { toolUse: ToolUseItem; toolResult
                 toolResult.isError && "text-destructive",
               )}
             >
-              {toolResult.content || "(keine Ausgabe)"}
+              {toolResult.content || t("(keine Ausgabe)")}
             </pre>
           )}
         </div>

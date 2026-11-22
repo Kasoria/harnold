@@ -26,6 +26,14 @@ const activeAdapters = new Map<string, ChannelAdapter>();
 const channelStatuses = new Map<string, ChannelStatus>();
 /** Open permission request per conversation, for "ja"/"nein" text answers. */
 const pendingPermissionByConversation = new Map<string, string>();
+/** Open agent question (AskUserQuestion) per conversation: the next message is the answer. */
+const pendingQuestionByConversation = new Map<string, { requestId: string; questions: string[] }>();
+
+type AgentQuestion = { question: string; options?: { label: string }[]; multiSelect?: boolean };
+const questionsOf = (input: unknown): AgentQuestion[] => {
+  const questions = (input as { questions?: unknown })?.questions;
+  return Array.isArray(questions) ? (questions as AgentQuestion[]) : [];
+};
 
 const conversationKey = (channelId: string, chatId: string) => `${channelId}::${chatId}`;
 
@@ -137,6 +145,16 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
   }
   if (await handleProjectCommand(channel, inboundMessage, trimmedText, reply)) return;
 
+  const pendingQuestion = pendingQuestionByConversation.get(conversationKey(channel.id, inboundMessage.chatId));
+  if (pendingQuestion) {
+    pendingQuestionByConversation.delete(conversationKey(channel.id, inboundMessage.chatId));
+    // One question: the whole message. Several: one line per question (missing lines repeat the last one).
+    const answerLines = trimmedText.split("\n").map((line) => line.trim()).filter(Boolean);
+    const answers = Object.fromEntries(pendingQuestion.questions.map((question, questionIndex) => [question, pendingQuestion.questions.length === 1 ? trimmedText : (answerLines[questionIndex] ?? answerLines.at(-1) ?? trimmedText)]));
+    agentRuntime.resolvePermission(pendingQuestion.requestId, true, answers);
+    return;
+  }
+
   const pendingRequestId = pendingPermissionByConversation.get(conversationKey(channel.id, inboundMessage.chatId));
   if (pendingRequestId) {
     if (/^(ja|yes|ok|erlauben)\b/i.test(trimmedText)) return void agentRuntime.resolvePermission(pendingRequestId, true);
@@ -219,6 +237,15 @@ export const channelManager = {
         const conversation = conversationStore.findBySession(serverEvent.sessionId);
         const adapter = conversation && activeAdapters.get(conversation.channelId);
         if (!conversation || !adapter) return;
+        if (serverEvent.toolName === "AskUserQuestion") {
+          const questions = questionsOf(serverEvent.input);
+          pendingQuestionByConversation.set(conversationKey(conversation.channelId, conversation.chatId), { requestId: serverEvent.requestId, questions: questions.map((question) => question.question) });
+          const questionText = questions
+            .map((question) => `❓ ${question.question}\n${(question.options ?? []).map((option, optionIndex) => `${optionIndex + 1}. ${option.label}`).join("\n")}`)
+            .join("\n\n");
+          void adapter.sendMessage(conversation.chatId, `${questionText}\n\nAntworte einfach mit deiner Wahl${questions.length > 1 ? " (eine Zeile pro Frage)" : ""}.`).catch((sendError) => console.error("[channels] question failed:", sendError));
+          return;
+        }
         pendingPermissionByConversation.set(conversationKey(conversation.channelId, conversation.chatId), serverEvent.requestId);
         void adapter
           .sendPermissionRequest(conversation.chatId, serverEvent.requestId, describeToolInput(serverEvent.toolName, serverEvent.input))
@@ -226,6 +253,9 @@ export const channelManager = {
       } else if (serverEvent.type === "permission_resolved") {
         for (const [key, requestId] of pendingPermissionByConversation) {
           if (requestId === serverEvent.requestId) pendingPermissionByConversation.delete(key);
+        }
+        for (const [key, pendingQuestion] of pendingQuestionByConversation) {
+          if (pendingQuestion.requestId === serverEvent.requestId) pendingQuestionByConversation.delete(key);
         }
       }
     });

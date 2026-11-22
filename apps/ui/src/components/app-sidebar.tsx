@@ -1,4 +1,4 @@
-import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Plus, Settings, Sun } from "lucide-react";
+import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Plus, Settings, Sun, Users } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session } from "@/types";
@@ -49,6 +49,7 @@ const featureScreens: { screen: ScreenName; label: string; icon: React.Component
   { screen: "integrations", label: "Integrationen", icon: Blocks },
   { screen: "design", label: "Design Systems", icon: Palette },
   { screen: "environments", label: "Umgebungen", icon: Layers },
+  { screen: "team", label: "Team", icon: Users },
 ];
 
 const activeRowClassName = "bg-foreground/[0.07] font-medium";

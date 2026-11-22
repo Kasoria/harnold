@@ -1,4 +1,4 @@
-import type { ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -60,7 +60,12 @@ export const api = {
   addPluginFolder: (folderPath: string) => request<PluginInfo>("POST", "/api/plugins/folders", { path: folderPath }),
   removePluginFolder: (pluginId: string) => request<{ ok: true }>("POST", "/api/plugins/folders/remove", { pluginId }),
   listSessions: (projectId: string) => request<Session[]>("GET", `/api/projects/${projectId}/sessions`),
-  createSession: (projectId: string) => request<Session>("POST", `/api/projects/${projectId}/sessions`),
+  createSession: (projectId: string, agentId?: string | null) => request<Session>("POST", `/api/projects/${projectId}/sessions`, { agentId: agentId ?? null }),
+  setSessionAgent: (sessionId: string, agentId: string | null) => request<{ ok: true }>("PATCH", `/api/sessions/${sessionId}`, { agentId }),
+  listTeam: () => request<TeamAgent[]>("GET", "/api/team"),
+  createTeamAgent: (agentInput: TeamAgentInput) => request<TeamAgent>("POST", "/api/team", agentInput),
+  updateTeamAgent: (agentId: string, agentInput: TeamAgentInput) => request<TeamAgent>("PUT", `/api/team/${agentId}`, agentInput),
+  deleteTeamAgent: (agentId: string) => request<{ ok: true }>("DELETE", `/api/team/${agentId}`),
   deleteSession: (sessionId: string, deleteFiles = false) => request("DELETE", `/api/sessions/${sessionId}${deleteFiles ? "?deleteFiles=1" : ""}`),
   listChatItems: (sessionId: string) => request<ChatItem[]>("GET", `/api/sessions/${sessionId}/items`),
   sendMessage: (sessionId: string, text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) =>
@@ -79,7 +84,7 @@ export const api = {
     return responseBody as Attachment[];
   },
   interrupt: (sessionId: string) => request("POST", `/api/sessions/${sessionId}/interrupt`),
-  answerPermission: (requestId: string, allow: boolean) => request("POST", `/api/permissions/${requestId}`, { allow }),
+  answerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => request("POST", `/api/permissions/${requestId}`, { allow, answers }),
   readTree: (projectId: string) => request<FileNode[]>("GET", `/api/projects/${projectId}/tree`),
   readFile: (projectId: string, filePath: string) =>
     request<{ content: string }>("GET", `/api/projects/${projectId}/file?path=${encodeURIComponent(filePath)}`),

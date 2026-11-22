@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Volume2 } from "lucide-react";
-import type { Attachment, ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
+import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card";
+import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
+import type { TeamAgent, Attachment, ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,9 @@ import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
 
 type ChatPaneProps = {
+  /** Team of this project; empty = no agent picker. */
+  teamAgents: TeamAgent[];
+  onSetAgent: (agentId: string | null) => void;
   project: Project | null;
   session: Session | null;
   status: SessionStatus;
@@ -53,7 +57,7 @@ type ChatPaneProps = {
   onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
   inheritedModel: InheritedModel;
   onInterrupt: () => void;
-  onAnswerPermission: (requestId: string, allow: boolean) => void;
+  onAnswerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => void;
   onDeleteSession: () => void;
   /** All sessions of the project – needed to find the versions of edited messages. */
   projectSessions: Session[];
@@ -248,6 +252,27 @@ export function ChatPane(props: ChatPaneProps) {
             {statusLabels[props.status]}
           </span>
         )}
+        {props.session && props.teamAgents.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" aria-label="Agent dieser Session">
+                <Users className="size-3.5" />
+                {props.teamAgents.find((agent) => agent.id === props.session?.agentId)?.name ?? "Harnold"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-52">
+              <DropdownMenuRadioGroup value={props.session.agentId ?? "default"} onValueChange={(agentId) => props.onSetAgent(agentId === "default" ? null : agentId)}>
+                <DropdownMenuRadioItem value="default">Harnold (Standard)</DropdownMenuRadioItem>
+                {props.teamAgents.map((agent) => (
+                  <DropdownMenuRadioItem key={agent.id} value={agent.id}>
+                    <span className="truncate">{agent.name}</span>
+                    {agent.role && <span className="truncate text-[11.5px] text-muted-foreground">{agent.role}</span>}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {props.session && (
             <DropdownMenu>
@@ -402,7 +427,15 @@ export function ChatPane(props: ChatPaneProps) {
           {props.streamingDraft && <ChatMarkdown text={props.streamingDraft} />}
           {showActivity && <ActivityIndicator label={toolPending ? "Führt aus" : "Arbeitet"} startedAt={lastUserItem?.createdAt ?? Date.now()} />}
 
-          {props.permissionRequests.map((permissionRequest) => (
+          {props.permissionRequests.map((permissionRequest) =>
+            isQuestionRequest(permissionRequest.toolName) ? (
+              <QuestionCard
+                key={permissionRequest.requestId}
+                input={permissionRequest.input}
+                onAnswer={(answers) => props.onAnswerPermission(permissionRequest.requestId, true, answers)}
+                onSkip={() => props.onAnswerPermission(permissionRequest.requestId, false)}
+              />
+            ) : (
             <div
               key={permissionRequest.requestId}
               className="animate-in fade-in slide-in-from-bottom-1 rounded-xl border bg-card p-3 shadow-xs duration-200"
@@ -425,7 +458,8 @@ export function ChatPane(props: ChatPaneProps) {
                 </Button>
               </div>
             </div>
-          ))}
+            ),
+          )}
         </div>
       </div>
 

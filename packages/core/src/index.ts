@@ -22,6 +22,7 @@ import { environmentInputSchema, environmentStore } from "./environments.ts";
 import { presentProviders } from "./environment-providers.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { agentRuntimes } from "./agent-runtimes.ts";
+import { teamAgentInputSchema, teamStore } from "./agents.ts";
 import { generateImages, imageConfig, imageRequestSchema, imageSecretKeys, imageSettingsSchema } from "./image-generation.ts";
 import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPublicMcpServer } from "./integrations.ts";
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
@@ -167,17 +168,37 @@ app.get("/api/projects/:projectId/sessions", (context) =>
 );
 
 /** "New session" reuses a still empty session of the project instead of piling up empty ones. */
-function emptyOrNewSession(projectId: string) {
+/** Reuses an unused empty session (switching it to the requested team agent) or creates one. */
+function emptyOrNewSession(projectId: string, agentId: string | null = null) {
+  if (agentId && !teamStore.forProject(projectId).some((agent) => agent.id === agentId)) throw new Error("Agent gehört nicht zum Team dieses Projekts");
   const emptySession = sessionStore
     .listByProject(projectId)
-    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0);
-  if (emptySession) return emptySession;
-  const session = sessionStore.create(projectId, "Neue Session");
+    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0 && !session.title.startsWith("Team · "));
+  if (emptySession) {
+    if (emptySession.agentId !== agentId) {
+      sessionStore.update(emptySession.id, { agentId });
+      eventHub.publish({ type: "sessions_changed", projectId });
+    }
+    return sessionStore.get(emptySession.id)!;
+  }
+  const session = sessionStore.create(projectId, "Neue Session", undefined, agentId);
   eventHub.publish({ type: "sessions_changed", projectId });
   return session;
 }
 
-app.post("/api/projects/:projectId/sessions", (context) => context.json(emptyOrNewSession(requireProject(context.req.param("projectId")).id)));
+app.post("/api/projects/:projectId/sessions", async (context) => {
+  const body = z.object({ agentId: z.string().nullish() }).parse(await context.req.json().catch(() => ({})));
+  return context.json(emptyOrNewSession(requireProject(context.req.param("projectId")).id, body.agentId ?? null));
+});
+
+// --- Team (several agents per environment) ---
+app.get("/api/team", (context) => context.json(teamStore.list()));
+app.post("/api/team", async (context) => context.json(teamStore.save(teamAgentInputSchema.parse(await context.req.json()))));
+app.put("/api/team/:agentId", async (context) => context.json(teamStore.save(teamAgentInputSchema.parse(await context.req.json()), context.req.param("agentId"))));
+app.delete("/api/team/:agentId", (context) => {
+  teamStore.remove(context.req.param("agentId"));
+  return context.json({ ok: true });
+});
 
 // --- Quick Chats (no project) ---
 app.post("/api/quick-chats", (context) => context.json(emptyOrNewSession(quickChatProject().id)));
@@ -206,9 +227,17 @@ app.delete("/api/sessions/:sessionId", (context) => {
 });
 
 app.patch("/api/sessions/:sessionId", async (context) => {
-  const body = z.object({ title: z.string().min(1).optional(), projectId: z.string().optional() }).parse(await context.req.json());
+  const body = z.object({ title: z.string().min(1).optional(), projectId: z.string().optional(), agentId: z.string().nullable().optional() }).parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   if (body.title) sessionActions.rename(sessionId, body.title);
+  if (body.agentId !== undefined) {
+    const session = sessionStore.get(sessionId);
+    if (!session) throw new Error("Session nicht gefunden");
+    if (body.agentId && !teamStore.forProject(session.projectId).some((agent) => agent.id === body.agentId)) throw new Error("Agent gehört nicht zum Team dieses Projekts");
+    // A different agent = a different persona: the next turn starts a fresh agent context, the timeline stays.
+    sessionStore.update(sessionId, { agentId: body.agentId, agentSessionId: null });
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+  }
   const moveResult = body.projectId ? sessionActions.move(sessionId, body.projectId) : { deferred: false };
   return context.json({ ok: true, ...moveResult });
 });
@@ -310,8 +339,8 @@ app.get("/api/today", (context) => {
 });
 
 app.post("/api/permissions/:requestId", async (context) => {
-  const body = z.object({ allow: z.boolean() }).parse(await context.req.json());
-  return context.json({ ok: agentRuntime.resolvePermission(context.req.param("requestId"), body.allow) });
+  const body = z.object({ allow: z.boolean(), answers: z.record(z.string(), z.string()).optional() }).parse(await context.req.json());
+  return context.json({ ok: agentRuntime.resolvePermission(context.req.param("requestId"), body.allow, body.answers) });
 });
 
 // --- Tasks ---
@@ -590,6 +619,7 @@ app.patch("/api/environments/:environmentId", async (context) => {
 });
 
 app.delete("/api/environments/:environmentId", (context) => {
+  for (const agent of teamStore.list().filter((candidate) => candidate.environmentId === context.req.param("environmentId"))) teamStore.remove(agent.id);
   environmentStore.remove(context.req.param("environmentId"));
   return context.json({ ok: true });
 });

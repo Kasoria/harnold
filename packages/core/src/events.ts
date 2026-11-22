@@ -26,6 +26,7 @@ export type ServerEvent =
   | { type: "design_systems_changed" }
   | { type: "claude_auth_changed" }
   | { type: "environments_changed" }
+  | { type: "team_changed" }
   | { type: "projects_changed" }
   | { type: "settings_changed" };
 

@@ -12,6 +12,8 @@ export type Session = {
   forkOriginItemId: string | null;
   /** The edited user message in this version. */
   forkItemId: string | null;
+  /** Team member this conversation is with; null = default Harnold agent. */
+  agentId: string | null;
 };
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
 
@@ -51,6 +53,7 @@ export type ServerEvent =
   | { type: "design_systems_changed" }
   | { type: "claude_auth_changed" }
   | { type: "environments_changed" }
+  | { type: "team_changed" }
   | { type: "projects_changed" }
   | { type: "settings_changed" };
 
@@ -322,3 +325,6 @@ export type ExternalMcpServer = {
   imported: boolean;
   importable: boolean;
 };
+
+export type TeamAgentInput = { environmentId: string | null; name: string; role: string; instructions: string; model: string | null; icon: string | null };
+export type TeamAgent = TeamAgentInput & { id: string; createdAt: number };

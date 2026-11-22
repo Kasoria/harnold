@@ -16,6 +16,7 @@ import { environmentStore } from "./environments.ts";
 import { environmentProviders } from "./environment-providers.ts";
 import { sessionActions } from "./session-actions.ts";
 import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./setup-tools.ts";
+import { createTeamTools, teamToolNames } from "./agents.ts";
 
 /**
  * In-process MCP server giving the agent access to everything in Harnold (projects, sessions, design systems,
@@ -26,7 +27,7 @@ export const workspaceServerName = "harnold";
 const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list", "environment_check"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
 const autoAllowedWriteToolNames = ["session_rename", "design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
-export const workspaceToolNames = [...readOnlyToolNames, ...setupReadOnlyToolNames, ...autoAllowedWriteToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
+export const workspaceToolNames = [...readOnlyToolNames, ...setupReadOnlyToolNames, ...autoAllowedWriteToolNames, ...teamToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
 
 export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
@@ -60,7 +61,7 @@ function describeDesignSystem(designSystem: DesignSystemDetail): string {
     .join("\n");
 }
 
-export function createWorkspaceServer(project: Project, sessionId: string) {
+export function createWorkspaceServer(project: Project, sessionId: string, permissionMode = "default") {
   /** Resolves "session"/"project" shortcuts or explicit ids to a link target. */
   const resolveTarget = (target: "session" | "project", explicitId?: string): DesignSystemLinkTarget => {
     if (target === "session") {
@@ -87,6 +88,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
     name: workspaceServerName,
     version: "1.0.0",
     tools: [
+      ...createTeamTools(project, sessionId, permissionMode),
       // ------------------------------------------------------------ Overview
       tool(
         "overview",

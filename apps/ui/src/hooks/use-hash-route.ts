@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 /** Top-level screens. "workspace" = chat + workspace of the active project. */
-export type ScreenName = "today" | "workspace" | "tasks" | "channels" | "memory" | "files" | "integrations" | "design" | "environments" | "settings";
+export type ScreenName = "today" | "workspace" | "tasks" | "channels" | "memory" | "files" | "integrations" | "design" | "environments" | "team" | "settings";
 export type HashRoute = { screen: ScreenName; section: string | null; itemId: string | null };
 
-const screenNames: ScreenName[] = ["today", "workspace", "tasks", "channels", "memory", "files", "integrations", "design", "environments", "settings"];
+const screenNames: ScreenName[] = ["today", "workspace", "tasks", "channels", "memory", "files", "integrations", "design", "environments", "team", "settings"];
 
 function parseHash(hash: string): HashRoute {
   const [screenSegment, ...restSegments] = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);

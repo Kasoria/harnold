@@ -39,6 +39,7 @@ addColumnIfMissing("sessions", "fork_origin_session_id", "TEXT");
 addColumnIfMissing("sessions", "fork_origin_item_id", "TEXT");
 addColumnIfMissing("sessions", "fork_item_id", "TEXT");
 addColumnIfMissing("sessions", "pending_fork", "TEXT");
+addColumnIfMissing("sessions", "agent_id", "TEXT");
 
 /** "quick" = the built-in home of chats without a project (Quick Chats). */
 export type ProjectKind = "project" | "quick";
@@ -61,6 +62,8 @@ export type Session = {
   /** The edited user message in this version. */
   forkItemId: string | null;
   pendingFork: PendingFork | null;
+  /** Team member this conversation is with (see agents.ts); null = the default Harnold agent. */
+  agentId: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -110,6 +113,7 @@ const mapSession = (row: Row): Session => ({
   forkOriginItemId: row.fork_origin_item_id ? String(row.fork_origin_item_id) : null,
   forkItemId: row.fork_item_id ? String(row.fork_item_id) : null,
   pendingFork: row.pending_fork ? (JSON.parse(String(row.pending_fork)) as PendingFork) : null,
+  agentId: row.agent_id ? String(row.agent_id) : null,
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -158,6 +162,7 @@ export const sessionStore = {
     projectId: string,
     title: string,
     fork?: { originSessionId: string; originItemId: string; pendingFork: PendingFork | null },
+    agentId: string | null = null,
   ): Session {
     const now = Date.now();
     const session: Session = {
@@ -169,32 +174,34 @@ export const sessionStore = {
       forkOriginItemId: fork?.originItemId ?? null,
       forkItemId: null,
       pendingFork: fork?.pendingFork ?? null,
+      agentId,
       createdAt: now,
       updatedAt: now,
     };
     database
       .prepare(
-        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(session.id, projectId, title, session.forkOriginSessionId, session.forkOriginItemId, session.pendingFork ? JSON.stringify(session.pendingFork) : null, now, now);
+      .run(session.id, projectId, title, session.forkOriginSessionId, session.forkOriginItemId, session.pendingFork ? JSON.stringify(session.pendingFork) : null, agentId, now, now);
     return session;
   },
   /** `agentSessionId: null` starts a fresh agent context on the next turn. */
   update(
     sessionId: string,
-    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null },
+    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null },
   ): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
     const pendingFork = changes.pendingFork === undefined ? current.pendingFork : changes.pendingFork;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, updated_at = ? WHERE id = ?")
       .run(
         changes.title ?? current.title,
         changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
         changes.projectId ?? current.projectId,
         changes.forkItemId ?? current.forkItemId,
         pendingFork ? JSON.stringify(pendingFork) : null,
+        changes.agentId === undefined ? current.agentId : changes.agentId,
         Date.now(),
         sessionId,
       );

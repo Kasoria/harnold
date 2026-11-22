@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { Attachment, SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { TeamAgent, Attachment, SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -30,7 +30,8 @@ import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { TextPromptDialogHost, askForText } from "@/components/text-prompt-dialog";
 import type { MenuAction } from "@/components/action-menu";
-import { Copy, FolderOpen, FolderInput, Layers, MessageSquarePlus, Pencil, Smile, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, FolderInput, Layers, MessageSquarePlus, Pencil, Smile, Trash2, Users } from "lucide-react";
+import { TeamScreen } from "@/screens/team-screen";
 import { conversationMembers, latestVersionId } from "@/lib/session-versions";
 import { systemSpeechAvailable } from "@/lib/system-speech";
 
@@ -64,6 +65,7 @@ export function App() {
   const [claudeStatus, setClaudeStatus] = useState<ClaudeAuthStatus | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [teamAgents, setTeamAgents] = useState<TeamAgent[]>([]);
   const [todayReloadCounter, setTodayReloadCounter] = useState(0);
   const [defaultModel, setDefaultModel] = useState("claude-opus-5-5");
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => safeStorage.getItem(activeEnvironmentStorageKey));
@@ -97,6 +99,7 @@ export function App() {
 
   const refreshTasks = useCallback(() => api.listTasks().then(setTasks).catch(reportError), [reportError]);
   const refreshChannels = useCallback(() => api.listChannels().then(setChannels).catch(reportError), [reportError]);
+  const refreshTeam = useCallback(() => api.listTeam().then(setTeamAgents).catch(reportError), [reportError]);
   const refreshEnvironments = useCallback(
     () =>
       api
@@ -118,6 +121,7 @@ export function App() {
     void refreshTasks();
     void refreshChannels();
     void refreshEnvironments();
+    void refreshTeam();
     // Approvals that were already waiting before this window opened.
     api
       .readToday()
@@ -258,6 +262,9 @@ export function App() {
           case "environments_changed":
             void refreshEnvironments();
             return;
+          case "team_changed":
+            void refreshTeam();
+            return;
           case "projects_changed":
             api.listProjects().then(setProjects).catch(() => undefined);
             return;
@@ -354,9 +361,15 @@ export function App() {
     if (firstProject) setExpandedProjectIds((previous) => new Set(previous).add(firstProject.id));
   };
 
-  const createSession = async (projectId: string): Promise<Session | null> => {
+  /** Team of a project: agents of its environment plus those available everywhere. */
+  const teamForProject = (projectId: string | null) => {
+    const environmentId = environments.find((environment) => projectId && environment.projectIds.includes(projectId))?.id ?? null;
+    return teamAgents.filter((agent) => agent.environmentId === null || agent.environmentId === environmentId);
+  };
+
+  const createSession = async (projectId: string, agentId: string | null = null): Promise<Session | null> => {
     try {
-      const session = await api.createSession(projectId);
+      const session = await api.createSession(projectId, agentId);
       setSessionsByProjectId((previous) => ({ ...previous, [projectId]: [session, ...(previous[projectId] ?? []).filter((existing) => existing.id !== session.id)] }));
       setExpandedProjectIds((previous) => new Set(previous).add(projectId));
       setActiveProjectId(projectId);
@@ -437,6 +450,12 @@ export function App() {
 
   const projectActions = (project: Project): MenuAction[] => [
     { label: "Neue Session", icon: MessageSquarePlus, onSelect: () => void createSession(project.id) },
+    {
+      label: "Neue Session mit",
+      icon: Users,
+      hidden: teamForProject(project.id).length === 0,
+      children: teamForProject(project.id).map((agent) => ({ label: agent.name, onSelect: () => void createSession(project.id, agent.id) })),
+    },
     { label: "Umbenennen", icon: Pencil, onSelect: () => void renameProject(project), separated: true },
     { label: "Icon ändern", icon: Smile, onSelect: () => setIconDialogProject(project) },
     {
@@ -555,7 +574,7 @@ export function App() {
             sessionReferenceFor={sessionReferenceFor}
             reloadCounter={todayReloadCounter}
             onOpenSession={openSessionFromScreen}
-            onAnswerPermission={(requestId, allow) => api.answerPermission(requestId, allow).catch(reportError)}
+            onAnswerPermission={(requestId, allow, answers) => api.answerPermission(requestId, allow, answers).catch(reportError)}
             onError={reportError}
           />
         );
@@ -645,6 +664,17 @@ export function App() {
             sessionsByProjectId={sessionsByProjectId}
             designSystemsChangeCounter={designSystemsChangeCounter}
             onWorkWithAgent={(target, prompt, sendImmediately) => void workOnDesignSystemWithAgent(target, prompt, sendImmediately)}
+            onError={reportError}
+          />
+        );
+      case "team":
+        return (
+          <TeamScreen
+            agents={teamAgents}
+            environments={environments}
+            selection={route.itemId}
+            onSelect={(selection) => navigate(routePath("team", selection))}
+            onTeamChange={() => void refreshTeam()}
             onError={reportError}
           />
         );
@@ -751,6 +781,8 @@ export function App() {
                 <ResizablePanelGroup id="harnold-main" orientation="horizontal" defaultLayout={mainDefaultLayout} onLayoutChanged={onMainLayoutChanged}>
           <ResizablePanel id="chat" defaultSize="42" minSize={360}>
             <ChatPane
+              teamAgents={teamForProject(activeProjectId)}
+              onSetAgent={(agentId) => activeSessionId && api.setSessionAgent(activeSessionId, agentId).catch(reportError)}
               project={activeProject}
               session={activeSession}
               status={activeSessionId ? sessionStatusFor(activeSessionId) : "idle"}
@@ -779,7 +811,7 @@ export function App() {
               onSend={sendToAgent}
               inheritedModel={inheritedModelFor(activeProjectId)}
               onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
-              onAnswerPermission={(requestId, allow) => api.answerPermission(requestId, allow).catch(reportError)}
+              onAnswerPermission={(requestId, allow, answers) => api.answerPermission(requestId, allow, answers).catch(reportError)}
               onDeleteSession={() => activeSession && void deleteSession(activeSession)}
               projectSessions={activeProjectId ? (sessionsByProjectId[activeProjectId] ?? []) : []}
               onOpenVersion={setActiveSessionId}

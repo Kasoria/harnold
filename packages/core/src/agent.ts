@@ -15,6 +15,7 @@ import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNam
 import { agentCommands } from "./slash-commands.ts";
 import { agentPluginOptions } from "./plugins.ts";
 import { recordClaudeMcpServers } from "./mcp-discovery.ts";
+import { teamContextFor, teamStore } from "./agents.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
@@ -158,6 +159,7 @@ export const agentRuntime = {
     if (!project) throw new Error("Projekt nicht gefunden");
     if (runningTurns.has(sessionId)) throw new Error("In dieser Session läuft bereits ein Durchlauf");
     const claudeExecutablePath = await claudeExecutable();
+    const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
     const agentSetup = await environmentStore.agentSetupFor(project.id);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
@@ -192,14 +194,14 @@ export const agentRuntime = {
           ...(pendingFork?.mode === "resume"
             ? { resume: pendingFork.agentSessionId, resumeSessionAt: pendingFork.resumeAt, forkSession: true }
             : { resume: session.agentSessionId ?? undefined }),
-          model: model ?? agentSetup.model ?? agentModelSettings.read(),
+          model: teamAgent?.model || model || agentSetup.model || agentModelSettings.read(),
           thinking: { type: "adaptive", display: "summarized" },
           permissionMode,
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
           settingSources: ["user", "project", "local"],
-          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)].filter(Boolean).join("\n\n") },
-          mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId) },
+          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)].filter(Boolean).join("\n\n") },
+          mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId, permissionMode) },
           allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
           skills: integrationOptions.skills,
           settings: pluginOptions.settings,
@@ -290,11 +292,19 @@ export const agentRuntime = {
     runningTurns.get(sessionId)?.abort();
   },
 
-  resolvePermission(requestId: string, allow: boolean): boolean {
+  /** answers: for AskUserQuestion (question text → chosen label(s), comma-separated). */
+  resolvePermission(requestId: string, allow: boolean, answers?: Record<string, string>): boolean {
     const pendingPermission = pendingPermissions.get(requestId);
     if (!pendingPermission) return false;
     pendingPermissions.delete(requestId);
-    pendingPermission.resolve(allow ? { behavior: "allow" } : { behavior: "deny", message: "Vom Nutzer abgelehnt" });
+    const toolInput = (pendingPermission.input && typeof pendingPermission.input === "object" ? pendingPermission.input : {}) as Record<string, unknown>;
+    pendingPermission.resolve(
+      !allow
+        ? { behavior: "deny", message: pendingPermission.toolName === "AskUserQuestion" ? "Der Nutzer hat die Fragen übersprungen." : "Vom Nutzer abgelehnt" }
+        : answers
+          ? { behavior: "allow", updatedInput: { ...toolInput, answers } }
+          : { behavior: "allow" },
+    );
     eventHub.publish({ type: "permission_resolved", sessionId: pendingPermission.sessionId, requestId });
     return true;
   },

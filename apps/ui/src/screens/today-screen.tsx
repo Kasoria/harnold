@@ -32,7 +32,17 @@ function Section(props: { title: React.ReactNode; children: React.ReactNode }) {
   );
 }
 
-function SessionRow(props: { reference: SessionReference; showProject?: boolean; leading: React.ReactNode; meta?: React.ReactNode; detail?: string; actions?: React.ReactNode; onOpen: () => void }) {
+function SessionRow(props: {
+  reference: SessionReference;
+  /** Icon of the referenced project, as configured in the sidebar. */
+  projectIcon?: string | null;
+  showProject?: boolean;
+  leading: React.ReactNode;
+  meta?: React.ReactNode;
+  detail?: string;
+  actions?: React.ReactNode;
+  onOpen: () => void;
+}) {
   return (
     <div className="group flex items-center gap-3 px-3 py-2.5">
       <div className="shrink-0">{props.leading}</div>
@@ -41,7 +51,7 @@ function SessionRow(props: { reference: SessionReference; showProject?: boolean;
           <span className="truncate text-[13px] font-medium">{props.reference.sessionTitle}</span>
           {props.showProject !== false && (
             <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
-              <ProjectAvatar name={props.reference.projectName} className="size-3.5 rounded text-[8px]" />
+              <ProjectAvatar name={props.reference.projectName} icon={props.projectIcon} className="size-3.5 rounded text-[8px]" />
               {props.reference.projectName}
             </span>
           )}
@@ -101,6 +111,7 @@ export function TodayScreen(props: TodayScreenProps) {
   }
   const orderedGroups = [...groups.values()].sort((first, second) => second.latest - first.latest);
   const open = (reference: SessionReference) => props.onOpenSession(reference.projectId, reference.sessionId);
+  const projectIconFor = (projectId: string) => props.projects.find((project) => project.id === projectId)?.icon ?? null;
 
   return (
     <section className="h-full overflow-y-auto bg-background">
@@ -119,6 +130,7 @@ export function TodayScreen(props: TodayScreenProps) {
               <SessionRow
                 key={permissionRequest.requestId}
                 reference={reference}
+                projectIcon={projectIconFor(reference.projectId)}
                 leading={
                   isQuestionRequest(permissionRequest.toolName) ? <MessageCircleQuestion className="size-4 text-status-waiting" /> : <ShieldAlert className="size-4 text-status-waiting" />
                 }
@@ -152,7 +164,7 @@ export function TodayScreen(props: TodayScreenProps) {
         {running.length > 0 && (
           <Section title={t("Läuft")}>
             {running.map((reference) => (
-              <SessionRow key={reference.sessionId} reference={reference} leading={<Loader2 className="size-4 animate-spin text-status-running" />} onOpen={() => open(reference)} />
+              <SessionRow key={reference.sessionId} reference={reference} projectIcon={projectIconFor(reference.projectId)} leading={<Loader2 className="size-4 animate-spin text-status-running" />} onOpen={() => open(reference)} />
             ))}
           </Section>
         )}
@@ -166,7 +178,7 @@ export function TodayScreen(props: TodayScreenProps) {
               key={group.key}
               title={
                 <>
-                  <ProjectAvatar name={group.name} className="size-4 rounded text-[9px]" />
+                  <ProjectAvatar name={group.name} icon={group.icon} className="size-4 rounded text-[9px]" />
                   {group.name}
                 </>
               }
@@ -179,6 +191,7 @@ export function TodayScreen(props: TodayScreenProps) {
                       <SessionRow
                         key={taskRun.id}
                         reference={{ ...taskRun.session!, sessionTitle: taskRun.taskName }}
+                        projectIcon={projectIconFor(taskRun.session!.projectId)}
                         showProject={showProject}
                         leading={taskRun.status === "success" ? <CheckCircle2 className="size-4 text-status-running" /> : <CircleAlert className="size-4 text-destructive" />}
                         meta={formatRelativeTime(taskRun.finishedAt ?? taskRun.startedAt)}
@@ -197,6 +210,7 @@ export function TodayScreen(props: TodayScreenProps) {
                       <SessionRow
                         key={reference.sessionId}
                         reference={reference}
+                        projectIcon={projectIconFor(reference.projectId)}
                         showProject={showProject}
                         leading={<MessageSquare className="size-4 text-muted-foreground" />}
                         meta={formatRelativeTime(reference.updatedAt)}

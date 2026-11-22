@@ -299,11 +299,13 @@ function McpServerDetail(props: { server: McpServer; project: Project | null; on
           </div>
           {server.lastTest.error && <p className="mt-1.5 text-[12px] text-destructive">{server.lastTest.error}</p>}
           {server.lastTest.tools.length > 0 && (
-            <ul className="mt-2 grid gap-1">
+            <ul className="mt-2 grid min-w-0 gap-1">
               {server.lastTest.tools.map((serverTool) => (
-                <li key={serverTool.name} className="flex gap-2 text-[12px]">
-                  <span className="shrink-0 font-mono">{serverTool.name}</span>
-                  <span className="truncate text-muted-foreground">{serverTool.description}</span>
+                <li key={serverTool.name} className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-2 text-[12px]">
+                  <span className="font-mono">{serverTool.name}</span>
+                  <span className="truncate text-muted-foreground" title={serverTool.description}>
+                    {serverTool.description}
+                  </span>
                 </li>
               ))}
             </ul>

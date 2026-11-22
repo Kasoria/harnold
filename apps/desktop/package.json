@@ -7,7 +7,8 @@
     "prepare-bundle": "node scripts/prepare-bundle.ts",
     "dev": "node scripts/prepare-bundle.ts && tauri dev",
     "build:app": "node scripts/prepare-bundle.ts && CI=true tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release": "node scripts/release.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

@@ -8,15 +8,41 @@
   },
   "app": {
     "windows": [],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "DeveloperTool",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
-    "externalBin": ["binaries/node"],
-    "resources": { "../resources/core/": "core/", "../resources/ui/": "ui/" },
-    "macOS": { "minimumSystemVersion": "13.0" }
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": {
+      "../resources/core/": "core/",
+      "../resources/ui/": "ui/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBCQ0E5RjM1QzVGMkM2QUIKUldTcnh2TEZOWi9LQ3gxZ0hiR2k0UlBtRWF3cjNYZnB4TldZS2ZGOU1CcGx2T3U3Tk1pd25JRGQK",
+      "endpoints": [
+        "https://github.com/Kasoria/harnold/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

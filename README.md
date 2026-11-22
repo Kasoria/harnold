@@ -33,6 +33,13 @@ Ergebnis: `apps/desktop/src-tauri/target/release/bundle/` (`.app`, `.dmg`). Vora
 - Agent-Programme (Claude Code …) sind nicht enthalten. Harnold nimmt das installierte (`PATH`, `~/.local/bin`) oder lädt es nur auf Klick nach `~/.harnold/runtimes/` (Einstellungen → Claude). Fester Pfad: `HARNOLD_CLAUDE_PATH`.
 - Log: `~/Library/Logs/com.harnold.desktop/core.log`
 - Noch unsigniert: beim ersten Start Rechtsklick → Öffnen.
+- Auto-Update: Die App prüft 15 s nach dem Start und dann alle 6 h `releases/latest/download/latest.json` dieses Repos, fragt und startet nach der Installation neu. Updates sind mit dem Updater-Key signiert (`~/.tauri/harnold.key`, nicht im Repo, nicht verlieren).
+
+Release (baut, signiert, legt GitHub-Release mit `.dmg`, Update-Archiv und `latest.json` an):
+
+```bash
+pnpm --filter @harnold/desktop release 0.2.0 "Was ist neu"
+```
 
 ## Konfiguration (env)
 

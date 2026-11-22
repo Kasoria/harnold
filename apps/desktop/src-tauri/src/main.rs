@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
 
+mod updates;
+
 /// Own port, so a dev Core on 4317 can run alongside.
 const CORE_PORT: u16 = 4327;
 const CORE_START_TIMEOUT: Duration = Duration::from_secs(60);
@@ -112,7 +114,7 @@ fn show_core_error(app: &AppHandle, window: &WebviewWindow, message: &str) {
     let _ = window.eval(&format!("window.showCoreError(`{escaped_message}`)"));
 }
 
-fn stop_core(app: &AppHandle) {
+pub(crate) fn stop_core(app: &AppHandle) {
     let Some(mut core_child) = app.state::<CoreProcess>().0.lock().unwrap().take() else { return };
     // SIGTERM first so the Core can end its agent subprocesses, then force.
     let _ = Command::new("kill").args(["-TERM", &core_child.id().to_string()]).status();
@@ -166,9 +168,12 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _arguments, _working_directory| show_main_window(app)))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(CoreProcess(Mutex::new(None)))
         .setup(|app| {
             let app_handle = app.handle().clone();
+            updates::start_update_checks(app_handle.clone());
             let window = create_main_window(&app_handle)?;
             match start_core(&app_handle) {
                 Ok(core_child) => {

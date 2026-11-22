@@ -118,6 +118,20 @@ export function validateSchedule(schedule: string): void {
   }
 }
 
+/**
+ * A run session exists only for its run – unless the task continues in it (`sessionMode` "continue")
+ * or another run still points to it.
+ */
+function removeRunSession(sessionId: string | null): void {
+  if (!sessionId) return;
+  const stillUsed =
+    database.prepare("SELECT 1 FROM task_runs WHERE session_id = ? LIMIT 1").get(sessionId) ?? database.prepare("SELECT 1 FROM tasks WHERE continued_session_id = ? LIMIT 1").get(sessionId);
+  const session = sessionStore.get(sessionId);
+  if (stillUsed || !session || agentRuntime.isRunning(sessionId)) return;
+  sessionStore.remove(sessionId);
+  eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+}
+
 export const taskStore = {
   list(): Task[] {
     return database.prepare("SELECT * FROM tasks ORDER BY created_at DESC").all().map(mapTask);
@@ -146,6 +160,25 @@ export const taskStore = {
   remove(taskId: string): void {
     database.prepare("DELETE FROM task_runs WHERE task_id = ?").run(taskId);
     database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+  },
+  /** Removes one result; its session goes with it unless the task or another run still uses it. */
+  removeRun(runId: string): boolean {
+    const row = database.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId) as Row | undefined;
+    if (!row) return false;
+    const taskRun = mapTaskRun(row);
+    if (taskRun.status === "running") return false;
+    database.prepare("DELETE FROM task_runs WHERE id = ?").run(runId);
+    removeRunSession(taskRun.sessionId);
+    return true;
+  },
+  /** Removes all finished results of a task (e.g. to empty the list). */
+  removeFinishedRuns(taskId: string): number {
+    const runIds = (database.prepare("SELECT * FROM task_runs WHERE task_id = ? AND status != 'running'").all(taskId) as Row[]).map((row) => mapTaskRun(row));
+    for (const taskRun of runIds) {
+      database.prepare("DELETE FROM task_runs WHERE id = ?").run(taskRun.id);
+      removeRunSession(taskRun.sessionId);
+    }
+    return runIds.length;
   },
   listRuns(taskId: string, limit = 20): TaskRun[] {
     return database.prepare("SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?").all(taskId, limit).map(mapTaskRun);
@@ -214,7 +247,12 @@ function cleanUpOldRuns(task: Task, currentSessionId: string): void {
   const oldSessionIds = (database.prepare("SELECT id FROM sessions WHERE task_id = ? AND created_at < ? AND id != ?").all(task.id, cutoff, currentSessionId) as { id: string }[]).map(
     (row) => row.id,
   );
-  for (const sessionId of oldSessionIds) if (!agentRuntime.isRunning(sessionId)) sessionStore.remove(sessionId);
+  for (const sessionId of oldSessionIds) {
+    if (agentRuntime.isRunning(sessionId)) continue;
+    sessionStore.remove(sessionId);
+    // The result belongs to the session – without it there is nothing left to show.
+    database.prepare("DELETE FROM task_runs WHERE session_id = ?").run(sessionId);
+  }
   if (oldSessionIds.length) eventHub.publish({ type: "sessions_changed", projectId: task.projectId });
 }
 

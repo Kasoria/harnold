@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import { InlineMarkdown } from "@/components/inline-markdown";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
 import type { Channel, Project, Task, TaskInput, TaskRun, TeamAgent } from "@/types";
@@ -19,15 +20,6 @@ import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 import { toast } from "@/lib/toast";
 
 export { describeSchedule };
-
-/** Run summaries are Markdown; the list shows them as plain text. */
-const plainSummary = (markdown: string) =>
-  markdown
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[*_`#>]+/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
 
 type TasksScreenProps = {
   inheritedModelFor: (projectId: string) => InheritedModel;
@@ -105,6 +97,24 @@ function TaskEditor(props: {
   };
 
   const valid = taskInput.name.trim() && taskInput.prompt.trim() && taskInput.schedule.trim() && taskInput.projectId;
+
+  const removeRun = (runId: string) => {
+    setTaskRuns((previous) => previous.filter((taskRun) => taskRun.id !== runId));
+    api.deleteTaskRun(runId).catch(props.onError);
+  };
+
+  const clearRuns = async () => {
+    if (!props.task) return;
+    const confirmed = await confirmAction({
+      title: t("Alle Läufe von „{0}“ löschen?", props.task.name),
+      description: t("Die Ergebnisse und ihre Sessions werden entfernt. Der Task selbst bleibt bestehen."),
+    });
+    if (!confirmed) return;
+    await api
+      .clearTaskRuns(props.task.id)
+      .then(() => setTaskRuns((previous) => previous.filter((taskRun) => taskRun.status === "running")))
+      .catch(props.onError);
+  };
 
   return (
     <div className="grid gap-4 py-3">
@@ -254,21 +264,38 @@ function TaskEditor(props: {
 
       {taskRuns.length > 0 && (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-1 border-t pt-3">
-          <span className="text-[12px] font-medium">{t("Letzte Läufe")}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12px] font-medium">{t("Letzte Läufe")}</span>
+            {props.task && taskRuns.some((taskRun) => taskRun.status !== "running") && (
+              <button type="button" className="text-[12px] text-muted-foreground transition-colors hover:text-destructive" onClick={() => void clearRuns()}>
+                {t("Alle löschen")}
+              </button>
+            )}
+          </div>
           {taskRuns.slice(0, 20).map((taskRun) => (
-            <button
-              key={taskRun.id}
-              disabled={!taskRun.sessionId}
-              onClick={() => taskRun.sessionId && props.onOpenSession(taskInput.projectId, taskRun.sessionId)}
-              className="flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-foreground/5"
-            >
+            <div key={taskRun.id} className="group flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1.5 text-[12.5px] transition-colors hover:bg-foreground/5">
               <StatusDot className="mt-1.5" status={taskRun.status === "running" ? "running" : taskRun.status === "error" ? "error" : "idle"} />
-              <span className="min-w-0 flex-1">
+              <button
+                disabled={!taskRun.sessionId}
+                onClick={() => taskRun.sessionId && props.onOpenSession(taskInput.projectId, taskRun.sessionId)}
+                className="min-w-0 flex-1 text-left disabled:cursor-default"
+              >
                 <span className="block text-muted-foreground">{formatRelativeTime(taskRun.startedAt)}</span>
-                <span className="line-clamp-2 break-words">{taskRun.summary ? plainSummary(taskRun.summary) : t("Läuft …")}</span>
-              </span>
+                <span className="line-clamp-2 break-words">{taskRun.summary ? <InlineMarkdown text={taskRun.summary} /> : t("Läuft …")}</span>
+              </button>
+              {taskRun.status !== "running" && (
+                <button
+                  type="button"
+                  aria-label={t("Lauf entfernen")}
+                  title={t("Lauf entfernen")}
+                  className="mt-0.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/5 hover:text-destructive focus-visible:opacity-100"
+                  onClick={() => removeRun(taskRun.id)}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
               <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-            </button>
+            </div>
           ))}
         </div>
       )}

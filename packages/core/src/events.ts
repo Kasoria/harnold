@@ -23,6 +23,8 @@ export type ServerEvent =
   | { type: "files_changed"; projectId: string; paths: string[] }
   | { type: "sessions_changed"; projectId: string }
   | { type: "tasks_changed" }
+  /** Task results changed (e.g. removed) – reload the today overview. */
+  | { type: "today_changed" }
   | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
   | { type: "channels_changed" }
   | { type: "memory_changed"; projectId: string | null }

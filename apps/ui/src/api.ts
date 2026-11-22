@@ -103,6 +103,10 @@ export const api = {
   deleteTask: (taskId: string) => request("DELETE", `/api/tasks/${taskId}`),
   runTask: (taskId: string) => request("POST", `/api/tasks/${taskId}/run`),
   listTaskRuns: (taskId: string) => request<TaskRun[]>("GET", `/api/tasks/${taskId}/runs`),
+  /** Removes one task result (and its session). */
+  deleteTaskRun: (runId: string) => request<{ ok: boolean }>("DELETE", `/api/task-runs/${runId}`),
+  /** Removes all finished results of a task. */
+  clearTaskRuns: (taskId: string) => request<{ removed: number }>("DELETE", `/api/tasks/${taskId}/runs`),
   listChannels: () => request<Channel[]>("GET", "/api/channels"),
   createChannel: (channelInput: ChannelInput) => request<Channel>("POST", "/api/channels", channelInput),
   updateChannel: (channelId: string, channelInput: ChannelInput) => request<Channel>("PUT", `/api/channels/${channelId}`, channelInput),

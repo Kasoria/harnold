@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, CircleAlert, Loader2, MessageCircleQuestion, MessageSquare, ShieldAlert } from "lucide-react";
+import { ArrowRight, CheckCircle2, CircleAlert, Loader2, MessageCircleQuestion, MessageSquare, ShieldAlert, Trash2 } from "lucide-react";
 import { isQuestionRequest, questionsOf } from "@/components/chat/question-card";
 import { api } from "@/api";
 import type { Environment, PermissionRequest, Project, SessionReference, TodayOverview } from "@/types";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { formatRelativeTime } from "@/components/form-field";
 import { summarizeToolInput } from "@/components/chat/tool-group";
+import { InlineMarkdown } from "@/components/inline-markdown";
 import { locale, t } from "@/lib/i18n";
 
 type TodayScreenProps = {
@@ -39,8 +40,11 @@ function SessionRow(props: {
   showProject?: boolean;
   leading: React.ReactNode;
   meta?: React.ReactNode;
-  detail?: string;
+  detail?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Shown as a trash button on hover (e.g. to clear a task result). */
+  onRemove?: () => void;
+  removeLabel?: string;
   onOpen: () => void;
 }) {
   return (
@@ -59,7 +63,22 @@ function SessionRow(props: {
         </div>
         {props.detail && <div className="mt-0.5 truncate text-[12px] text-muted-foreground">{props.detail}</div>}
       </button>
-      {props.actions ?? <ArrowRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}
+      {props.actions ?? (
+        <div className="flex shrink-0 items-center gap-0.5">
+          {props.onRemove && (
+            <button
+              type="button"
+              aria-label={props.removeLabel ?? t("Entfernen")}
+              title={props.removeLabel ?? t("Entfernen")}
+              className="rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/5 hover:text-destructive focus-visible:opacity-100"
+              onClick={props.onRemove}
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+          <ArrowRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        </div>
+      )}
     </div>
   );
 }
@@ -111,6 +130,11 @@ export function TodayScreen(props: TodayScreenProps) {
   }
   const orderedGroups = [...groups.values()].sort((first, second) => second.latest - first.latest);
   const open = (reference: SessionReference) => props.onOpenSession(reference.projectId, reference.sessionId);
+  // Removing a result also removes its run session – so it disappears here for good.
+  const removeTaskRun = (taskRunId: string) => {
+    setOverview((previous) => previous && { ...previous, taskResults: previous.taskResults.filter((taskRun) => taskRun.id !== taskRunId) });
+    api.deleteTaskRun(taskRunId).catch(onError);
+  };
   const projectIconFor = (projectId: string) => props.projects.find((project) => project.id === projectId)?.icon ?? null;
 
   return (
@@ -195,7 +219,9 @@ export function TodayScreen(props: TodayScreenProps) {
                         showProject={showProject}
                         leading={taskRun.status === "success" ? <CheckCircle2 className="size-4 text-status-running" /> : <CircleAlert className="size-4 text-destructive" />}
                         meta={formatRelativeTime(taskRun.finishedAt ?? taskRun.startedAt)}
-                        detail={taskRun.summary ?? undefined}
+                        detail={taskRun.summary ? <InlineMarkdown text={taskRun.summary} /> : undefined}
+                        onRemove={() => removeTaskRun(taskRun.id)}
+                        removeLabel={t("Ergebnis entfernen")}
                         onOpen={() => open(taskRun.session!)}
                       />
                     ))}

@@ -261,6 +261,9 @@ export function App() {
           case "tasks_changed":
             void refreshTasks();
             return;
+          case "today_changed":
+            setTodayReloadCounter((previous) => previous + 1);
+            return;
           case "channels_changed":
             void refreshChannels();
             return;

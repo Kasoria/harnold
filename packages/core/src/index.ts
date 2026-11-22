@@ -510,6 +510,23 @@ app.post("/api/tasks/:taskId/run", (context) => {
 
 app.get("/api/tasks/:taskId/runs", (context) => context.json(taskStore.listRuns(context.req.param("taskId"))));
 
+// Task results are theirs to clear: a single run (incl. its session) or all finished runs of a task.
+app.delete("/api/task-runs/:runId", (context) => {
+  const removed = taskStore.removeRun(context.req.param("runId"));
+  if (removed) {
+    eventHub.publish({ type: "tasks_changed" });
+    eventHub.publish({ type: "today_changed" });
+  }
+  return context.json({ ok: removed });
+});
+
+app.delete("/api/tasks/:taskId/runs", (context) => {
+  const removed = taskStore.removeFinishedRuns(context.req.param("taskId"));
+  eventHub.publish({ type: "tasks_changed" });
+  if (removed) eventHub.publish({ type: "today_changed" });
+  return context.json({ removed });
+});
+
 // --- Channels ---
 const channelInputSchema = z.object({
   type: z.enum(["telegram", "discord", "slack", "email"]),

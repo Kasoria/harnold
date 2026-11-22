@@ -704,4 +704,9 @@ export const englishTexts: Record<string, string> = {
   "Jeder Dienst mit /chat/completions: vLLM, LiteLLM, Azure, …": "Any service with /chat/completions: vLLM, LiteLLM, Azure, …",
   "Für Claude Code: Modelle anderer Anbieter über die Anthropic-Schnittstelle.": "For Claude Code: other providers' models via the Anthropic interface.",
   "Jeder Dienst mit der Anthropic-Messages-API.": "Any service with the Anthropic Messages API.",
+  "Ergebnis entfernen": "Remove result",
+  "Lauf entfernen": "Remove run",
+  "Alle löschen": "Delete all",
+  "Alle Läufe von „{0}“ löschen?": "Delete all runs of “{0}”?",
+  "Die Ergebnisse und ihre Sessions werden entfernt. Der Task selbst bleibt bestehen.": "The results and their sessions are removed. The task itself stays.",
 };

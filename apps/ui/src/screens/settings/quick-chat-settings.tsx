@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
 const autoDeleteOptions: { days: number | null; label: string }[] = [
   { days: null, label: t("Nie") },
@@ -12,8 +13,9 @@ const autoDeleteOptions: { days: number | null; label: string }[] = [
 ];
 
 /** Quick Chats (no project) are deleted once untouched for X days; saved on change. */
-export function QuickChatAutoDeleteSetting(props: { onSaved: (message: string) => void; onError: (unknownError: unknown) => void }) {
+export function QuickChatAutoDeleteSetting(props: { onError: (unknownError: unknown) => void }) {
   const [autoDeleteDays, setAutoDeleteDays] = useState<number | null | undefined>(undefined);
+  const { saved, flashSaved } = useSavedFlash();
 
   useEffect(() => {
     api.readQuickChatSettings().then((settings) => setAutoDeleteDays(settings.autoDeleteDays)).catch(props.onError);
@@ -26,13 +28,16 @@ export function QuickChatAutoDeleteSetting(props: { onSaved: (message: string) =
     setAutoDeleteDays(days);
     api
       .saveQuickChatSettings({ autoDeleteDays: days })
-      .then(() => props.onSaved(days ? (days === 1 ? t("Quick Chats werden nach 1 Tag gelöscht") : t("Quick Chats werden nach {0} Tagen gelöscht", days)) : t("Quick Chats bleiben erhalten")))
+      .then(() => flashSaved())
       .catch(props.onError);
   };
 
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-sm">{t("Quick Chats automatisch löschen")}</span>
+      <span className="flex items-center gap-1.5 text-sm">
+        {t("Quick Chats automatisch löschen")}
+        <SavedCheck saved={saved} />
+      </span>
       <Select value={autoDeleteDays === null ? "never" : String(autoDeleteDays)} onValueChange={choose}>
         <SelectTrigger size="sm" className="w-36">
           <SelectValue />

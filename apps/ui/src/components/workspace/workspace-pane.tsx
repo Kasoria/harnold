@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, PanelLeft, RotateCw, Save, Wand2, X } from "lucide-react";
+import { ChevronRight, ExternalLink, Loader2, PanelLeft, RotateCw, Save, Wand2, X } from "lucide-react";
 import { api } from "@/api";
 import type { FileNode, Project } from "@/types";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { FileTree } from "./file-tree";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
 import { t } from "@/lib/i18n";
+import { toast } from "@/lib/toast";
 
 /** Monaco is large; it arrives with the first file the user opens in the code view. */
 const CodeEditor = lazy(() => import("./code-editor"));
@@ -61,6 +62,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("canvas");
   const [editorContent, setEditorContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
+  const [savingFile, setSavingFile] = useState(false);
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
 
   const { project, onError } = props;
@@ -103,11 +105,15 @@ export function WorkspacePane(props: WorkspacePaneProps) {
 
   const saveFile = async () => {
     if (!selectedPath) return;
+    setSavingFile(true);
     try {
       await api.writeFile(project.id, selectedPath, editorContent);
       setSavedContent(editorContent);
+      toast.success(t("{0} gespeichert", selectedPath.split("/").pop() ?? selectedPath));
     } catch (saveError) {
       onError(saveError);
+    } finally {
+      setSavingFile(false);
     }
   };
 
@@ -152,7 +158,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
           )}
           {activeView === "code" && editorIsDirty && (
             <IconAction label={t("Speichern (⌘S)")} onClick={saveFile}>
-              <Save className="size-4" />
+              {savingFile ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             </IconAction>
           )}
           {activeView === "preview" && selectedPath && (

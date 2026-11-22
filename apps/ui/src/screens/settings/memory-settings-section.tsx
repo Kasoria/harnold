@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { api } from "@/api";
 import type { EmbeddingProvider, MemorySettings, MemorySettingsView } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FormField } from "@/components/form-field";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
 const embeddingProviderLabels: Record<EmbeddingProvider, string> = {
   off: t("Aus (nur Volltext)"),
@@ -15,11 +17,12 @@ const embeddingProviderLabels: Record<EmbeddingProvider, string> = {
 
 const defaultEmbeddingModels: Partial<Record<EmbeddingProvider, string>> = { openai: "text-embedding-3-small", ollama: "nomic-embed-text" };
 
-export function MemorySettingsSection(props: { onSaved: () => void; onError: (unknownError: unknown) => void }) {
+export function MemorySettingsSection(props: { onError: (unknownError: unknown) => void }) {
   const [settingsView, setSettingsView] = useState<MemorySettingsView | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<MemorySettings | null>(null);
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
 
   useEffect(() => {
     api
@@ -43,7 +46,7 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
       const savedSettings = await api.saveMemorySettings(settingsDraft, openaiApiKey);
       setSettingsView(savedSettings);
       setOpenaiApiKey("");
-      props.onSaved();
+      flashSaved();
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -105,7 +108,9 @@ export function MemorySettingsSection(props: { onSaved: () => void; onError: (un
 
       <div className="flex gap-2">
         <Button size="sm" disabled={saving} onClick={() => void save()}>
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           {t("Speichern")}
+          <SavedCheck saved={saved} />
         </Button>
       </div>
     </div>

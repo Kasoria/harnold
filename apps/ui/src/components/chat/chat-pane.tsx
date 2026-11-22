@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card";
-import { ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
 import type { TeamAgent, Attachment, ChatItem, QueuedMessage, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -106,6 +106,10 @@ function buildRenderBlocks(chatItems: ChatItem[]): RenderBlock[] {
 export function ChatPane(props: ChatPaneProps) {
   const sessionBackend = useSessionBackend(props.session?.backendId);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  /** Follow new content while the view sits at the end; stops as soon as the user scrolls up. */
+  const stickToBottomRef = useRef(true);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const running = props.status === "running" || props.status === "waiting";
   const [readAloud, setReadAloud] = useState(safeStorage.getItem("harnold.readAloud") === "1");
   const speechPlayback = useSpeechPlayback(props.onError);
@@ -219,14 +223,50 @@ export function ChatPane(props: ChatPaneProps) {
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
-    const nearBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 160;
-    if (nearBottom) scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: "smooth" });
-  }, [props.chatItems.length, props.streamingDraft, props.streamingThinking, props.permissionRequests.length]);
+    if (!scrollContainer || !stickToBottomRef.current) return;
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  }, [props.chatItems.length, props.streamingDraft, props.streamingThinking, props.permissionRequests.length, props.queuedMessages.length]);
 
+  // A session always opens at its last message.
   useEffect(() => {
-    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight });
+    const scrollContainer = scrollContainerRef.current;
+    stickToBottomRef.current = true;
+    setShowJumpToBottom(false);
+    if (!scrollContainer) return;
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    // Messages arrive a moment later; keep following them until the user scrolls.
+    const frame = requestAnimationFrame(() => {
+      if (stickToBottomRef.current) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [props.session?.id]);
+
+  // Late layout (images, markdown, loaded history) must not leave the view behind.
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    const content = contentRef.current;
+    if (!scrollContainer || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollToBottom = () => {
+    const scrollContainer = scrollContainerRef.current;
+    stickToBottomRef.current = true;
+    setShowJumpToBottom(false);
+    scrollContainer?.scrollTo({ top: scrollContainer.scrollHeight, behavior: "smooth" });
+  };
+
+  const trackScrollPosition = () => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+    const distanceFromBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 80;
+    setShowJumpToBottom(distanceFromBottom > 320);
+  };
 
   return (
     <section
@@ -356,8 +396,9 @@ export function ChatPane(props: ChatPaneProps) {
         </div>
       </header>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={scrollContainerRef} onScroll={trackScrollPosition} className="flex-1 overflow-y-auto">
+          <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed">
           {!props.project && <p className="text-muted-foreground">{t("Lege links ein Projekt an, um zu starten.")}</p>}
 
           {renderBlocks.map((renderBlock) => {
@@ -519,7 +560,21 @@ export function ChatPane(props: ChatPaneProps) {
               </div>
             </div>
           ))}
+          </div>
         </div>
+        {showJumpToBottom && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex justify-center">
+            <Button
+              size="icon"
+              variant="secondary"
+              className="pointer-events-auto size-8 animate-in rounded-full border shadow-sm fade-in slide-in-from-bottom-1 duration-150"
+              onClick={scrollToBottom}
+              aria-label={t("Zum Ende springen")}
+            >
+              <ArrowDown className="size-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {props.project && (

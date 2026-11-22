@@ -38,8 +38,8 @@ import { conversationMembers, latestVersionId } from "@/lib/session-versions";
 import { systemSpeechAvailable } from "@/lib/system-speech";
 import { t } from "@/lib/i18n";
 import { AppVersionBadge } from "@/components/app-version-badge";
-
-type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
+import { Toaster } from "@/components/toaster";
+import { toast } from "@/lib/toast";
 
 const panelAnimationMs = 260;
 const activeEnvironmentStorageKey = "harnold.activeEnvironment";
@@ -62,7 +62,6 @@ export function App() {
   const [fileChangeCounter, setFileChangeCounter] = useState(0);
   const [lastChangedPaths, setLastChangedPaths] = useState<string[]>([]);
   const [composerInsertion, setComposerInsertion] = useState<{ text: string; nonce: number } | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [memoryChangeCounter, setMemoryChangeCounter] = useState(0);
@@ -96,15 +95,7 @@ export function App() {
   const environmentsRef = useRef(environments);
   environmentsRef.current = environments;
 
-  const reportError = useCallback((unknownError: unknown) => {
-    setToast({ message: unknownError instanceof Error ? unknownError.message : String(unknownError), tone: "error" });
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const dismissTimer = window.setTimeout(() => setToast(null), 7000);
-    return () => window.clearTimeout(dismissTimer);
-  }, [toast]);
+  const reportError = useCallback((unknownError: unknown) => toast.error(unknownError), []);
 
   const refreshTasks = useCallback(() => api.listTasks().then(setTasks).catch(reportError), [reportError]);
   const refreshChannels = useCallback(() => api.listChannels().then(setChannels).catch(reportError), [reportError]);
@@ -304,17 +295,13 @@ export function App() {
             return;
           case "task_run_finished":
             setTodayReloadCounter((previous) => previous + 1);
-            setToast({
-              message: t("Task „{0}“ {1}", serverEvent.taskName, serverEvent.success ? t("fertig") : t("fehlgeschlagen")),
-              tone: serverEvent.success ? "info" : "error",
-              action: {
-                label: t("Öffnen"),
-                run: () => {
-                  setActiveProjectId(serverEvent.projectId);
-                  setActiveSessionId(serverEvent.sessionId);
-                  navigate("/");
-                  setExpandedProjectIds((previous) => new Set(previous).add(serverEvent.projectId));
-                },
+            toast[serverEvent.success ? "success" : "error"](t("Task „{0}“ {1}", serverEvent.taskName, serverEvent.success ? t("fertig") : t("fehlgeschlagen")), {
+              label: t("Öffnen"),
+              run: () => {
+                setActiveProjectId(serverEvent.projectId);
+                setActiveSessionId(serverEvent.sessionId);
+                navigate("/");
+                setExpandedProjectIds((previous) => new Set(previous).add(serverEvent.projectId));
               },
             });
             return;
@@ -378,6 +365,7 @@ export function App() {
       setExpandedProjectIds((previous) => new Set(previous).add(project.id));
       setActiveProjectId(project.id);
       setActiveSessionId(null);
+      toast.success(t("Projekt „{0}“ angelegt", project.name));
     } catch (creationError) {
       reportError(creationError);
     }
@@ -446,7 +434,10 @@ export function App() {
   const updateProjectIcon = (project: Project, icon: string | null) =>
     api
       .updateProject(project.id, { icon })
-      .then((updatedProject) => setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate))))
+      .then((updatedProject) => {
+        setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate)));
+        toast.success(t("Symbol geändert"));
+      })
       .catch(reportError);
 
   const isDesktopApp = "__TAURI_INTERNALS__" in window;
@@ -456,7 +447,10 @@ export function App() {
     if (!name || name === project.name) return;
     api
       .updateProject(project.id, { name })
-      .then((updatedProject) => setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate))))
+      .then((updatedProject) => {
+        setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate)));
+        toast.success(t("Projekt umbenannt"));
+      })
       .catch(reportError);
   };
 
@@ -477,6 +471,7 @@ export function App() {
       }
       void refreshEnvironments();
       void refreshTasks();
+      toast.success(t("Projekt „{0}“ entfernt", project.name));
     } catch (removeError) {
       reportError(removeError);
     }
@@ -513,7 +508,18 @@ export function App() {
       icon: Pencil,
       onSelect: async () => {
         const title = await askForText({ title: t("Session umbenennen"), initialValue: session.title });
-        if (title && title !== session.title) api.updateSession(session.id, { title }).catch(reportError);
+        if (title && title !== session.title) {
+          api
+            .updateSession(session.id, { title })
+            .then(() => {
+              setSessionsByProjectId((previous) => ({
+                ...previous,
+                [session.projectId]: (previous[session.projectId] ?? []).map((candidate) => (candidate.id === session.id ? { ...candidate, title } : candidate)),
+              }));
+              toast.success(t("Session umbenannt"));
+            })
+            .catch(reportError);
+        }
       },
     },
     {
@@ -526,7 +532,7 @@ export function App() {
           onSelect: () =>
             api
               .updateSession(session.id, { projectId: project.id })
-              .then((moveResult) => moveResult.deferred && setToast({ message: t("Wird nach diesem Durchlauf verschoben"), tone: "info" }))
+              .then((moveResult) => moveResult.deferred && toast.info(t("Wird nach diesem Durchlauf verschoben")))
               .catch(reportError),
         })),
     },
@@ -558,6 +564,7 @@ export function App() {
         [session.projectId]: (previous[session.projectId] ?? []).filter((existing) => !removedSessionIds.has(existing.id)),
       }));
       if (activeSessionId && removedSessionIds.has(activeSessionId)) setActiveSessionId(null);
+      toast.success(t("Session „{0}“ gelöscht", session.title));
     } catch (deletionError) {
       reportError(deletionError);
     }
@@ -651,7 +658,7 @@ export function App() {
               navigate("/");
             }}
             onError={reportError}
-            onInfo={(message) => setToast({ message, tone: "info" })}
+            onInfo={(message) => toast.info(message)}
           />
         );
       case "memory": {
@@ -730,7 +737,6 @@ export function App() {
               setMemoryProjectId(environment.projectIds[0]);
               navigate(`${routePath("memory", "environment")}/HARNOLD.md`);
             }}
-            onSaved={(message) => setToast({ message, tone: "info" })}
             onError={reportError}
           />
         );
@@ -749,7 +755,6 @@ export function App() {
             onDefaultModelChange={setDefaultModel}
             onClaudeStatusChange={setClaudeStatus}
             onSectionChange={(section) => navigate(routePath("settings", section))}
-            onSaved={(message) => setToast({ message, tone: "info" })}
             themePreference={themePreference}
             onThemePreferenceChange={setThemePreference}
             voiceSettings={voiceSettings}
@@ -845,7 +850,7 @@ export function App() {
                 activeSessionId &&
                 api
                   .updateSession(activeSessionId, { projectId })
-                  .then((moveResult) => moveResult.deferred && setToast({ message: t("Wird nach diesem Durchlauf verschoben"), tone: "info" }))
+                  .then((moveResult) => moveResult.deferred && toast.info(t("Wird nach diesem Durchlauf verschoben")))
                   .catch(reportError)
               }
               onSetProjectEnvironment={(environmentId) =>
@@ -943,33 +948,7 @@ export function App() {
         onCreate={createProject}
         environmentName={environments.find((environment) => environment.id === activeEnvironmentId)?.name}
       />
-      {toast && (
-        <div
-          key={toast.message}
-          role={toast.tone === "error" ? "alert" : "status"}
-          className={cn(
-            "fixed right-4 bottom-4 z-50 flex max-w-sm animate-in items-center gap-3 rounded-lg border bg-popover px-4 py-3 text-[13px] shadow-lg fade-in slide-in-from-bottom-2 duration-200",
-            toast.tone === "error" ? "text-destructive" : "text-foreground",
-          )}
-        >
-          <span className="cursor-pointer" onClick={() => setToast(null)}>
-            {toast.message}
-          </span>
-          {toast.action && (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7"
-              onClick={() => {
-                toast.action!.run();
-                setToast(null);
-              }}
-            >
-              {toast.action.label}
-            </Button>
-          )}
-        </div>
-      )}
+      <Toaster />
     </TooltipProvider>
   );
 }

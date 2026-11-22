@@ -20,6 +20,8 @@ export type ModelRequest = {
   messages: ChatMessage[];
   tools: ToolDefinition[];
   signal: AbortSignal;
+  /** Stable key per conversation: lets providers route requests to the same prompt cache (sessions, not requests). */
+  cacheKey?: string;
 };
 export type ModelEvent =
   | { type: "text_delta"; text: string }
@@ -51,6 +53,32 @@ async function assertOk(response: Response): Promise<void> {
   if (response.ok) return;
   const body = (await response.text().catch(() => "")).slice(0, 600);
   throw new Error(`HTTP ${response.status}${body ? `: ${body}` : ""}`);
+}
+
+/** Marks a prompt-cache breakpoint (Anthropic style, also understood by OpenRouter and several gateways). */
+const ephemeralCache = { type: "ephemeral" } as const;
+
+/** Remembers per endpoint whether it understands cache hints, so the rejection is paid once, not every turn. */
+const cacheHintEndpoints = new Map<string, boolean>();
+
+/**
+ * A cache hint is an extra request field; an endpoint that doesn't know it answers with 400.
+ * Then the same request goes out once more without hints – saving tokens must never cost a turn.
+ */
+async function postWithCacheFallback(url: string, headers: Record<string, string>, buildBody: (cacheHints: boolean) => unknown, signal: AbortSignal): Promise<Response> {
+  const send = (cacheHints: boolean) => fetch(url, { method: "POST", headers, body: JSON.stringify(buildBody(cacheHints)), signal });
+  if (cacheHintEndpoints.get(url) === false) return send(false);
+  const response = await send(true);
+  if (response.ok) {
+    cacheHintEndpoints.set(url, true);
+    return response;
+  }
+  if (response.status !== 400) return response;
+  const rejection = await response.text().catch(() => "");
+  // A 400 for something else says nothing about cache support – the retry would only repeat the error.
+  if (!/cache/i.test(rejection)) return new Response(rejection, { status: 400 });
+  cacheHintEndpoints.set(url, false);
+  return send(false);
 }
 
 const parseArguments = (raw: string): Record<string, unknown> => {
@@ -89,19 +117,35 @@ function openAiMessages(request: ModelRequest): unknown[] {
   return messages;
 }
 
+/**
+ * Only OpenAI itself takes a `prompt_cache_key` (it steers routing to the same cache shard).
+ * Everywhere else caching runs on its own: DeepSeek, Gemini and Mistral cache automatically,
+ * OpenRouter and Anthropic-style endpoints on their own terms – an unknown field would only cost a failed request.
+ */
+function supportsPromptCacheKey(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).host;
+    return host.endsWith("openai.com") || host.endsWith("openai.azure.com");
+  } catch {
+    return false;
+  }
+}
+
 async function* openAiStream(request: ModelRequest): AsyncGenerator<ModelEvent> {
-  const response = await fetch(`${request.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(request.apiKey ? { authorization: `Bearer ${request.apiKey}` } : {}) },
-    body: JSON.stringify({
+  const cacheKey = request.cacheKey && supportsPromptCacheKey(request.baseUrl) ? { prompt_cache_key: request.cacheKey } : {};
+  const response = await postWithCacheFallback(
+    `${request.baseUrl.replace(/\/+$/, "")}/chat/completions`,
+    { "content-type": "application/json", ...(request.apiKey ? { authorization: `Bearer ${request.apiKey}` } : {}) },
+    () => ({
       model: request.model,
       messages: openAiMessages(request),
       ...(request.tools.length ? { tools: request.tools.map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } })) } : {}),
+      ...cacheKey,
       stream: true,
       stream_options: { include_usage: true },
     }),
-    signal: request.signal,
-  });
+    request.signal,
+  );
   await assertOk(response);
 
   let text = "";
@@ -153,7 +197,15 @@ async function* openAiStream(request: ModelRequest): AsyncGenerator<ModelEvent> 
 
 // ---------------------------------------------------------------- Anthropic Messages API
 
-function anthropicMessages(request: ModelRequest): unknown[] {
+/** Sets one cache breakpoint at the end of the current history – everything before it is reused on the next request. */
+function withCacheBreakpoint(messages: { role: "user" | "assistant"; content: unknown[] }[]) {
+  const lastMessage = messages[messages.length - 1];
+  const lastBlock = lastMessage?.content[lastMessage.content.length - 1];
+  if (!lastBlock || typeof lastBlock !== "object") return;
+  lastMessage.content[lastMessage.content.length - 1] = { ...(lastBlock as Record<string, unknown>), cache_control: ephemeralCache };
+}
+
+function anthropicMessages(request: ModelRequest, cacheHints = true): { role: "user" | "assistant"; content: unknown[] }[] {
   const messages: { role: "user" | "assistant"; content: unknown[] }[] = [];
   const push = (role: "user" | "assistant", blocks: unknown[]) => {
     const last = messages[messages.length - 1];
@@ -172,31 +224,43 @@ function anthropicMessages(request: ModelRequest): unknown[] {
       push("user", [{ type: "tool_result", tool_use_id: message.toolCallId, content: message.content, ...(message.isError ? { is_error: true } : {}) }]);
     }
   }
+  // Three breakpoints (tools → system → history) cover the whole prompt prefix; Anthropic allows four.
+  if (cacheHints) withCacheBreakpoint(messages);
   return messages;
 }
 
 async function* anthropicStream(request: ModelRequest): AsyncGenerator<ModelEvent> {
   const baseUrl = request.baseUrl.replace(/\/+$/, "");
   const officialHost = new URL(baseUrl).host.endsWith("anthropic.com");
-  const response = await fetch(`${baseUrl}/v1/messages`, {
-    method: "POST",
-    headers: {
+  const response = await postWithCacheFallback(
+    `${baseUrl}/v1/messages`,
+    {
       "content-type": "application/json",
       "anthropic-version": "2023-06-01",
       ...(request.apiKey ? { "x-api-key": request.apiKey } : {}),
       // Gateways in front of Anthropic-style APIs often expect a bearer token.
       ...(request.apiKey && !officialHost ? { authorization: `Bearer ${request.apiKey}` } : {}),
     },
-    body: JSON.stringify({
+    (cacheHints) => ({
       model: request.model,
       max_tokens: 16_000,
-      system: request.system,
-      messages: anthropicMessages(request),
-      ...(request.tools.length ? { tools: request.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema })) } : {}),
+      // The system prompt is cached separately from the conversation, so it goes as a block.
+      system: cacheHints ? [{ type: "text", text: request.system, cache_control: ephemeralCache }] : request.system,
+      messages: anthropicMessages(request, cacheHints),
+      ...(request.tools.length
+        ? {
+            tools: request.tools.map((tool, toolIndex) => ({
+              name: tool.name,
+              description: tool.description,
+              input_schema: tool.inputSchema,
+              ...(cacheHints && toolIndex === request.tools.length - 1 ? { cache_control: ephemeralCache } : {}),
+            })),
+          }
+        : {}),
       stream: true,
     }),
-    signal: request.signal,
-  });
+    request.signal,
+  );
   await assertOk(response);
 
   let text = "";

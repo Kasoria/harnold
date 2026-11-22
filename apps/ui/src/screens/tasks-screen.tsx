@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, Play, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
 import type { Channel, Project, Task, TaskInput, TaskRun, TeamAgent } from "@/types";
@@ -15,6 +15,8 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
 import { describeSchedule, ScheduleEditor } from "@/components/schedule-editor";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 
 export { describeSchedule };
 
@@ -74,6 +76,7 @@ function TaskEditor(props: {
   const [taskInput, setTaskInput] = useState<TaskInput>(props.initialInput);
   const [taskRuns, setTaskRuns] = useState<TaskRun[]>([]);
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
 
   const updateInput = (changes: Partial<TaskInput>) => setTaskInput((previous) => ({ ...previous, ...changes }));
   const projectTeam = props.teamForProject(taskInput.projectId);
@@ -91,6 +94,8 @@ function TaskEditor(props: {
     setSaving(true);
     try {
       const savedTask = props.task ? await api.updateTask(props.task.id, taskInput) : await api.createTask(taskInput);
+      flashSaved();
+      if (!props.task) toast.success(t("Task „{0}“ angelegt", savedTask.name));
       props.onSaved(savedTask.id);
     } catch (saveError) {
       props.onError(saveError);
@@ -221,7 +226,9 @@ function TaskEditor(props: {
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={!valid || saving} onClick={save}>
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           {t("Speichern")}
+          <SavedCheck saved={saved} />
         </Button>
         <Button size="sm" variant="ghost" onClick={props.onCancel}>
           {t("Abbrechen")}
@@ -233,7 +240,10 @@ function TaskEditor(props: {
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={async () => {
               if (!(await confirmAction({ title: t("Task „{0}“ löschen?", props.task!.name), description: t("Die bisherigen Läufe bleiben als Sessions erhalten.") }))) return;
-              await api.deleteTask(props.task!.id).catch(props.onError);
+              await api
+                .deleteTask(props.task!.id)
+                .then(() => toast.success(t("Task „{0}“ gelöscht", props.task!.name)))
+                .catch(props.onError);
               props.onSaved(null);
             }}
           >

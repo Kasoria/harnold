@@ -128,7 +128,8 @@ async function sharedAgentOptions(context: TurnContext): Promise<Options> {
     pathToClaudeCodeExecutable: await claudeExecutable(),
     cwd: project.path,
     // The project's environment (accounts, git identity, variables) on top of the provider credentials.
-    env: context.env,
+    // Prompt caching stays on: the CLI then reuses the grown conversation prefix instead of re-reading it.
+    env: { ...context.env, DISABLE_PROMPT_CACHING: "0" },
     // All design systems are open to the agent (it may create/link one mid-turn).
     // Plus workspace and environment memory, so the agent can read files stored there.
     // Plus the folders the user added to this chat.

@@ -13,6 +13,7 @@ import { HarnoldSymbol } from "@/components/harnold-logo";
 import { ModelSelect, modelsForBackend } from "@/components/model-select";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
 export type AgentConnectionProps = {
   backends: AgentBackendsView | null;
@@ -35,12 +36,14 @@ function CodexPanel(props: { codex: CodexStatus | null; onChange: (codex: CodexS
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [modelText, setModelText] = useState<string | null>(null);
+  const { saved, flashSaved } = useSavedFlash();
   if (!codex) return <div className="h-32" />;
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
     try {
       await operation();
+      flashSaved();
     } catch (operationError) {
       onError(operationError);
     } finally {
@@ -123,6 +126,7 @@ function CodexPanel(props: { codex: CodexStatus | null; onChange: (codex: CodexS
               }
             >
               <KeyRound className="size-3.5" /> {t("Speichern")}
+              <SavedCheck saved={saved} />
             </Button>
             {codex.apiKeySet && (
               <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => void run(async () => onChange(await api.saveCodexSettings({ mode: "apiKey", apiKey: "" })))}>
@@ -149,6 +153,7 @@ function CodexPanel(props: { codex: CodexStatus | null; onChange: (codex: CodexS
             }
           >
             {t("Speichern")}
+            <SavedCheck saved={saved} />
           </Button>
         </div>
       )}

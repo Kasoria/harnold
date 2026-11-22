@@ -15,6 +15,8 @@ import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 
 type EnvironmentsScreenProps = {
   workspaceDefaultModel: string;
@@ -29,7 +31,6 @@ type EnvironmentsScreenProps = {
   onEnvironmentsChange: () => void;
   /** Opens the environment's memory (notes + files shared by all its projects). */
   onOpenMemory: (environment: Environment) => void;
-  onSaved: (message: string) => void;
   onError: (unknownError: unknown) => void;
 };
 
@@ -94,7 +95,6 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
               onSaved={(savedEnvironment) => {
                 props.onEnvironmentsChange();
                 props.onSelect(savedEnvironment.id);
-                props.onSaved(t("Umgebung „{0}“ gespeichert", savedEnvironment.name));
               }}
               onDeleted={() => {
                 props.onEnvironmentsChange();
@@ -170,6 +170,7 @@ function EnvironmentEditor(props: {
   const [draft, setDraft] = useState<EnvironmentInput>(() => draftFrom(existing));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
   const [checking, setChecking] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ found: string[]; notFound: string[] } | null>(null);
@@ -194,6 +195,7 @@ function EnvironmentEditor(props: {
       setDirty(false);
       setDraft(draftFrom(result.environment));
       setImportResult(result);
+      toast.success(result.found.length ? t("Konten übernommen: {0}", result.found.join(", ")) : t("Keine angemeldeten Konten gefunden"));
     } catch (importError) {
       props.onError(importError);
     } finally {
@@ -213,6 +215,7 @@ function EnvironmentEditor(props: {
       setAccountChecks({});
       setDirty(false);
       setDraft(draftFrom(savedEnvironment));
+      flashSaved();
       props.onSaved(savedEnvironment);
     } catch (saveError) {
       props.onError(saveError);
@@ -401,6 +404,7 @@ function EnvironmentEditor(props: {
         <div className="flex gap-2 border-t pt-4">
           <Button type="submit" size="sm" disabled={!draft.name.trim() || saving}>
             {saving && <Loader2 className="size-3.5 animate-spin" />} {existing ? t("Speichern") : t("Anlegen")}
+            <SavedCheck saved={saved} />
           </Button>
           {!existing && (
             <Button type="button" size="sm" variant="ghost" onClick={props.onCancel}>

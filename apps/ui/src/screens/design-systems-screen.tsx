@@ -8,6 +8,8 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { SegmentedControl } from "@/components/segmented-control";
 import { FormField, formatRelativeTime } from "@/components/form-field";
 import { DesignTokensEditor } from "@/components/design-system/design-tokens-editor";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
 import { isActionEnter } from "@/lib/utils";
@@ -160,6 +162,7 @@ function CreateDesignSystemForm(props: {
     try {
       const links: DesignSystemLinkTarget[] = projectId !== "none" ? [{ targetType: "project", targetId: projectId }] : [];
       const createdSystem = await api.createDesignSystem(name.trim(), template === "starter" ? "starter" : "empty", links);
+      toast.success(t("Design System „{0}“ angelegt", createdSystem.name));
       props.onCreated(createdSystem, template);
     } catch (createError) {
       props.onError(createError);
@@ -238,6 +241,8 @@ function DesignSystemDetailView(props: {
 
   if (!designSystem) return <div className="h-full" />;
 
+  const { saved, flashSaved } = useSavedFlash();
+
   const applyChange = (changedSystem: DesignSystemDetail) => {
     setDesignSystem(changedSystem);
     props.onChanged(changedSystem);
@@ -249,12 +254,25 @@ function DesignSystemDetailView(props: {
     api.renameDesignSystem(designSystem.id, trimmedName).then(applyChange).catch(onError);
   };
 
-  const saveLinks = (links: DesignSystemLinkTarget[]) => api.setDesignSystemLinks(designSystem.id, links).then(applyChange).catch(onError);
+  const saveLinks = (links: DesignSystemLinkTarget[]) =>
+    api
+      .setDesignSystemLinks(designSystem.id, links)
+      .then((savedSystem) => {
+        applyChange(savedSystem);
+        flashSaved();
+      })
+      .catch(onError);
 
   const remove = async () => {
     const linkHint = designSystem.links.length ? t(" Verknüpft mit {0} Projekten/Sessions.", designSystem.links.length) : "";
     if (!(await confirmAction({ title: t("Design System „{0}“ löschen?", designSystem.name), description: t("Alle Dateien werden entfernt.{0}", linkHint) }))) return;
-    api.deleteDesignSystem(designSystem.id).then(props.onDeleted).catch(onError);
+    api
+      .deleteDesignSystem(designSystem.id)
+      .then(() => {
+        toast.success(t("Design System „{0}“ gelöscht", designSystem.name));
+        props.onDeleted();
+      })
+      .catch(onError);
   };
 
   const agentTarget = designSystem.links[0] ?? null;
@@ -273,8 +291,9 @@ function DesignSystemDetailView(props: {
           }}
           className="-ml-1.5 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[15px] font-semibold transition-colors duration-150 outline-none hover:border-border focus:border-ring"
         />
-        <span className="text-[12px] text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
           {designSystem.flatTokens.length} {t("Tokens · geändert")} {formatRelativeTime(props.allDesignSystems.find((summary) => summary.id === designSystem.id)?.updatedAt ?? Date.now())}
+          <SavedCheck saved={saved} />
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           {designSystem.modeTokens.dark && (

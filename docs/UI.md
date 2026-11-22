@@ -49,6 +49,9 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Destruktive Aktionen immer mit Bestätigungsdialog (`confirmAction`), nie `window.confirm`. Aktion links, Abbrechen rechts, Fokus auf der Aktion (Enter bestätigt, Esc bricht ab, ←/→ wechselt).
 - Gesendete Nachricht bearbeiten → neue Version der Unterhaltung ab dort; Umschalter „‹ 1/2 ›“ an der Nachricht. Sidebar zeigt je Unterhaltung eine Zeile (öffnet die zuletzt genutzte Version).
 - Composer: Anhang, Textfeld („… Datei oder Screenshot einfügen/ablegen“), Mikrofon, runder Senden-Button. Darunter: Modell, Permission-Modus, Kontext-Ring.
+- Öffnen immer bei der letzten Nachricht; beim Hochscrollen schwebt unten mittig „Zum Ende springen“ (ab ~320px Abstand). Neue Inhalte folgen nur, solange man unten ist.
+- Diktieren: Klick aufs Mikrofon startet Zuhören, der erkannte Text erscheint live im Feld (System-Spracherkennung, kostenlos). Erneuter Klick beendet und behält den Text, „×“ verwirft die Aufnahme. Senden geht jederzeit – auch mitten im Diktat (stoppt die Aufnahme und sendet den Text).
+- Feedback: Jede Aktion bestätigt sich sichtbar. Speichern mit kurzem grünem Haken am Button (Spinner während des Schreibens, Haken danach ~2 s). Aktionen, deren Ergebnis nicht an Ort und Stelle sichtbar ist (Anlegen, Verbinden, Löschen, Umbenennen, Übernehmen), zusätzlich als Toast unten rechts. Kein Toast für Dinge, die direkt in der Oberfläche erscheinen.
 - Anhänge (Bilder, PDFs, Text, Office) per Büroklammer, Einfügen oder Drag & Drop (ganzer Chat ist Ablagefläche, gestrichelter Rahmen in Akzentfarbe); liegen im Projekt unter attachments/. Bilder (Anhänge, generierte, in Antworten genannte) erscheinen als Vorschau im Chat, Klick öffnet groß.
 
 ### Workspace

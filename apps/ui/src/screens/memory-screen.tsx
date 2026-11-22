@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { ExternalLink, FileText, Paperclip, Plus, Search, Settings2, Trash2 } from "lucide-react";
+import { ExternalLink, FileText, Loader2, Paperclip, Plus, Search, Settings2, Trash2 } from "lucide-react";
 import { api } from "@/api";
 import type { Environment, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, Project } from "@/types";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 
 /** `{ scope, path }` of the open note, "new" for a draft, null for none. */
 export type MemorySelection = { scope: MemoryScope; path: string } | "new" | null;
@@ -80,6 +82,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorMode, setEditorMode] = useState<"edit" | "preview">("edit");
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
   const searchRequestRef = useRef(0);
   const environmentName = props.environment?.name;
   const scopeLabelOf = (scope: MemoryScope) => (scope === "environment" && environmentName ? t("Umgebung „{0}“", environmentName) : scopeLabels[scope]);
@@ -171,6 +174,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
     try {
       const savedFiles = await api.uploadMemoryFiles(uploadScope, projectId, memoryFilesToUpload);
       await reloadMemoryFiles();
+      toast.success(savedFiles.length === 1 ? t("„{0}“ abgelegt", savedFiles[0].path) : t("{0} Dateien abgelegt", savedFiles.length));
       if (savedFiles.length === 1) openFile(savedFiles[0]);
     } catch (uploadError) {
       onError(uploadError);
@@ -216,6 +220,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
       const savedPath = await api.saveMemoryNote(noteRef, editor.content);
       const savedRef = { ...noteRef, path: savedPath };
       setEditor({ ...editor, noteRef: savedRef, draftPath: savedPath, savedContent: editor.content });
+      flashSaved();
       if (!editor.noteRef) props.onSelect({ scope: savedRef.scope, path: savedPath });
     } catch (saveError) {
       onError(saveError);
@@ -228,6 +233,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
     if (!(await confirmAction({ title: t("„{0}“ löschen?", noteRef.path), description: t("Die Datei wird entfernt.") }))) return;
     try {
       await api.deleteMemoryNote(noteRef);
+      toast.success(t("„{0}“ gelöscht", noteRef.path));
       props.onSelect(null);
     } catch (deleteError) {
       onError(deleteError);
@@ -444,9 +450,11 @@ export function MemoryScreen(props: MemoryScreenProps) {
 
       <div className="flex items-center gap-2 border-t px-4 py-2.5">
         <Button size="sm" disabled={saving || !dirty} onClick={() => void saveNote()}>
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           {t("Speichern")}
+          <SavedCheck saved={saved || (!dirty && Boolean(editor.noteRef))} />
         </Button>
-        <span className="text-[11.5px] text-muted-foreground">{dirty ? t("Ungespeichert · ⌘S") : editor.noteRef ? t("Gespeichert") : ""}</span>
+        {dirty && <span className="text-[11.5px] text-muted-foreground">{t("Ungespeichert · ⌘S")}</span>}
         {editor.noteRef && (
           <Button size="sm" variant="ghost" className="ml-auto gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => editor.noteRef && void deleteNote(editor.noteRef)}>
             <Trash2 className="size-3.5" /> {t("Löschen")}

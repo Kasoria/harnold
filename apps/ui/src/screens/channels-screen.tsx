@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import { FormField, permissionModeOptions } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 
 type FieldDefinition = { key: string; label: string; placeholder?: string; secret?: boolean };
 
@@ -85,6 +87,7 @@ function ChannelEditor(props: {
   );
   const [allowedSendersText, setAllowedSendersText] = useState((props.channel?.allowedSenders ?? []).join("\n"));
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
   const typeDefinition = channelTypeDefinitions[channelInput.type];
 
   const updateInput = (changes: Partial<ChannelInput>) => setChannelInput((previous) => ({ ...previous, ...changes }));
@@ -94,6 +97,8 @@ function ChannelEditor(props: {
     const payload: ChannelInput = { ...channelInput, allowedSenders: allowedSendersText.split(/[\n,]/).map((sender) => sender.trim()).filter(Boolean) };
     try {
       const savedChannel = props.channel ? await api.updateChannel(props.channel.id, payload) : await api.createChannel(payload);
+      flashSaved();
+      toast.success(props.channel ? t("„{0}“ verbunden", savedChannel.name) : t("„{0}“ eingerichtet", savedChannel.name));
       props.onDone(savedChannel.id);
     } catch (saveError) {
       props.onError(saveError);
@@ -205,7 +210,9 @@ function ChannelEditor(props: {
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={saving || !channelInput.name.trim() || (channelInput.scope === "project" && !channelInput.projectId) || missingSecret} onClick={save}>
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           {props.channel ? t("Speichern & neu verbinden") : t("Verbinden")}
+          <SavedCheck saved={saved} />
         </Button>
         <Button size="sm" variant="ghost" onClick={() => props.onDone(null)}>
           {t("Abbrechen")}
@@ -217,7 +224,10 @@ function ChannelEditor(props: {
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={async () => {
               if (!(await confirmAction({ title: t("Channel „{0}“ entfernen?", props.channel!.name), confirmLabel: t("Entfernen") }))) return;
-              await api.deleteChannel(props.channel!.id).catch(props.onError);
+              await api
+                .deleteChannel(props.channel!.id)
+                .then(() => toast.success(t("Channel „{0}“ entfernt", props.channel!.name)))
+                .catch(props.onError);
               props.onDone(null);
             }}
           >

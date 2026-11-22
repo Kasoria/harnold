@@ -3,6 +3,8 @@ import { api } from "@/api";
 import type { DesignSystemDetail, FlatToken, TokenTree } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import { Loader2 } from "lucide-react";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
 type DesignTokensEditorProps = {
   designSystem: DesignSystemDetail;
@@ -148,6 +150,8 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
   const [designSystemData, setDesignSystemData] = useState<DesignSystemDetail>(props.designSystem);
   const pendingTreeRef = useRef<TokenTree | null>(null);
   const saveTimerRef = useRef<number | undefined>(undefined);
+  const [savePending, setSavePending] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
   const { onError } = props;
   const designSystemId = props.designSystem.id;
 
@@ -194,6 +198,7 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
       return { ...previous, tokens: nextTree, modeTokens: { ...previous.modeTokens, [mode]: nextModeList } };
     });
     window.clearTimeout(saveTimerRef.current);
+    setSavePending(true);
     saveTimerRef.current = window.setTimeout(() => {
       const treeToSave = pendingTreeRef.current;
       if (!treeToSave) return;
@@ -203,11 +208,14 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
           if (pendingTreeRef.current === treeToSave) {
             pendingTreeRef.current = null;
             setDesignSystemData(savedSystem);
+            flashSaved();
             props.onSaved(savedSystem);
           }
+          setSavePending(false);
         })
         .catch((saveError) => {
           pendingTreeRef.current = null;
+          setSavePending(false);
           onError(saveError);
         });
     }, 300);
@@ -215,6 +223,16 @@ export function DesignTokensEditor(props: DesignTokensEditorProps) {
 
   return (
     <div className="animate-in fade-in duration-200">
+        {/* Auto-saved while editing: spinner while it writes, then a short green check. */}
+        <div className="flex h-4 items-center justify-end gap-1.5 text-[11.5px] text-muted-foreground">
+          {savePending ? (
+            <>
+              <Loader2 className="size-3 animate-spin" /> {t("Speichert …")}
+            </>
+          ) : (
+            <SavedCheck saved={saved} />
+          )}
+        </div>
         {designSystemData.error && <p className="mt-3 rounded-lg border border-destructive/40 px-3 py-2 text-[12.5px] text-destructive">{designSystemData.error}</p>}
         {mode && <p className="mb-2 text-[12px] text-muted-foreground">{t("Grau = vom hellen Modus geerbt.")}</p>}
 

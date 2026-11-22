@@ -14,6 +14,8 @@ import { FormField } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { PluginsView } from "./plugins-view";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 
 
 type KeyValueRow = { key: string; value: string; stored: boolean };
@@ -117,6 +119,7 @@ function McpServerEditor(props: {
   const [jsonMode, setJsonMode] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
 
   const updateInput = (changes: Partial<McpServerInput>) => setServerInput((previous) => ({ ...previous, ...changes }));
 
@@ -131,6 +134,8 @@ function McpServerEditor(props: {
         const completeInput: McpServerInput = { ...serverInput, command, args: commandArguments, env: toRecord(envRows), headers: toRecord(headerRows) };
         savedServerId = (existingServer ? await api.updateMcpServer(existingServer.id, completeInput) : await api.createMcpServer(completeInput)).id;
       }
+      flashSaved();
+      if (!existingServer) toast.success(jsonMode ? t("MCP-Server importiert") : t("MCP-Server hinzugefügt"));
       props.onDone(savedServerId);
     } catch (saveError) {
       props.onError(saveError instanceof SyntaxError ? new Error(t("Ungültiges JSON")) : saveError);
@@ -141,7 +146,13 @@ function McpServerEditor(props: {
 
   const remove = async () => {
     if (!existingServer || !(await confirmAction({ title: t("MCP-Server „{0}“ entfernen?", existingServer.name), confirmLabel: t("Entfernen") }))) return;
-    await api.deleteMcpServer(existingServer.id).then(() => props.onDone(null)).catch(props.onError);
+    await api
+      .deleteMcpServer(existingServer.id)
+      .then(() => {
+        toast.success(t("MCP-Server „{0}“ entfernt", existingServer.name));
+        props.onDone(null);
+      })
+      .catch(props.onError);
   };
 
   return (
@@ -226,7 +237,9 @@ function McpServerEditor(props: {
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={saving} onClick={() => void save()}>
+          {saving && <Loader2 className="size-3.5 animate-spin" />}
           {existingServer ? t("Speichern") : jsonMode ? t("Importieren") : t("Hinzufügen")}
+          <SavedCheck saved={saved} />
         </Button>
         <Button size="sm" variant="ghost" onClick={() => props.onDone(null)}>
           {t("Abbrechen")}
@@ -437,6 +450,8 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
   const [skillContent, setSkillContent] = useState<{ key: string; content: string; savedContent: string } | null>(null);
   const [newSkill, setNewSkill] = useState({ scope: (props.project ? "project" : "user") as SkillScope, name: "", description: "", instructions: "" });
   const [saving, setSaving] = useState(false);
+  const created = useSavedFlash();
+  const skillSaved = useSavedFlash();
 
   useEffect(() => {
     api.listSkills(projectId).then(setSkills).catch(props.onError);
@@ -461,6 +476,7 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
       const trimmedName = newSkill.name.trim();
       await api.createSkill({ ...newSkill, projectId: newSkill.scope === "project" ? projectId : null, name: trimmedName });
       setNewSkill((previous) => ({ ...previous, name: "", description: "", instructions: "" }));
+      toast.success(t("Skill „{0}“ angelegt", trimmedName));
       props.onSelect(`${newSkill.scope}:${trimmedName}`);
     } catch (saveError) {
       props.onError(saveError);
@@ -475,6 +491,7 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
     try {
       await api.saveSkillFile(selectedSkill.scope, projectId, selectedSkill.path, skillContent.content);
       setSkillContent({ ...skillContent, savedContent: skillContent.content });
+      skillSaved.flashSaved();
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -510,7 +527,9 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
           </FormField>
           <div className="flex gap-2">
             <Button size="sm" disabled={saving || !newSkill.name.trim() || !newSkill.description.trim()} onClick={() => void createSkill()}>
+              {saving && <Loader2 className="size-3.5 animate-spin" />}
               {t("Anlegen")}
+              <SavedCheck saved={created.saved} />
             </Button>
             <Button size="sm" variant="ghost" onClick={() => props.onSelect(null)}>
               {t("Abbrechen")}
@@ -535,17 +554,13 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
             <Textarea className="min-h-[420px] font-mono text-[12.5px]" value={skillContent.content} onChange={(changeEvent) => setSkillContent({ ...skillContent, content: changeEvent.target.value })} />
             <div className="flex items-center gap-2">
               <Button size="sm" disabled={saving || skillContent.content === skillContent.savedContent} onClick={() => void saveSkill()}>
+                {saving && <Loader2 className="size-3.5 animate-spin" />}
                 {t("Speichern")}
+                <SavedCheck saved={skillSaved.saved} />
               </Button>
-              <span className="text-[11.5px] text-muted-foreground">
-                {skillContent.content === skillContent.savedContent ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Check className="size-3" /> {t("Gespeichert")}
-                  </span>
-                ) : (
-                  t("Ungespeichert")
-                )}
-              </span>
+              {skillContent.content !== skillContent.savedContent && (
+                <span className="text-[11.5px] text-muted-foreground">{t("Ungespeichert")}</span>
+              )}
             </div>
           </div>
         )}

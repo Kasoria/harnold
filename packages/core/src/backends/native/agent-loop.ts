@@ -255,6 +255,8 @@ export async function* runNativeTurn(input: TurnInput): AsyncGenerator<TurnEvent
         messages: hydrate(history),
         tools: toolDefinitions,
         signal: input.signal,
+        // Same key for every step of a conversation: the provider can serve the grown prefix from its cache.
+        cacheKey: sessionId,
       })) {
         if (modelEvent.type === "text_delta") yield { type: "text_delta", text: modelEvent.text };
         else if (modelEvent.type === "reasoning_delta") {

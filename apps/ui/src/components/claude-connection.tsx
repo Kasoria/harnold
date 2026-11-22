@@ -8,6 +8,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { FormField } from "@/components/form-field";
 import { isActionEnter } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
 type ClaudeConnectionPanelProps = {
   status: ClaudeAuthStatus | null;
@@ -228,6 +229,7 @@ export function AgentRuntimeSection(props: { runtime: AgentRuntimeStatus; onRech
 /** Connect Harnold to Claude: Claude login (subscription / Console) or an API key. Used in settings and onboarding. */
 export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
   const [busy, setBusy] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const { status, onStatusChange, onError } = props;
 
@@ -237,6 +239,7 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
     setBusy(true);
     try {
       await operation();
+      flashSaved();
     } catch (operationError) {
       onError(operationError);
     } finally {
@@ -283,6 +286,7 @@ export function ClaudeConnectionPanel(props: ClaudeConnectionPanelProps) {
               }
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />} {t("Speichern")}
+              <SavedCheck saved={saved} />
             </Button>
             {status.apiKeySet && (
               <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => void run(async () => onStatusChange(await api.saveClaudeSettings("apiKey", "")))}>

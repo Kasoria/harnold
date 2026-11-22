@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, FileUp, Folder, FolderPlus, Loader2, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
+import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
 import type { AgentCommand, Attachment, PermissionMode, TeamAgent } from "@/types";
 import { AttachmentChip } from "./attachment-views";
 import { api } from "@/api";
@@ -10,7 +11,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
 import { permissionModeOptions } from "@/components/form-field";
 import { getAgentModels, ModelSelect, useAgentModels, type InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
@@ -74,6 +74,17 @@ function formatDuration(totalSeconds: number) {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
+/** A running dictation: local recognition types live into the composer, the server variant transcribes at the end. */
+type Listening = { kind: "system"; session: SystemSpeechSession; baseText: string } | { kind: "server"; baseText: string };
+
+/** Appends dictation to what already stood in the composer. */
+function joinSpokenText(baseText: string, transcript: string) {
+  const spokenText = transcript.trim();
+  if (!spokenText) return baseText;
+  if (!baseText.trim()) return spokenText;
+  return /\s$/.test(baseText) ? baseText + spokenText : `${baseText} ${spokenText}`;
+}
+
 export function Composer(props: ComposerProps) {
   const [composerText, setComposerText] = useState("");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
@@ -90,6 +101,28 @@ export function Composer(props: ComposerProps) {
   const [transcribing, setTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorder = useVoiceRecorder();
+  const [listening, setListening] = useState<Listening | null>(null);
+  const [listeningSeconds, setListeningSeconds] = useState(0);
+
+  // Leaving the composer (session switch, project change) ends the dictation instead of keeping the mic open.
+  const listeningRef = useRef<Listening | null>(null);
+  listeningRef.current = listening;
+  useEffect(
+    () => () => {
+      const session = listeningRef.current;
+      if (session?.kind === "system") session.session.abort();
+    },
+    [],
+  );
+
+  // Counts the dictation, whatever does the recognizing.
+  useEffect(() => {
+    if (!listening) return;
+    const startedAt = Date.now();
+    setListeningSeconds(0);
+    const timer = window.setInterval(() => setListeningSeconds(Math.floor((Date.now() - startedAt) / 1000)), 500);
+    return () => window.clearInterval(timer);
+  }, [listening]);
   const [agentCommandList, setAgentCommandList] = useState<AgentCommand[]>([]);
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
@@ -206,7 +239,8 @@ export function Composer(props: ComposerProps) {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
   }, [composerText]);
 
-  const canSend = (composerText.trim().length > 0 || readyAttachments.length > 0) && !uploadingAttachments && !voiceRecorder.recording && !transcribing;
+  // Sending works while dictating: the recording is stopped first and what was said is sent.
+  const canSend = (composerText.trim().length > 0 || readyAttachments.length > 0 || listening !== null) && !uploadingAttachments && !transcribing;
 
   /** Runs commands Harnold handles itself; true when handled. */
   const runLocalCommand = (text: string): boolean => {
@@ -231,8 +265,19 @@ export function Composer(props: ComposerProps) {
     return props.onSessionCommand(name, commandArguments);
   };
 
+  /** Clears input and attachments after a message was handed over. */
+  const resetComposer = () => {
+    setComposerText("");
+    for (const pending of pendingAttachments) if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl);
+    setPendingAttachments([]);
+  };
+
   const submit = () => {
-    if (!canSend && !(composerText.trim().startsWith("/") && !voiceRecorder.recording)) return;
+    if (listening) {
+      void sendWhatWasSaid();
+      return;
+    }
+    if (!canSend && !composerText.trim().startsWith("/")) return;
     const text = composerText.trim();
     if (runLocalCommand(text)) {
       setComposerText("");
@@ -240,9 +285,15 @@ export function Composer(props: ComposerProps) {
     }
     if (!canSend) return;
     props.onSend(text, permissionMode, model || undefined, readyAttachments);
-    setComposerText("");
-    for (const pending of pendingAttachments) if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl);
-    setPendingAttachments([]);
+    resetComposer();
+  };
+
+  /** Send button while dictating: stop listening, keep the text, send it right away. */
+  const sendWhatWasSaid = async () => {
+    const text = (await stopListening()).trim();
+    if (!text && !readyAttachments.length) return;
+    props.onSend(text, permissionMode, model || undefined, readyAttachments);
+    resetComposer();
   };
 
   const chooseCommand = (command: ComposerCommand) => {
@@ -259,42 +310,74 @@ export function Composer(props: ComposerProps) {
     } else setComposerText(text);
   };
 
-  const systemSpeechRef = useRef<SystemSpeechSession | null>(null);
-
-  const cancelRecording = () => {
-    systemSpeechRef.current?.cancel();
-    systemSpeechRef.current = null;
-    void voiceRecorder.cancel();
-  };
-
-  const startRecording = async () => {
+  const startListening = async () => {
     if (props.sttMode === "off") {
       props.onError(new Error(t("Spracherkennung zuerst in Einstellungen → Voice einrichten.")));
       return;
     }
+    const baseText = composerText;
+    if (props.sttMode === "system") {
+      try {
+        // Local recognition types along live; the cursor stays at the end of the growing text.
+        const session = startSystemSpeech(props.sttLanguage, (transcript) => {
+          const nextText = joinSpokenText(baseText, transcript);
+          setComposerText(nextText);
+          setCaretPosition(nextText.length);
+        });
+        setListening({ kind: "system", session, baseText });
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      } catch (speechError) {
+        props.onError(speechError);
+      }
+      return;
+    }
     try {
       await voiceRecorder.start();
-      if (props.sttMode === "system") systemSpeechRef.current = startSystemSpeech(props.sttLanguage);
+      setListening({ kind: "server", baseText });
+      requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (microphoneError) {
       props.onError(microphoneError instanceof Error && microphoneError.name === "NotAllowedError" ? new Error(t("Kein Zugriff auf das Mikrofon.")) : microphoneError);
     }
   };
 
-  /** Stops recording and puts the transcript into the composer for editing. */
-  const finishRecording = async () => {
+  /** Stops listening at that point and keeps the text – nothing is sent, nothing is lost. */
+  const stopListening = async (): Promise<string> => {
+    const session = listening;
+    setListening(null);
+    if (!session) return composerText;
+    if (session.kind === "system") {
+      try {
+        const text = joinSpokenText(session.baseText, await session.session.finish());
+        setComposerText(text);
+        return text;
+      } catch (speechError) {
+        props.onError(speechError);
+        return session.baseText;
+      }
+    }
     const recordedAudio = await voiceRecorder.stop();
-    const systemSpeech = systemSpeechRef.current;
-    systemSpeechRef.current = null;
-    if (!recordedAudio && !systemSpeech) return;
+    if (!recordedAudio) return session.baseText;
     setTranscribing(true);
     try {
-      const transcript = systemSpeech ? await systemSpeech.finish() : await api.transcribe(recordedAudio!);
-      if (transcript) insertText(transcript);
+      const text = joinSpokenText(session.baseText, await api.transcribe(recordedAudio));
+      setComposerText(text);
+      return text;
     } catch (transcriptionError) {
       props.onError(transcriptionError);
+      return session.baseText;
     } finally {
       setTranscribing(false);
     }
+  };
+
+  const discardListening = () => {
+    const session = listening;
+    setListening(null);
+    if (!session) return;
+    if (session.kind === "system") session.session.abort();
+    else void voiceRecorder.discard();
+    setComposerText(session.baseText);
+    requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   return (
@@ -415,146 +498,136 @@ export function Composer(props: ComposerProps) {
               <Paperclip className="size-4" />
             </Button>
           )}
-          {voiceRecorder.recording ? (
-            <div className="flex min-h-8 flex-1 animate-in items-center gap-3 py-1.5 fade-in duration-200">
-              <span className="relative flex size-2.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
-                <span className="relative inline-flex size-2.5 rounded-full bg-destructive" />
-              </span>
-              <span className="text-[13px] tabular-nums">{formatDuration(voiceRecorder.elapsedSeconds)}</span>
-              <div className="flex h-5 flex-1 items-center gap-[3px]" aria-hidden>
-                {Array.from({ length: 24 }, (_, barIndex) => (
-                  <span
-                    key={barIndex}
-                    className="w-[3px] rounded-full bg-foreground/50 transition-[height] duration-100"
-                    style={{ height: `${Math.max(12, Math.min(100, voiceRecorder.inputLevel * 220 * (0.55 + 0.45 * Math.sin(barIndex * 1.7 + voiceRecorder.elapsedSeconds))))}%` }}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              value={composerText}
-              placeholder={transcribing ? t("Transkribiere …") : props.placeholder}
-              disabled={transcribing}
-              onChange={(changeEvent) => {
-                setComposerText(changeEvent.target.value);
-                setCaretPosition(changeEvent.target.selectionStart ?? changeEvent.target.value.length);
-              }}
-              onSelect={(selectEvent) => setCaretPosition(selectEvent.currentTarget.selectionStart ?? 0)}
-              onPaste={(clipboardEvent) => {
-                const pastedFiles = [...clipboardEvent.clipboardData.files];
-                if (!pastedFiles.length) return;
-                clipboardEvent.preventDefault();
-                addFiles(pastedFiles);
-              }}
-              onKeyDown={(keyboardEvent) => {
-                if (mentionMenuOpen) {
-                  if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
-                    keyboardEvent.preventDefault();
-                    const step = keyboardEvent.key === "ArrowDown" ? 1 : -1;
-                    setHighlightedMentionIndex((previous) => (previous + step + matchingTeamAgents.length) % matchingTeamAgents.length);
-                    return;
-                  }
-                  if ((keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
-                    keyboardEvent.preventDefault();
-                    chooseMention(matchingTeamAgents[highlightedMentionIndex] ?? matchingTeamAgents[0]);
-                    return;
-                  }
-                  if (keyboardEvent.key === "Escape") {
-                    keyboardEvent.preventDefault();
-                    setMentionMenuDismissed(true);
-                    return;
-                  }
-                }
-                if (commandMenuOpen && matchingCommands.length > 0) {
-                  if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
-                    keyboardEvent.preventDefault();
-                    const step = keyboardEvent.key === "ArrowDown" ? 1 : -1;
-                    setHighlightedCommandIndex((previous) => (previous + step + matchingCommands.length) % matchingCommands.length);
-                    return;
-                  }
-                  if ((isActionEnter(keyboardEvent) && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
-                    keyboardEvent.preventDefault();
-                    chooseCommand(matchingCommands[highlightedCommandIndex] ?? matchingCommands[0]);
-                    return;
-                  }
-                  if (keyboardEvent.key === "Escape") {
-                    keyboardEvent.preventDefault();
-                    setCommandMenuDismissed(true);
-                    return;
-                  }
-                }
-                if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={composerText}
+            placeholder={listening ? t("Zuhören …") : transcribing ? t("Transkribiere …") : props.placeholder}
+            disabled={transcribing}
+            onChange={(changeEvent) => {
+              setComposerText(changeEvent.target.value);
+              setCaretPosition(changeEvent.target.selectionStart ?? changeEvent.target.value.length);
+            }}
+            onSelect={(selectEvent) => setCaretPosition(selectEvent.currentTarget.selectionStart ?? 0)}
+            onPaste={(clipboardEvent) => {
+              const pastedFiles = [...clipboardEvent.clipboardData.files];
+              if (!pastedFiles.length) return;
+              clipboardEvent.preventDefault();
+              addFiles(pastedFiles);
+            }}
+            onKeyDown={(keyboardEvent) => {
+              if (mentionMenuOpen) {
+                if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
                   keyboardEvent.preventDefault();
-                  if (isActionEnter(keyboardEvent)) submit();
+                  const step = keyboardEvent.key === "ArrowDown" ? 1 : -1;
+                  setHighlightedMentionIndex((previous) => (previous + step + matchingTeamAgents.length) % matchingTeamAgents.length);
+                  return;
                 }
-              }}
-              className="max-h-60 min-h-8 flex-1 resize-none bg-transparent [field-sizing:content] py-1.5 text-[14px] outline-none placeholder:text-muted-foreground"
-            />
+                if ((keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
+                  keyboardEvent.preventDefault();
+                  chooseMention(matchingTeamAgents[highlightedMentionIndex] ?? matchingTeamAgents[0]);
+                  return;
+                }
+                if (keyboardEvent.key === "Escape") {
+                  keyboardEvent.preventDefault();
+                  setMentionMenuDismissed(true);
+                  return;
+                }
+              }
+              if (commandMenuOpen && matchingCommands.length > 0) {
+                if (keyboardEvent.key === "ArrowDown" || keyboardEvent.key === "ArrowUp") {
+                  keyboardEvent.preventDefault();
+                  const step = keyboardEvent.key === "ArrowDown" ? 1 : -1;
+                  setHighlightedCommandIndex((previous) => (previous + step + matchingCommands.length) % matchingCommands.length);
+                  return;
+                }
+                if ((isActionEnter(keyboardEvent) && !keyboardEvent.shiftKey) || keyboardEvent.key === "Tab") {
+                  keyboardEvent.preventDefault();
+                  chooseCommand(matchingCommands[highlightedCommandIndex] ?? matchingCommands[0]);
+                  return;
+                }
+                if (keyboardEvent.key === "Escape") {
+                  keyboardEvent.preventDefault();
+                  setCommandMenuDismissed(true);
+                  return;
+                }
+              }
+              if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
+                keyboardEvent.preventDefault();
+                if (isActionEnter(keyboardEvent)) submit();
+              }
+            }}
+            className="max-h-60 min-h-8 flex-1 resize-none bg-transparent [field-sizing:content] py-1.5 text-[14px] outline-none placeholder:text-muted-foreground"
+          />
+
+          {listening && (
+            <div className="mb-1 flex shrink-0 animate-in items-center gap-1.5 rounded-full bg-destructive/10 px-2 py-1 text-[11.5px] tabular-nums text-destructive fade-in duration-200" aria-live="polite">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
+                <span className="relative inline-flex size-2 rounded-full bg-destructive" />
+              </span>
+              {formatDuration(listeningSeconds)}
+            </div>
           )}
 
-          {voiceRecorder.recording ? (
-            <>
-              <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={cancelRecording} aria-label={t("Aufnahme verwerfen")}>
-                <X className="size-4" />
+          {listening && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={discardListening} aria-label={t("Aufnahme verwerfen")}>
+                  <X className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("Aufnahme verwerfen")}</TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant={listening ? "secondary" : "ghost"}
+                className={cn("size-8 shrink-0 rounded-full", listening ? "text-destructive" : "text-muted-foreground")}
+                disabled={transcribing}
+                onClick={() => (listening ? void stopListening() : void startListening())}
+                aria-label={listening ? t("Zuhören beenden") : t("Diktieren")}
+              >
+                {transcribing ? <Loader2 className="size-4 animate-spin" /> : listening ? <Square className="size-3 fill-current" /> : <Mic className="size-4" />}
               </Button>
-              <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={() => void finishRecording()} aria-label={t("Aufnahme beenden")}>
-                <ArrowUp className="size-4" />
-              </Button>
-            </>
-          ) : (
-            <>
+            </TooltipTrigger>
+            <TooltipContent>
+              {props.sttMode === "off" ? t("Voice in den Einstellungen einrichten") : listening ? t("Zuhören beenden") : t("Diktieren")}
+            </TooltipContent>
+          </Tooltip>
+          {props.running && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label={t("Stopp")}>
+                  <Square className="size-3 fill-current" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("Stopp")}</TooltipContent>
+            </Tooltip>
+          )}
+          {props.running ? (
+            canSend && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-8 shrink-0 rounded-full text-muted-foreground"
-                    disabled={transcribing}
-                    onClick={() => void startRecording()}
-                    aria-label={t("Sprachnachricht aufnehmen")}
-                  >
-                    {transcribing ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
+                  <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={submit} aria-label={t("Einreihen")}>
+                    <ArrowUp className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{props.sttMode !== "off" ? t("Sprachnachricht") : t("Voice in den Einstellungen einrichten")}</TooltipContent>
+                <TooltipContent>{t("Einreihen – startet nach dem laufenden Durchlauf")}</TooltipContent>
               </Tooltip>
-              {props.running && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label={t("Stopp")}>
-                      <Square className="size-3 fill-current" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t("Stopp")}</TooltipContent>
-                </Tooltip>
-              )}
-              {props.running ? (
-                canSend && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={submit} aria-label={t("Einreihen")}>
-                        <ArrowUp className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t("Einreihen – startet nach dem laufenden Durchlauf")}</TooltipContent>
-                  </Tooltip>
-                )
-              ) : (
-                <Button
-                  size="icon"
-                  className={cn("size-8 shrink-0 rounded-full transition-opacity duration-150", !canSend && "opacity-30")}
-                  disabled={!canSend}
-                  onClick={submit}
-                  aria-label={t("Senden")}
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
-              )}
-            </>
+            )
+          ) : (
+            <Button
+              size="icon"
+              className={cn("size-8 shrink-0 rounded-full transition-opacity duration-150", !canSend && "opacity-30")}
+              disabled={!canSend}
+              onClick={submit}
+              aria-label={t("Senden")}
+            >
+              <ArrowUp className="size-4" />
+            </Button>
           )}
         </div>
       </div>

@@ -12,6 +12,8 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { toast } from "@/lib/toast";
 
 const everywhereValue = "__everywhere__";
 
@@ -31,12 +33,15 @@ function TeamAgentEditor(props: { agent: TeamAgent | null; environments: Environ
       : { environmentId: null, name: "", role: "", instructions: "", model: null, icon: null },
   );
   const [saving, setSaving] = useState(false);
+  const { saved, flashSaved } = useSavedFlash();
   const updateInput = (changes: Partial<TeamAgentInput>) => setAgentInput((previous) => ({ ...previous, ...changes }));
 
   const save = async () => {
     setSaving(true);
     try {
       const savedAgent = props.agent ? await api.updateTeamAgent(props.agent.id, agentInput) : await api.createTeamAgent(agentInput);
+      flashSaved();
+      if (!props.agent) toast.success(t("„{0}“ ist im Team", savedAgent.name));
       props.onTeamChange();
       props.onDone(savedAgent.id);
     } catch (saveError) {
@@ -48,7 +53,10 @@ function TeamAgentEditor(props: { agent: TeamAgent | null; environments: Environ
 
   const remove = async () => {
     if (!props.agent || !(await confirmAction({ title: t("„{0}“ aus dem Team entfernen?", props.agent.name), description: t("Bisherige Unterhaltungen bleiben, laufen danach mit dem Standard-Agent.") }))) return;
-    await api.deleteTeamAgent(props.agent.id).catch(props.onError);
+    await api
+      .deleteTeamAgent(props.agent.id)
+      .then(() => toast.success(t("„{0}“ entfernt", props.agent!.name)))
+      .catch(props.onError);
     props.onTeamChange();
     props.onDone(null);
   };
@@ -84,6 +92,7 @@ function TeamAgentEditor(props: { agent: TeamAgent | null; environments: Environ
       <div className="flex gap-2">
         <Button size="sm" disabled={saving || !agentInput.name.trim()} onClick={() => void save()}>
           {saving && <Loader2 className="size-3.5 animate-spin" />} {t("Speichern")}
+          <SavedCheck saved={saved} />
         </Button>
         {props.agent ? (
           <Button size="sm" variant="ghost" className="ml-auto text-destructive" onClick={() => void remove()}>

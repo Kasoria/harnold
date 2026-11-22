@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api } from "@/api";
-import { Brain, Image as ImageIcon, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Brain, Image as ImageIcon, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { AgentConnection } from "@/components/agent-connection";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
@@ -15,6 +15,7 @@ import { safeStorage } from "@/lib/storage";
 import type { ThemePreference } from "@/hooks/use-theme";
 import { AppVersionSetting } from "@/screens/settings/app-version-setting";
 import { currentLanguage, languages, setLanguage, t, type Language } from "@/lib/i18n";
+import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
 export type SettingsSection = "claude" | "general" | "voice" | "images" | "memory";
 export const settingsSectionNames: SettingsSection[] = ["claude", "general", "voice", "images", "memory"];
@@ -22,7 +23,6 @@ export const settingsSectionNames: SettingsSection[] = ["claude", "general", "vo
 type SettingsScreenProps = {
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
-  onSaved: (message: string) => void;
   themePreference: ThemePreference;
   onThemePreferenceChange: (themePreference: ThemePreference) => void;
   voiceSettings: VoiceSettingsView | null;
@@ -120,6 +120,8 @@ export function SettingsScreen(props: SettingsScreenProps) {
   const [imageDraft, setImageDraft] = useState<ImageSettings>({ provider: "none", geminiModel: "", openaiModel: "" });
   const [imageKeyDraft, setImageKeyDraft] = useState("");
   const [savingImages, setSavingImages] = useState(false);
+  const imagesSaved = useSavedFlash();
+  const voiceSaved = useSavedFlash();
 
   useEffect(() => {
     setImageKeyDraft("");
@@ -144,7 +146,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
       const secretKey = imageDraft.provider === "gemini" ? "geminiApiKey" : "openaiApiKey";
       setImageSettingsView(await api.saveImageSettings(imageDraft, imageKeyDraft ? { [secretKey]: imageKeyDraft } : {}));
       setImageKeyDraft("");
-      props.onSaved("Bild-Einstellungen gespeichert");
+      imagesSaved.flashSaved();
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -171,7 +173,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
     setSavingVoice(true);
     try {
       props.onVoiceSettingsChange(await api.saveVoiceSettings(voiceDraft, secretDrafts));
-      props.onSaved("Voice-Einstellungen gespeichert");
+      voiceSaved.flashSaved();
     } catch (saveError) {
       props.onError(saveError);
     } finally {
@@ -262,7 +264,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                 </SelectContent>
               </Select>
             </div>
-            <QuickChatAutoDeleteSetting onSaved={props.onSaved} onError={props.onError} />
+            <QuickChatAutoDeleteSetting onError={props.onError} />
             <AppVersionSetting />
 
             <div className="grid gap-2">
@@ -315,7 +317,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
               </>
             )}
             <div>
-              <Button size="sm" disabled={savingImages} onClick={() => void saveImages()}>{t("Speichern")}</Button>
+              <Button size="sm" disabled={savingImages} onClick={() => void saveImages()}>
+                {savingImages && <Loader2 className="size-3.5 animate-spin" />}
+                {t("Speichern")}
+                <SavedCheck saved={imagesSaved.saved} />
+              </Button>
             </div>
           </div>
             ) : activeSection.value === "voice" ? (
@@ -375,11 +381,15 @@ export function SettingsScreen(props: SettingsScreenProps) {
               </FormField>
             )}
             <div>
-              <Button size="sm" disabled={savingVoice} onClick={() => void saveVoice()}>{t("Speichern")}</Button>
+              <Button size="sm" disabled={savingVoice} onClick={() => void saveVoice()}>
+                {savingVoice && <Loader2 className="size-3.5 animate-spin" />}
+                {t("Speichern")}
+                <SavedCheck saved={voiceSaved.saved} />
+              </Button>
             </div>
           </div>
             ) : (
-              <MemorySettingsSection onSaved={() => props.onSaved("Memory-Einstellungen gespeichert")} onError={props.onError} />
+              <MemorySettingsSection onError={props.onError} />
             )}
           </div>
         </div>

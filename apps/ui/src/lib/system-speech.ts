@@ -3,7 +3,8 @@ import { t } from "@/lib/i18n";
  * Free speech-to-text built into the browser / OS (Web Speech API): in the macOS app WebKit uses Apple's speech
  * recognition, Chrome and Edge use their own service. Not available in Firefox.
  */
-type RecognitionResultList = ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
+type RecognitionResult = ArrayLike<{ transcript: string }> & { isFinal: boolean };
+type RecognitionResultList = ArrayLike<RecognitionResult>;
 type SpeechRecognitionInstance = {
   lang: string;
   continuous: boolean;
@@ -24,45 +25,102 @@ const recognitionConstructor = (): SpeechRecognitionConstructor | undefined =>
 export const systemSpeechAvailable = () => typeof window !== "undefined" && Boolean(recognitionConstructor());
 
 export type SystemSpeechSession = {
-  /** Ends listening and resolves with everything recognized. */
+  /** Ends listening and resolves with everything recognized so far. */
   finish: () => Promise<string>;
-  cancel: () => void;
+  /** Stops listening right away, keeping what was recognized. */
+  abort: () => void;
 };
 
-export function startSystemSpeech(language: string): SystemSpeechSession {
+/** Language tag for the recognizer ("de" → "de-DE"). */
+const languageTag = (language: string) => (language === "en" ? "en-US" : language === "de" ? "de-DE" : language);
+
+/**
+ * Listens and reports the transcript live (`onTranscript`, interim results included). WebKit ends a run after a
+ * pause, so a finished run without `finish()` starts the next one and keeps everything said so far.
+ */
+export function startSystemSpeech(language: string, onTranscript?: (transcript: string) => void): SystemSpeechSession {
   const Recognition = recognitionConstructor();
   if (!Recognition) throw new Error(t("Spracherkennung des Systems ist hier nicht verfügbar."));
-  const recognition = new Recognition();
-  recognition.lang = language === "en" ? "en-US" : language === "de" ? "de-DE" : language;
-  recognition.continuous = true;
-  recognition.interimResults = true;
 
-  let transcript = "";
+  let recognition = new Recognition();
+  let committed = "";
+  let currentFinal = "";
+  let interim = "";
+  let stopped = false;
   let recognitionError: string | null = null;
   let resolveEnded: () => void = () => undefined;
   const ended = new Promise<void>((resolve) => (resolveEnded = resolve));
 
-  recognition.onresult = (resultEvent) => {
-    transcript = Array.from(resultEvent.results)
-      .map((result) => result[0]?.transcript ?? "")
-      .join("")
-      .trim();
+  const transcript = () => [committed, currentFinal, interim].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+
+  const listen = () => {
+    recognition.lang = languageTag(language);
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (resultEvent) => {
+      let final = "";
+      let pending = "";
+      for (const result of Array.from(resultEvent.results)) {
+        const text = result[0]?.transcript ?? "";
+        if (result.isFinal) final += text;
+        else pending += text;
+      }
+      currentFinal = final.trim();
+      interim = pending.trim();
+      onTranscript?.(transcript());
+    };
+    recognition.onerror = (errorEvent) => {
+      if (errorEvent.error !== "no-speech" && errorEvent.error !== "aborted") recognitionError = errorEvent.error;
+    };
+    recognition.onend = () => {
+      committed = [committed, currentFinal].filter(Boolean).join(" ").trim();
+      currentFinal = "";
+      interim = "";
+      if (stopped) {
+        resolveEnded();
+        return;
+      }
+      // A pause ended this run: keep listening so dictation does not stop mid-sentence.
+      recognition = new Recognition();
+      listen();
+    };
+    try {
+      recognition.start();
+    } catch {
+      // Already started – nothing to do.
+    }
   };
-  recognition.onerror = (errorEvent) => {
-    if (errorEvent.error !== "no-speech" && errorEvent.error !== "aborted") recognitionError = errorEvent.error;
+
+  listen();
+
+  const stopInstance = () => {
+    try {
+      recognition.stop();
+    } catch {
+      resolveEnded();
+    }
   };
-  recognition.onend = () => resolveEnded();
-  recognition.start();
 
   return {
     finish: async () => {
-      recognition.stop();
-      await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, 3000))]);
-      if (recognitionError && !transcript) {
-        throw new Error(recognitionError === "not-allowed" || recognitionError === "service-not-allowed" ? t("Kein Zugriff auf Mikrofon oder Spracherkennung.") : t("Spracherkennung: {0}", recognitionError));
+      stopped = true;
+      stopInstance();
+      await Promise.race([ended, new Promise((resolve) => setTimeout(resolve, 2000))]);
+      const heardText = transcript();
+      if (recognitionError && !heardText) {
+        throw new Error(
+          recognitionError === "not-allowed" || recognitionError === "service-not-allowed" ? t("Kein Zugriff auf Mikrofon oder Spracherkennung.") : t("Spracherkennung: {0}", recognitionError),
+        );
       }
-      return transcript;
+      return heardText;
     },
-    cancel: () => recognition.abort(),
+    abort: () => {
+      stopped = true;
+      try {
+        recognition.abort();
+      } catch {
+        resolveEnded();
+      }
+    },
   };
 }

@@ -10,6 +10,7 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { ClaudeConnectionPanel } from "@/components/claude-connection";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import { SavedCheck, useAsyncAction } from "@/components/save-feedback";
 
 const claudeEntryId = "claude";
 const newEntryId = "new";
@@ -24,6 +25,8 @@ export function ProviderForm(props: {
   presets: ProviderPreset[];
   fixedProtocol?: ProviderProtocol;
   busy: boolean;
+  /** Green check for a moment after the save went through. */
+  saved?: boolean;
   onSave: (input: ProviderInput) => void;
   onDelete?: () => void;
   onError: (unknownError: unknown) => void;
@@ -175,6 +178,7 @@ export function ProviderForm(props: {
           }
         >
           {props.busy ? <Loader2 className="size-3.5 animate-spin" /> : provider ? t("Speichern") : t("Hinzufügen")}
+          <SavedCheck saved={props.saved ?? false} />
         </Button>
         {props.onDelete && (
           <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" disabled={props.busy} onClick={props.onDelete}>
@@ -184,21 +188,6 @@ export function ProviderForm(props: {
       </div>
     </div>
   );
-}
-
-function useBusy(onError: (unknownError: unknown) => void) {
-  const [busy, setBusy] = useState(false);
-  const run = async (operation: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await operation();
-    } catch (operationError) {
-      onError(operationError);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { busy, run };
 }
 
 const entryClassName = (selected: boolean) =>
@@ -237,7 +226,7 @@ type ProviderConnectionProps = {
 export function ProviderConnection(props: ProviderConnectionProps) {
   const { providers, status, onProvidersChange, onError } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { busy, run } = useBusy(onError);
+  const { busy, saved, run } = useAsyncAction(onError);
 
   // Start on the active provider; stay on the user's pick afterwards.
   const activeId = providers?.activeId ?? claudeEntryId;
@@ -282,6 +271,7 @@ export function ProviderConnection(props: ProviderConnectionProps) {
             presets={anthropicPresets}
             fixedProtocol="anthropic"
             busy={busy}
+            saved={saved}
             onError={onError}
             onSave={(input) =>
               void run(async () => {
@@ -312,6 +302,7 @@ export function ProviderConnection(props: ProviderConnectionProps) {
             presets={anthropicPresets}
             fixedProtocol="anthropic"
             busy={busy}
+            saved={saved}
             onError={onError}
             onSave={(input) =>
               void run(async () => {
@@ -353,7 +344,7 @@ export function ProviderConnection(props: ProviderConnectionProps) {
 export function NativeProviders(props: { providers: ProvidersView | null; onProvidersChange: (providers: ProvidersView) => void; onError: (unknownError: unknown) => void }) {
   const { providers, onProvidersChange, onError } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { busy, run } = useBusy(onError);
+  const { busy, saved, run } = useAsyncAction(onError);
   if (!providers) return <div className="h-40" />;
 
   const shownId = selectedId ?? providers.providers[0]?.id ?? newEntryId;
@@ -385,6 +376,7 @@ export function NativeProviders(props: { providers: ProvidersView | null; onProv
           provider={null}
           presets={providers.presets}
           busy={busy}
+          saved={saved}
           onError={onError}
           onSave={(input) =>
             void run(async () => {
@@ -405,6 +397,7 @@ export function NativeProviders(props: { providers: ProvidersView | null; onProv
             provider={selectedProvider}
             presets={providers.presets}
             busy={busy}
+            saved={saved}
             onError={onError}
             onSave={(input) => void run(async () => onProvidersChange(await api.updateProvider(selectedProvider.id, input)))}
             onDelete={() =>

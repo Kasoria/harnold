@@ -20,11 +20,13 @@ import { TodayScreen } from "@/screens/today-screen";
 import { ClaudeOnboarding } from "@/components/claude-connection";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
+import { FilesScreen } from "@/screens/files-screen";
 import { IntegrationsScreen, type IntegrationsTab } from "@/screens/integrations-screen";
 import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
 import { Button } from "@/components/ui/button";
 import type { InheritedModel } from "@/components/model-select";
-import { ConfirmDialogHost, confirmAction } from "@/components/confirm-dialog";
+import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/components/confirm-dialog";
+import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { conversationMembers, latestVersionId } from "@/lib/session-versions";
 
@@ -400,9 +402,22 @@ export function App() {
     const projectSessions = sessionsByProjectId[session.projectId] ?? [];
     const removedSessionIds = new Set(conversationMembers(session.id, projectSessions).map((member) => member.id));
     const description = removedSessionIds.size > 1 ? `Der Verlauf inkl. ${removedSessionIds.size - 1} bearbeiteter Version(en) geht verloren.` : "Der Verlauf geht verloren.";
-    if (!(await confirmAction({ title: `Session „${session.title}“ löschen?`, description }))) return;
+    // Files only this conversation uses: offered as an opt-in, never deleted by default.
+    const exclusiveFiles = await api.listSessionExclusiveFiles(session.id).catch(() => []);
+    const exclusiveBytes = exclusiveFiles.reduce((total, file) => total + file.size, 0);
+    const confirmation = await confirmWithOption({
+      title: `Session „${session.title}“ löschen?`,
+      description,
+      option: exclusiveFiles.length
+        ? {
+            label: `Auch ${exclusiveFiles.length === 1 ? "die Datei" : `${exclusiveFiles.length} Dateien`} dieser Session löschen (${formatFileSize(exclusiveBytes)})`,
+            hint: "Anhänge und generierte Bilder, die keine andere Session und keine Design-Datei nutzt. Sonst bleiben sie im Projekt.",
+          }
+        : undefined,
+    });
+    if (!confirmation.confirmed) return;
     try {
-      await api.deleteSession(session.id);
+      await api.deleteSession(session.id, confirmation.optionChecked);
       setSessionsByProjectId((previous) => ({
         ...previous,
         [session.projectId]: (previous[session.projectId] ?? []).filter((existing) => !removedSessionIds.has(existing.id)),
@@ -485,6 +500,20 @@ export function App() {
             projects={projects}
             defaultProjectId={activeProjectId}
             onError={reportError}
+          />
+        );
+      case "files":
+        return (
+          <FilesScreen
+            environments={environments}
+            onOpenSession={(projectId, sessionId) => {
+              setActiveProjectId(projectId);
+              setActiveSessionId(sessionId);
+              setExpandedProjectIds((previous) => new Set(previous).add(projectId));
+              navigate("/");
+            }}
+            onError={reportError}
+            onInfo={(message) => setToast({ message, tone: "info" })}
           />
         );
       case "memory": {

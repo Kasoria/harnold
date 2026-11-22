@@ -9,16 +9,24 @@ export type ConfirmOptions = {
   confirmLabel?: string;
   /** Defaults to true: red confirm button. */
   destructive?: boolean;
+  /** Optional extra step as a checkbox – always unchecked by default (opt-in). */
+  option?: { label: string; hint?: string };
 };
 
-type PendingConfirmation = ConfirmOptions & { resolve: (confirmed: boolean) => void };
+export type ConfirmResult = { confirmed: boolean; optionChecked: boolean };
+type PendingConfirmation = ConfirmOptions & { resolve: (result: ConfirmResult) => void };
 
 let showConfirmation: ((pendingConfirmation: PendingConfirmation) => void) | null = null;
 
 /** Asks before a destructive action; resolves true on confirm. Needs <ConfirmDialogHost /> mounted once. */
 export function confirmAction(options: ConfirmOptions): Promise<boolean> {
+  return confirmWithOption(options).then((result) => result.confirmed);
+}
+
+/** Like confirmAction, plus whether the optional checkbox was ticked. */
+export function confirmWithOption(options: ConfirmOptions): Promise<ConfirmResult> {
   return new Promise((resolve) => {
-    if (!showConfirmation) return resolve(window.confirm(options.title));
+    if (!showConfirmation) return resolve({ confirmed: window.confirm(options.title), optionChecked: false });
     showConfirmation({ ...options, resolve });
   });
 }
@@ -29,7 +37,7 @@ export function ConfirmDialogHost() {
   useEffect(() => {
     showConfirmation = (nextConfirmation) =>
       setPendingConfirmation((previous) => {
-        previous?.resolve(false);
+        previous?.resolve({ confirmed: false, optionChecked: false });
         return nextConfirmation;
       });
     return () => {
@@ -38,9 +46,11 @@ export function ConfirmDialogHost() {
   }, []);
 
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const [optionChecked, setOptionChecked] = useState(false);
+  useEffect(() => setOptionChecked(false), [pendingConfirmation]);
 
   const answer = (confirmed: boolean) => {
-    pendingConfirmation?.resolve(confirmed);
+    pendingConfirmation?.resolve({ confirmed, optionChecked: confirmed && optionChecked });
     setPendingConfirmation(null);
   };
 
@@ -59,6 +69,15 @@ export function ConfirmDialogHost() {
           <DialogTitle className="text-[15px]">{pendingConfirmation?.title}</DialogTitle>
           {pendingConfirmation?.description && <DialogDescription>{pendingConfirmation.description}</DialogDescription>}
         </DialogHeader>
+        {pendingConfirmation?.option && (
+          <label className="flex cursor-default items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[13px]">
+            <input type="checkbox" className="mt-0.5 size-3.5" checked={optionChecked} onChange={(changeEvent) => setOptionChecked(changeEvent.target.checked)} />
+            <span>
+              {pendingConfirmation.option.label}
+              {pendingConfirmation.option.hint && <span className="mt-0.5 block text-[12px] text-muted-foreground">{pendingConfirmation.option.hint}</span>}
+            </span>
+          </label>
+        )}
         <DialogFooter
           onKeyDown={(keyboardEvent) => {
             if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") return;

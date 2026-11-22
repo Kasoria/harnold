@@ -28,6 +28,7 @@ import { pluginStore } from "./plugins.ts";
 import { saveAttachment } from "./attachments.ts";
 import { memoryFiles } from "./memory-files.ts";
 import { createProjectRecord } from "./setup-tools.ts";
+import { managedFiles, resolveManagedFile } from "./managed-files.ts";
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -173,10 +174,15 @@ app.put("/api/settings/quick-chats", async (context) => {
   return context.json(quickChatSettings.read());
 });
 
+// Files only this conversation refers to – offered (opt-in) for deletion together with the session.
+app.get("/api/sessions/:sessionId/exclusive-files", (context) => context.json(managedFiles.exclusiveToConversation(context.req.param("sessionId"))));
+
 app.delete("/api/sessions/:sessionId", (context) => {
   const session = sessionStore.get(context.req.param("sessionId"));
   if (session) {
     agentRuntime.interrupt(session.id);
+    // Opt-in only: ?deleteFiles=1 also removes attachments/images no other session or design file uses.
+    if (context.req.query("deleteFiles") === "1") managedFiles.remove(managedFiles.exclusiveToConversation(session.id).map((file) => file.id));
     sessionStore.remove(session.id);
     eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
   }
@@ -475,6 +481,29 @@ app.delete("/api/memory/files", (context) => {
 app.post("/api/memory/reindex", async (context) => {
   await memoryIndex.reindexAll();
   return context.json({ ok: true });
+});
+
+// --- Files Harnold created (attachments, generated images, memory files) ---
+app.get("/api/files", (context) => context.json(managedFiles.list()));
+
+app.get("/api/files/raw", (context) => {
+  const absolutePath = resolveManagedFile(context.req.query("id") ?? "");
+  const contentType = mimeTypesByExtension[path.extname(absolutePath).toLowerCase()] ?? "application/octet-stream";
+  return context.body(fs.readFileSync(absolutePath), 200, { "content-type": contentType, "cache-control": "no-store" });
+});
+
+app.post("/api/files/delete", async (context) => {
+  const body = z.object({ fileIds: z.array(z.string().min(1)).min(1).max(5000) }).parse(await context.req.json());
+  const removedCount = managedFiles.remove(body.fileIds);
+  eventHub.publish({ type: "memory_changed", projectId: null });
+  return context.json({ removedCount });
+});
+
+app.post("/api/files/to-memory", async (context) => {
+  const body = z.object({ fileId: z.string().min(1), scope: z.enum(["project", "environment", "workspace"]), projectId: z.string().nullable() }).parse(await context.req.json());
+  const savedFile = managedFiles.copyToMemory(body.fileId, body.scope, body.projectId ? requireProject(body.projectId) : null);
+  eventHub.publish({ type: "memory_changed", projectId: body.projectId });
+  return context.json(savedFile);
 });
 
 // --- Design systems ---

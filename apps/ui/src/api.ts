@@ -1,4 +1,4 @@
-import type { Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -59,7 +59,7 @@ export const api = {
   removePluginFolder: (pluginId: string) => request<{ ok: true }>("POST", "/api/plugins/folders/remove", { pluginId }),
   listSessions: (projectId: string) => request<Session[]>("GET", `/api/projects/${projectId}/sessions`),
   createSession: (projectId: string) => request<Session>("POST", `/api/projects/${projectId}/sessions`),
-  deleteSession: (sessionId: string) => request("DELETE", `/api/sessions/${sessionId}`),
+  deleteSession: (sessionId: string, deleteFiles = false) => request("DELETE", `/api/sessions/${sessionId}${deleteFiles ? "?deleteFiles=1" : ""}`),
   listChatItems: (sessionId: string) => request<ChatItem[]>("GET", `/api/sessions/${sessionId}/items`),
   sendMessage: (sessionId: string, text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) =>
     request("POST", `/api/sessions/${sessionId}/messages`, { text, permissionMode, model: model || undefined, attachments: attachments?.length ? attachments : undefined }),
@@ -160,6 +160,11 @@ export const api = {
   },
   memoryFileUrl: (fileRef: MemoryNoteRef) => `${coreBaseUrl}/api/memory/files/raw?${memoryNoteQuery(fileRef)}${accessToken ? `&token=${encodeURIComponent(accessToken)}` : ""}`,
   deleteMemoryFile: (fileRef: MemoryNoteRef) => request<{ ok: true }>("DELETE", `/api/memory/files?${memoryNoteQuery(fileRef)}`),
+  listManagedFiles: () => request<ManagedFile[]>("GET", "/api/files"),
+  managedFileUrl: (fileId: string) => `${coreBaseUrl}/api/files/raw?id=${encodeURIComponent(fileId)}${accessToken ? `&token=${encodeURIComponent(accessToken)}` : ""}`,
+  deleteManagedFiles: (fileIds: string[]) => request<{ removedCount: number }>("POST", "/api/files/delete", { fileIds }),
+  copyFileToMemory: (fileId: string, scope: MemoryScope, projectId: string | null) => request<MemoryFile>("POST", "/api/files/to-memory", { fileId, scope, projectId }),
+  listSessionExclusiveFiles: (sessionId: string) => request<ManagedFile[]>("GET", `/api/sessions/${sessionId}/exclusive-files`),
   deleteMemoryNote: (noteRef: MemoryNoteRef) => request<{ ok: true }>("DELETE", `/api/memory/note?${memoryNoteQuery(noteRef)}`),
   readVoiceSettings: () => request<VoiceSettingsView>("GET", "/api/settings/voice"),
   saveVoiceSettings: (settings: VoiceSettings, secrets: Partial<Record<VoiceSecretKey, string>>) =>

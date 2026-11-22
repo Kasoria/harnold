@@ -136,6 +136,25 @@ export type VoiceSettingsView = VoiceSettings & {
   ttsReady: boolean;
 };
 
+export type ManagedFileKind = "attachment" | "generated" | "memory";
+/** A file Harnold created (attachment, generated image, memory file) – see packages/core/src/managed-files.ts. */
+export type ManagedFile = {
+  id: string;
+  kind: ManagedFileKind;
+  scope: "project" | "environment" | "workspace";
+  ownerId: string;
+  ownerName: string;
+  projectId: string | null;
+  path: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  modifiedAt: number;
+  sessions: { id: string; title: string }[];
+  usedIn: string[];
+  orphaned: boolean;
+  duplicateGroup: string | null;
+};
 export type MemoryScope = "workspace" | "environment" | "project";
 export type MemoryNoteRef = { scope: MemoryScope; projectId: string | null; path: string };
 export type MemoryNoteSummary = MemoryNoteRef & { title: string; modifiedAt: number };

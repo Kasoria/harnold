@@ -17,6 +17,8 @@ import { environmentProviders } from "./environment-providers.ts";
 import { sessionActions } from "./session-actions.ts";
 import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./setup-tools.ts";
 import { createTeamTools, teamStore, teamToolNames } from "./agents.ts";
+import { createMailTools, mailToolNames } from "./mail/tools.ts";
+import { mailAutonomyLabels, mailInboxStore } from "./mail/inbox.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -28,7 +30,7 @@ export const workspaceServerName = "harnold";
 const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list", "environment_check"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
 const autoAllowedWriteToolNames = ["session_rename", "design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
-export const workspaceToolNames = [...readOnlyToolNames, ...setupReadOnlyToolNames, ...autoAllowedWriteToolNames, ...teamToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
+export const workspaceToolNames = [...readOnlyToolNames, ...setupReadOnlyToolNames, ...autoAllowedWriteToolNames, ...teamToolNames, ...mailToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
 
 export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
@@ -90,6 +92,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
     version: "1.0.0",
     tools: [
       ...createTeamTools(project, sessionId, permissionMode),
+      ...createMailTools(sessionId),
       // ------------------------------------------------------------ Overview
       tool(
         "overview",
@@ -106,7 +109,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
               `Aktuelle Session: ${sessionStore.get(sessionId)?.title ?? "–"} (id ${sessionId})`,
               `Umgebung hier: ${environmentStore.forProject(project.id)?.name ?? "keine (Standard-Konten des Rechners)"}`,
               `Design System hier: ${linkedSystem ? `${linkedSystem.name} (id ${linkedSystem.id})` : "keins verknüpft"}`,
-              `Projekte: ${projectStore.list().length} · Design Systems: ${designSystemStore.list().length} · Tasks: ${taskStore.list().length} · Channels: ${channelStore.list().length} · MCP-Server: ${mcpServerStore.list().length}`,
+              `Projekte: ${projectStore.list().length} · Design Systems: ${designSystemStore.list().length} · Tasks: ${taskStore.list().length} · Channels: ${channelStore.list().length} · Postfächer: ${mailInboxStore.list().length} · MCP-Server: ${mcpServerStore.list().length}`,
               `Eingerichtet: Claude ${claudeStatus.ready ? "ja" : "nein"} · Spracherkennung ${voiceStatus.sttReady ? "ja" : "nein"} · Sprachausgabe ${voiceStatus.ttsReady ? "ja" : "nein"} · Bilder ${imageConfig.present().ready ? "ja" : "nein"} · Semantische Memory-Suche ${memoryStatus.embeddingProvider !== "off" ? "ja" : "nein"}`,
               "Details und Ändern: settings_overview / settings_update.",
             ].join("\n"),
@@ -465,12 +468,13 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
       ),
       tool(
         "integration_list",
-        "Listet MCP-Server und Skills (mit Status).",
+        "Listet MCP-Server, Skills und E-Mail-Postfächer (mit Status).",
         {},
         safely(() => {
           const serverLines = mcpServerStore.list().map((server) => `MCP ${server.name} – ${server.transport} – ${server.enabled ? "aktiv" : "aus"}${server.projectId ? " – nur Projekt" : ""}`);
           const skillLines = skillStore.list(project).map((skill) => `Skill ${skill.name} (${skill.scope}) – ${skill.enabled ? "aktiv" : "aus"} – ${skill.description}`);
-          return textResult([...serverLines, ...skillLines].join("\n") || "Keine Integrationen.");
+          const mailLines = mailInboxStore.list().map((inbox) => `Postfach ${inbox.name} – Agent ${inbox.agentId ? (teamStore.get(inbox.agentId)?.name ?? "?") : "Standard"} – ${mailAutonomyLabels[inbox.autonomy]} – ${inbox.enabled ? "aktiv" : "aus"}`);
+          return textResult([...serverLines, ...skillLines, ...mailLines].join("\n") || "Keine Integrationen.");
         }),
         { annotations: { readOnlyHint: true } },
       ),

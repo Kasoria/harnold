@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { TeamAgent, Attachment, SessionReference, Channel, ChatItem, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { TeamAgent, Attachment, SessionReference, Channel, MailInbox, ChatItem, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -25,6 +25,7 @@ import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
 import { FilesScreen } from "@/screens/files-screen";
 import { IntegrationsScreen, type IntegrationsTab } from "@/screens/integrations-screen";
 import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
+import { MailScreen } from "@/screens/mail-screen";
 import { Button } from "@/components/ui/button";
 import type { InheritedModel } from "@/components/model-select";
 import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/components/confirm-dialog";
@@ -64,6 +65,7 @@ export function App() {
   const [composerInsertion, setComposerInsertion] = useState<{ text: string; nonce: number } | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [inboxes, setInboxes] = useState<MailInbox[]>([]);
   const [memoryChangeCounter, setMemoryChangeCounter] = useState(0);
   const [integrationsChangeCounter, setIntegrationsChangeCounter] = useState(0);
   const [designSystemsChangeCounter, setDesignSystemsChangeCounter] = useState(0);
@@ -99,6 +101,7 @@ export function App() {
 
   const refreshTasks = useCallback(() => api.listTasks().then(setTasks).catch(reportError), [reportError]);
   const refreshChannels = useCallback(() => api.listChannels().then(setChannels).catch(reportError), [reportError]);
+  const refreshMail = useCallback(() => api.listMail().then(setInboxes).catch(reportError), [reportError]);
   const refreshTeam = useCallback(() => api.listTeam().then(setTeamAgents).catch(reportError), [reportError]);
   const refreshEnvironments = useCallback(
     () =>
@@ -120,6 +123,7 @@ export function App() {
   useEffect(() => {
     void refreshTasks();
     void refreshChannels();
+    void refreshMail();
     void refreshEnvironments();
     void refreshTeam();
     // Approvals that were already waiting before this window opened.
@@ -147,7 +151,7 @@ export function App() {
         if (activeBackend && !activeBackend.ready && !(activeBackend.id === "claude-code" && loadedStatus.cliError)) setOnboardingVisible(true);
       })
       .catch(reportError);
-  }, [refreshTasks, refreshChannels, refreshEnvironments]);
+  }, [refreshTasks, refreshChannels, refreshMail, refreshEnvironments]);
 
   const refreshSessions = useCallback(
     (projectId: string) =>
@@ -267,6 +271,9 @@ export function App() {
           case "channels_changed":
             void refreshChannels();
             return;
+          case "mail_changed":
+            void refreshMail();
+            return;
           case "memory_changed":
             setMemoryChangeCounter((previous) => previous + 1);
             return;
@@ -314,7 +321,7 @@ export function App() {
             return;
         }
       }),
-    [refreshSessions, refreshTasks, refreshChannels, refreshEnvironments, navigate],
+    [refreshSessions, refreshTasks, refreshChannels, refreshMail, refreshEnvironments, navigate],
   );
 
   // The model pickers list the models of the active provider.
@@ -651,6 +658,18 @@ export function App() {
             channels={channels}
             projects={projects}
             defaultProjectId={activeProjectId}
+            onError={reportError}
+          />
+        );
+      case "mail":
+        return (
+          <MailScreen
+            selectedInboxId={route.itemId}
+            onSelectInbox={(inboxId) => navigate(routePath("mail", inboxId))}
+            inboxes={inboxes}
+            projects={projects}
+            teamAgents={teamAgents}
+            onOpenSession={openSessionFromScreen}
             onError={reportError}
           />
         );

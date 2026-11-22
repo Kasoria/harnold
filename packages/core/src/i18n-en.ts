@@ -119,4 +119,10 @@ export const englishTexts: Record<string, string> = {
   "Der Endpunkt nennt keine Modelle": "The endpoint lists no models",
   "Ordner nicht gefunden: {0}": "Folder not found: {0}",
   "Zusätzliche Ordner in diesem Chat (du darfst darin lesen und arbeiten):": "Additional folders in this chat (you may read and work in them):",
+
+  "Postfach nicht gefunden": "Mailbox not found",
+  "Kein Postfach in dieser Session gebunden – die Mail-Tools gelten nur, wenn Harnold ein Postfach bearbeitet.": "No mailbox bound to this session – the mail tools only apply while Harnold is working a mailbox.",
+  "Nicht erlaubt: dieses Postfach ist auf „{0}“ gestellt (nötig: {1}).": "Not allowed: this mailbox is set to “{0}” (needs {1}).",
+  "Entwurf nicht gefunden oder nicht mehr offen": "Draft not found or no longer open",
+  "Entwurf unvollständig": "Draft incomplete",
 };

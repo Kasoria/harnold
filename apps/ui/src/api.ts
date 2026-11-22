@@ -1,5 +1,5 @@
 import { currentLanguage } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -115,6 +115,14 @@ export const api = {
   createChannel: (channelInput: ChannelInput) => request<Channel>("POST", "/api/channels", channelInput),
   updateChannel: (channelId: string, channelInput: ChannelInput) => request<Channel>("PUT", `/api/channels/${channelId}`, channelInput),
   deleteChannel: (channelId: string) => request("DELETE", `/api/channels/${channelId}`),
+  listMail: () => request<MailInbox[]>("GET", "/api/mail"),
+  createMail: (input: MailInboxInput) => request<MailInbox>("POST", "/api/mail", input),
+  updateMail: (inboxId: string, input: MailInboxInput) => request<MailInbox>("PUT", `/api/mail/${inboxId}`, input),
+  deleteMail: (inboxId: string) => request<{ ok: true }>("DELETE", `/api/mail/${inboxId}`),
+  readMailActivity: (inboxId: string) => request<MailActivity>("GET", `/api/mail/${inboxId}/activity`),
+  approveMailAction: (inboxId: string, actionId: string, allow: boolean) =>
+    request<{ status: string }>("POST", `/api/mail/${inboxId}/actions/${actionId}/approve`, { allow }),
+  pollMail: (inboxId: string) => request<{ ok: true }>("POST", `/api/mail/${inboxId}/poll`),
   readImageSettings: () => request<ImageSettingsView>("GET", "/api/settings/images"),
   saveImageSettings: (settings: ImageSettings, secrets: { geminiApiKey?: string; openaiApiKey?: string }) =>
     request<ImageSettingsView>("PUT", "/api/settings/images", { settings, secrets }),

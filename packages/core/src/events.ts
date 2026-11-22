@@ -29,6 +29,7 @@ export type ServerEvent =
   | { type: "today_changed" }
   | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
   | { type: "channels_changed" }
+  | { type: "mail_changed" }
   | { type: "memory_changed"; projectId: string | null }
   | { type: "integrations_changed" }
   | { type: "design_systems_changed" }

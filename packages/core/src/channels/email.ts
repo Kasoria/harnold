@@ -2,29 +2,9 @@ import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { simpleParser } from "mailparser";
 import { type ChannelAdapter, type ChannelAdapterContext } from "./types.ts";
+import { failsAuthentication, stripQuotedReply } from "../mail/mail-parse.ts";
 
 const pollIntervalMs = 60_000;
-
-/**
- * A `From:` address can be forged. Harnold therefore believes the receiving mail server when it says the
- * mail failed authentication: an explicit `spf=fail`, `dkim=fail` or `dmarc=fail` means the sender is not
- * who the address claims. Missing headers (many servers don't add them) are not treated as a failure.
- */
-function failsAuthentication(authenticationResults: unknown): boolean {
-  const headerText = Array.isArray(authenticationResults) ? authenticationResults.join(" ") : String(authenticationResults ?? "");
-  if (!headerText) return false;
-  return /\b(spf|dkim|dmarc)\s*=\s*(fail|softfail)\b/i.test(headerText);
-}
-
-/** Removes quoted history so only the new reply reaches the agent. */
-function stripQuotedReply(text: string): string {
-  const keptLines: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    if (/^>/.test(line) || /^(On .+ wrote:|Am .+ schrieb .+:)$/.test(line.trim())) break;
-    keptLines.push(line);
-  }
-  return keptLines.join("\n").trim();
-}
 
 /** IMAP polling for inbound mail, SMTP for replies. Sender address = conversation. */
 export function createEmailAdapter(context: ChannelAdapterContext): ChannelAdapter {

@@ -18,6 +18,8 @@ export type Session = {
   backendId?: AgentBackendId | null;
   /** Created by this task; shown as one row per task, not per run. */
   taskId: string | null;
+  /** Created by a mailbox (integration); hidden from the normal conversation list. */
+  mailInboxId: string | null;
   /** Extra local folders the agent may use in this chat (absolute paths). */
   directories?: string[];
 };
@@ -71,6 +73,7 @@ export type ServerEvent =
   | { type: "today_changed" }
   | { type: "task_run_finished"; taskId: string; taskName: string; sessionId: string; projectId: string; success: boolean }
   | { type: "channels_changed" }
+  | { type: "mail_changed" }
   | { type: "memory_changed"; projectId: string | null }
   | { type: "integrations_changed" }
   | { type: "design_systems_changed" }
@@ -169,6 +172,60 @@ export type Channel = Omit<ChannelInput, "secrets"> & {
   secretsSet: Record<string, boolean>;
   status: { state: "connected" | "connecting" | "error" | "stopped"; error?: string };
 };
+
+export type MailAutonomy = "readonly" | "drafts" | "approve" | "auto";
+export type MailScope = "project" | "global";
+
+export type MailInboxInput = {
+  name: string;
+  scope: MailScope;
+  projectId: string;
+  agentId: string | null;
+  autonomy: MailAutonomy;
+  enabled: boolean;
+  settings: Record<string, string>;
+  secrets: Record<string, string>;
+};
+
+export type MailboxStatus = { state: "connected" | "connecting" | "error" | "stopped"; error?: string };
+
+export type MailInbox = Omit<MailInboxInput, "secrets"> & {
+  id: string;
+  createdAt: number;
+  secretsSet: Record<string, boolean>;
+  agentName: string | null;
+  status: MailboxStatus;
+};
+
+export type MailMessage = {
+  id: string;
+  inboxId: string;
+  uid: string;
+  folder: string;
+  subject: string;
+  fromAddress: string;
+  fromName: string;
+  snippet: string;
+  status: "new" | "processed" | "ignored";
+  action: string;
+  sessionId: string | null;
+  /** Project of the session the agent used for this mail (for opening it). */
+  projectId: string | null;
+  createdAt: number;
+};
+
+export type MailAction = {
+  id: string;
+  inboxId: string;
+  messageId: string | null;
+  kind: "summary" | "digest" | "draft" | "moved" | "flagged" | "sent";
+  description: string;
+  status: "done" | "pending" | "sent" | "rejected";
+  payload: Record<string, unknown>;
+  createdAt: number;
+};
+
+export type MailActivity = { messages: MailMessage[]; actions: MailAction[]; pending: MailAction[] };
 
 export type SttProvider = "none" | "system" | "openai" | "elevenlabs" | "deepgram" | "whisper-cpp";
 export type TtsProvider = "none" | "openai" | "elevenlabs" | "piper";

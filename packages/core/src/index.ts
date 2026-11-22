@@ -19,6 +19,9 @@ import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unschedule
 import { folderStore } from "./folders.ts";
 import { channelStore, toPublicChannel } from "./channels/store.ts";
 import { channelManager } from "./channels/manager.ts";
+import { mailActionStore, mailInboxFieldDefinitions, mailInboxInputSchema, mailInboxStore, mailMessageStore, type MailInbox } from "./mail/inbox.ts";
+import { mailManager } from "./mail/manager.ts";
+import { resolveDraft } from "./mail/tools.ts";
 import { synthesize, transcribe, voiceConfig, voiceSecretKeys, voiceSettingsSchema } from "./voice.ts";
 import { designSystemStore, importLegacyProjectDesignSystems, virtualDesignSystemsPrefix, watchDesignSystems } from "./design-system.ts";
 import { environmentInputSchema, environmentStore } from "./environments.ts";
@@ -242,7 +245,7 @@ function emptyOrNewSession(projectId: string, agentId: string | null = null) {
   if (agentId && !teamStore.forProject(projectId).some((agent) => agent.id === agentId)) throw new Error(t("Agent gehört nicht zum Team dieses Projekts"));
   const emptySession = sessionStore
     .listByProject(projectId)
-    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0 && !session.title.startsWith("Team · ") && !session.taskId);
+    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0 && !session.title.startsWith("Team · ") && !session.taskId && !session.mailInboxId);
   if (emptySession) {
     if (emptySession.agentId !== agentId) {
       sessionStore.update(emptySession.id, { agentId });
@@ -615,6 +618,70 @@ app.delete("/api/channels/:channelId", async (context) => {
   await channelManager.stop(context.req.param("channelId"));
   channelStore.remove(context.req.param("channelId"));
   eventHub.publish({ type: "channels_changed" });
+  return context.json({ ok: true });
+});
+
+// --- E-Mail-Postfach (Integration: „KI im Postfach“) ---
+const presentMailInbox = (inbox: MailInbox) => ({
+  id: inbox.id,
+  name: inbox.name,
+  scope: inbox.scope,
+  projectId: inbox.projectId,
+  agentId: inbox.agentId,
+  autonomy: inbox.autonomy,
+  enabled: inbox.enabled,
+  settings: inbox.settings,
+  secretsSet: Object.fromEntries(mailInboxFieldDefinitions.secrets.map((secretName) => [secretName, Boolean(inbox.secrets[secretName])])),
+  agentName: inbox.agentId ? (teamStore.get(inbox.agentId)?.name ?? null) : null,
+  status: mailManager.statusOf(inbox.id),
+  createdAt: inbox.createdAt,
+});
+
+app.get("/api/mail", (context) => context.json(mailInboxStore.list().map(presentMailInbox)));
+
+app.post("/api/mail", async (context) => {
+  const inbox = mailInboxStore.save(mailInboxInputSchema.parse(await context.req.json()));
+  await mailManager.start(inbox.id);
+  return context.json(presentMailInbox(inbox));
+});
+
+app.put("/api/mail/:inboxId", async (context) => {
+  const inboxId = context.req.param("inboxId");
+  if (!mailInboxStore.get(inboxId)) throw new Error(t("Postfach nicht gefunden"));
+  const inbox = mailInboxStore.save(mailInboxInputSchema.parse(await context.req.json()), inboxId);
+  await mailManager.start(inbox.id);
+  return context.json(presentMailInbox(inbox));
+});
+
+app.delete("/api/mail/:inboxId", async (context) => {
+  const inboxId = context.req.param("inboxId");
+  await mailManager.stop(inboxId);
+  mailInboxStore.remove(inboxId);
+  return context.json({ ok: true });
+});
+
+app.get("/api/mail/:inboxId/activity", (context) => {
+  const inboxId = context.req.param("inboxId");
+  return context.json({
+    messages: mailMessageStore.listByInbox(inboxId).map((message) => ({
+      ...message,
+      projectId: message.sessionId ? (sessionStore.get(message.sessionId)?.projectId ?? null) : null,
+    })),
+    actions: mailActionStore.listByInbox(inboxId),
+    pending: mailActionStore.pending(inboxId),
+  });
+});
+
+app.post("/api/mail/:inboxId/actions/:actionId/approve", async (context) => {
+  const inboxId = context.req.param("inboxId");
+  const actionId = context.req.param("actionId");
+  const { allow } = z.object({ allow: z.boolean() }).parse(await context.req.json());
+  const status = await resolveDraft(inboxId, actionId, allow);
+  return context.json({ status });
+});
+
+app.post("/api/mail/:inboxId/poll", async (context) => {
+  void mailManager.start(context.req.param("inboxId"));
   return context.json({ ok: true });
 });
 
@@ -1065,6 +1132,7 @@ if (fs.existsSync(uiDistDirectory)) {
 for (const project of projectStore.list()) watchProject(project);
 startScheduler();
 channelManager.startAll();
+mailManager.startAll();
 startMemory();
 startQuickChatCleanup();
 importLegacyProjectDesignSystems();

@@ -1,4 +1,4 @@
-import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Play, Plus, Settings, Sun, Users } from "lucide-react";
+import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, Mail, MessageSquarePlus, MessagesSquare, Moon, Palette, Play, Plus, Settings, Sun, Users } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session, Task } from "@/types";
@@ -49,6 +49,7 @@ const featureScreens: { screen: ScreenName; label: string; icon: React.Component
   { screen: "today", label: t("Heute"), icon: Inbox },
   { screen: "tasks", label: t("Tasks"), icon: CalendarClock },
   { screen: "channels", label: t("Channels"), icon: MessagesSquare },
+  { screen: "mail", label: t("Postfächer"), icon: Mail },
   { screen: "memory", label: t("Memory"), icon: Brain },
   { screen: "files", label: t("Dateien"), icon: FolderOpen },
   { screen: "integrations", label: t("Integrationen"), icon: Blocks },
@@ -126,7 +127,7 @@ function conversationStatus(members: Session[], sessionStatusFor: (sessionId: st
 /** Conversations of one project; versions created by editing a message appear once. */
 function ConversationList({ projectId, className, ...props }: AppSidebarProps & { projectId: string; className?: string }) {
   const projectSessions = props.sessionsByProjectId[projectId] ?? [];
-  const conversations = projectSessions.filter((session) => !session.forkOriginSessionId && !session.taskId);
+  const conversations = projectSessions.filter((session) => !session.forkOriginSessionId && !session.taskId && !session.mailInboxId);
   const activeConversationId = props.activeSessionId ? conversationRootId(props.activeSessionId, projectSessions) : null;
   const projectTasks = props.tasks.filter((task) => task.projectId === projectId);
   return (

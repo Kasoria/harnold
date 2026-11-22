@@ -41,6 +41,7 @@ addColumnIfMissing("sessions", "fork_item_id", "TEXT");
 addColumnIfMissing("sessions", "pending_fork", "TEXT");
 addColumnIfMissing("sessions", "agent_id", "TEXT");
 addColumnIfMissing("sessions", "task_id", "TEXT");
+addColumnIfMissing("sessions", "mail_inbox_id", "TEXT");
 addColumnIfMissing("sessions", "backend_id", "TEXT");
 addColumnIfMissing("sessions", "directories", "TEXT");
 // Conversation history of Harnold's own agent (other agent programs keep theirs themselves).
@@ -80,6 +81,8 @@ export type Session = {
   agentId: string | null;
   /** Set on sessions a task created; they are listed with the task, not as normal sessions. */
   taskId: string | null;
+  /** Set on sessions a mailbox (integration) created; hidden from the normal conversation list. */
+  mailInboxId: string | null;
   /** Extra local folders the agent may work in for this chat (absolute paths), besides the project folder. */
   directories: string[];
   createdAt: number;
@@ -137,6 +140,7 @@ const mapSession = (row: Row): Session => ({
   pendingFork: row.pending_fork ? (JSON.parse(String(row.pending_fork)) as PendingFork) : null,
   agentId: row.agent_id ? String(row.agent_id) : null,
   taskId: row.task_id ? String(row.task_id) : null,
+  mailInboxId: row.mail_inbox_id ? String(row.mail_inbox_id) : null,
   directories: row.directories ? (JSON.parse(String(row.directories)) as string[]) : [],
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
@@ -203,6 +207,7 @@ export const sessionStore = {
       pendingFork: fork?.pendingFork ?? null,
       agentId,
       taskId: null,
+      mailInboxId: null,
       directories,
       createdAt: now,
       updatedAt: now,

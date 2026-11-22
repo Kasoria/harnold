@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Loader2, Plug, Plus, Trash2, X } from "lucide-react";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { api } from "@/api";
-import type { McpServer, McpServerInput, McpTransport, Project, Skill, SkillScope } from "@/types";
+import type { ExternalMcpServer, McpServer, McpServerInput, McpTransport, Project, Skill, SkillScope } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -301,6 +301,59 @@ function McpServerDetail(props: { server: McpServer; project: Project | null; on
   );
 }
 
+/** MCP servers from other AI tools on this machine: shown, and taken over into Harnold with one click. */
+function ExternalMcpServers(props: { project: Project | null; changeCounter: number; onImported: () => void; onError: (unknownError: unknown) => void }) {
+  const [externalServers, setExternalServers] = useState<ExternalMcpServer[]>([]);
+  const [importingKey, setImportingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listExternalMcpServers(props.project?.id ?? null).then(setExternalServers).catch(props.onError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.changeCounter, props.project?.id]);
+
+  if (externalServers.length === 0) return null;
+
+  const importServer = async (server: ExternalMcpServer) => {
+    const serverKey = `${server.sourceId}:${server.name}`;
+    setImportingKey(serverKey);
+    try {
+      await api.importMcpServer(server.sourceId, server.name, props.project?.id ?? null);
+      props.onImported();
+    } catch (importError) {
+      props.onError(importError);
+    } finally {
+      setImportingKey(null);
+    }
+  };
+
+  return (
+    <div className="mt-4 grid gap-0.5">
+      <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Mitgebracht</div>
+      {externalServers.map((server) => (
+        <div key={`${server.sourceId}:${server.name}`} className="flex items-center gap-2 rounded-md px-2 py-1.5" title={server.target}>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px]">{server.name}</div>
+            <div className="truncate text-[11.5px] text-muted-foreground">
+              {server.sourceLabel}
+              {server.activeViaClaude && " · aktiv über Claude"}
+            </div>
+          </div>
+          {server.imported ? (
+            <span className="text-[11.5px] text-muted-foreground">Übernommen</span>
+          ) : server.importable ? (
+            <Button size="sm" variant="ghost" className="h-7 text-[12px]" disabled={importingKey !== null} onClick={() => void importServer(server)}>
+              {importingKey === `${server.sourceId}:${server.name}` ? <Loader2 className="size-3.5 animate-spin" /> : "Übernehmen"}
+            </Button>
+          ) : null}
+        </div>
+      ))}
+      <p className="px-2 pt-1 text-[11.5px] leading-snug text-muted-foreground">
+        „Aktiv über Claude“ nutzt der Agent bereits. Übernehmen macht einen Server unabhängig vom Anbieter und testbar.
+      </p>
+    </div>
+  );
+}
+
 function McpServersView(props: { project: Project | null; selectedItemId: string | null; onSelect: (itemId: string | null) => void; changeCounter: number; onError: (unknownError: unknown) => void }) {
   const [servers, setServers] = useState<McpServer[]>([]);
 
@@ -320,7 +373,7 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
 
   const detail =
     props.selectedItemId === "new" ? (
-      <DetailPane detailKey="new" title="MCP-Server hinzufügen" subtitle="Lokal per Befehl oder entfernt per HTTP/SSE. Server aus .mcp.json und ~/.claude.json lädt der Agent zusätzlich.">
+      <DetailPane detailKey="new" title="MCP-Server hinzufügen" subtitle="Lokal per Befehl oder entfernt per HTTP/SSE. Schon eingerichtete Server aus anderen Tools stehen links unter „Mitgebracht“.">
         <McpServerEditor server={null} project={props.project} onDone={props.onSelect} onError={props.onError} />
       </DetailPane>
     ) : selectedServer ? (
@@ -337,11 +390,18 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
       />
     );
 
+  const [importCounter, setImportCounter] = useState(0);
+  useEffect(() => {
+    if (importCounter) api.listMcpServers().then(setServers).catch(props.onError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importCounter]);
+
   return (
     <MasterDetail
       list={
-        visibleServers.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine MCP-Server.</p>
+        <>
+        {visibleServers.length === 0 ? (
+          <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">Noch keine eigenen MCP-Server.</p>
         ) : (
           visibleServers.map((server) => (
             <ListRow
@@ -361,7 +421,9 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
               </div>
             </ListRow>
           ))
-        )
+        )}
+        <ExternalMcpServers project={props.project} changeCounter={props.changeCounter + importCounter} onImported={() => setImportCounter((count) => count + 1)} onError={props.onError} />
+        </>
       }
       detail={detail}
     />

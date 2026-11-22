@@ -60,7 +60,8 @@ type ChatPaneProps = {
   onOpenVersion: (sessionId: string) => void;
   /** Edit a sent message: continues as a new version from there. */
   onEditMessage: (itemId: string, text: string) => void;
-  sttReady: boolean;
+  sttMode: "off" | "system" | "server";
+  sttLanguage: string;
   ttsReady: boolean;
   onError: (unknownError: unknown) => void;
 };
@@ -436,7 +437,8 @@ export function ChatPane(props: ChatPaneProps) {
             inheritedModel={props.inheritedModel}
             insertion={props.composerInsertion}
             droppedFiles={droppedFiles}
-            sttReady={props.sttReady}
+            sttMode={props.sttMode}
+            sttLanguage={props.sttLanguage}
             ttsReady={props.ttsReady}
             readAloud={readAloud}
             onReadAloudChange={(nextReadAloud) => {

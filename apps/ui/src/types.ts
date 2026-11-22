@@ -103,6 +103,8 @@ export type ChannelType = "telegram" | "discord" | "slack" | "email";
 export type ChannelInput = {
   type: ChannelType;
   name: string;
+  /** "workspace": whole Harnold, starts in Quick Chats, switch via /projekt. "project": fixed projectId. */
+  scope: "project" | "workspace";
   projectId: string;
   enabled: boolean;
   permissionMode: PermissionMode;
@@ -119,7 +121,7 @@ export type Channel = Omit<ChannelInput, "secrets"> & {
   status: { state: "connected" | "connecting" | "error" | "stopped"; error?: string };
 };
 
-export type SttProvider = "none" | "openai" | "elevenlabs" | "deepgram" | "whisper-cpp";
+export type SttProvider = "none" | "system" | "openai" | "elevenlabs" | "deepgram" | "whisper-cpp";
 export type TtsProvider = "none" | "openai" | "elevenlabs" | "piper";
 export type VoiceSecretKey = "openaiApiKey" | "elevenlabsApiKey" | "deepgramApiKey";
 
@@ -309,3 +311,14 @@ export type TodayOverview = {
 };
 
 export type AgentCommand = { name: string; description: string; argumentHint: string };
+
+export type ExternalMcpServer = {
+  sourceId: string;
+  sourceLabel: string;
+  name: string;
+  transport: McpTransport;
+  target: string;
+  activeViaClaude: boolean;
+  imported: boolean;
+  importable: boolean;
+};

@@ -258,7 +258,8 @@ export function createSetupTools(project: Project, safely: Safely) {
         channelId: z.string().optional(),
         type: channelTypeSchema,
         name: z.string().min(1),
-        projectId: z.string().optional().describe("Projekt für eingehende Nachrichten, leer = dieses"),
+        scope: z.enum(["project", "workspace"]).default("project").describe('"workspace" = ganze Harnold-Instanz (startet in Quick Chats, Wechsel per /projekt), "project" = nur projectId'),
+        projectId: z.string().optional().describe("Projekt für eingehende Nachrichten bei scope project, leer = dieses"),
         enabled: z.boolean().default(true),
         permissionMode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan"]).default("default"),
         allowedSenders: z.array(z.string()).default([]),
@@ -268,7 +269,8 @@ export function createSetupTools(project: Project, safely: Safely) {
       },
       safely(async ({ channelId, projectId, ...channelFields }) => {
         if (channelId && !channelStore.get(channelId)) throw new Error("Channel nicht gefunden");
-        const savedChannel = channelStore.save({ ...channelFields, projectId: requireProject(projectId).id }, channelId);
+        const startProjectId = channelFields.scope === "workspace" ? (await import("./quick-chats.ts")).quickChatProject().id : requireProject(projectId).id;
+        const savedChannel = channelStore.save({ ...channelFields, projectId: startProjectId }, channelId);
         const channelManager = await loadChannelManager();
         await channelManager.start(savedChannel.id);
         return textResult(`Channel „${savedChannel.name}“ gespeichert (id ${savedChannel.id}), Status: ${JSON.stringify(channelManager.statusOf(savedChannel.id))}.`);

@@ -32,7 +32,7 @@ export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
 - Wenn der Nutzer etwas aus Harnold anspricht ("erstelle ein Design System und nutze es", "plane einen Task", "was lief in der anderen Session"), erledige es direkt mit diesen Tools – der Nutzer muss nichts manuell in den Screens verknüpfen.
 - Umgebungen (Konten/Tokens je Kontext): environment_import_current übernimmt die auf dem Rechner angemeldeten Konten (gh, vercel, netlify, supabase, npm, git-Identität …) direkt im Core – Tokens laufen dabei nicht durch den Chat. environment_save legt an/ändert (auch Tokens, die der Nutzer nennt), environment_check prüft die Konten.
-- Sessions: session_move verschiebt eine Session in ein anderes Projekt/eine andere Umgebung (Projekte via project_list), session_rename benennt um.
+- Sessions: session_move verschiebt eine Session in ein anderes Projekt/eine andere Umgebung (Projekte via project_list), session_rename benennt um. Will der Nutzer in einer Quick-Chat- oder Channel-Unterhaltung an einem bestimmten Projekt arbeiten, verschiebe die aktuelle Session mit session_move dorthin.
 - Überblick: overview. Design Systems: design_system_create (verknüpft standardmäßig mit diesem Projekt), design_system_link, design_system_write_tokens, design_system_write_file. Ein neu verknüpftes System gilt sofort; binde dessen tokens.css wie im Tool-Ergebnis beschrieben ein.
 ${setupInstructions}
 `.trim();
@@ -442,7 +442,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
         "channel_list",
         "Listet Channels (Telegram, Slack …), über die Harnold erreichbar ist. Einrichten mit Zugangsdaten macht der Nutzer im Channels-Screen.",
         {},
-        safely(() => textResult(channelStore.list().map((channel) => `${channel.name} – ${channel.type} – id ${channel.id} – ${channel.enabled ? "aktiv" : "aus"}`).join("\n") || "Keine Channels.")),
+        safely(() => textResult(channelStore.list().map((channel) => `${channel.name} – ${channel.type} – id ${channel.id} – ${channel.enabled ? "aktiv" : "aus"} – ${channel.scope === "workspace" ? "ganz Harnold" : `Projekt ${projectStore.get(channel.projectId)?.name ?? "?"}`}`).join("\n") || "Keine Channels.")),
         { annotations: { readOnlyHint: true } },
       ),
       tool(

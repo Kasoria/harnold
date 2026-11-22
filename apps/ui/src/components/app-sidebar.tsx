@@ -1,4 +1,4 @@
-import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Plus, Settings, Smile, Sun, Trash2 } from "lucide-react";
+import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, MessageSquarePlus, MessagesSquare, Moon, Palette, Plus, Settings, Sun } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session } from "@/types";
@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ProjectAvatar } from "@/components/project-avatar";
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { HarnoldLogo } from "@/components/harnold-logo";
+import { ActionContextMenu, ActionMenuButton, type MenuAction } from "@/components/action-menu";
 
 type AppSidebarProps = {
   projects: Project[];
@@ -21,10 +22,11 @@ type AppSidebarProps = {
   /** Opens a conversation (its top session; the app picks the last used version). */
   onSelectSession: (projectId: string, sessionId: string) => void;
   onCreateSession: (projectId: string) => void;
-  onDeleteSession: (session: Session) => void;
+  /** Right-click / "…" menu of a conversation and of a project. */
+  sessionActions: (session: Session) => MenuAction[];
+  projectActions: (project: Project) => MenuAction[];
   onNewProject: () => void;
   onNewQuickChat: () => void;
-  onEditProjectIcon: (project: Project) => void;
   activeScreen: ScreenName;
   onOpenScreen: (screen: ScreenName) => void;
   darkMode: boolean;
@@ -124,18 +126,18 @@ function ConversationList({ projectId, className, ...props }: AppSidebarProps & 
     <ul className={cn("space-y-0.5", className)}>
       {conversations.map((session) => (
         <li key={session.id}>
-          <button
-            className={cn(rowClassName, props.activeScreen === "workspace" && session.id === activeConversationId && activeRowClassName)}
-            onClick={() => props.onSelectSession(projectId, session.id)}
-          >
-            <StatusDot status={conversationStatus(conversationMembers(session.id, projectSessions), props.sessionStatusFor)} className="mx-1" />
-            <span className="truncate">{session.title}</span>
-            <span className="ml-auto flex">
-              <HoverAction label="Session löschen" onClick={() => props.onDeleteSession(session)}>
-                <Trash2 className="size-3.5" />
-              </HoverAction>
-            </span>
-          </button>
+          <ActionContextMenu actions={props.sessionActions(session)}>
+            <button
+              className={cn(rowClassName, props.activeScreen === "workspace" && session.id === activeConversationId && activeRowClassName)}
+              onClick={() => props.onSelectSession(projectId, session.id)}
+            >
+              <StatusDot status={conversationStatus(conversationMembers(session.id, projectSessions), props.sessionStatusFor)} className="mx-1" />
+              <span className="truncate">{session.title}</span>
+              <span className="ml-auto flex">
+                <ActionMenuButton label="Aktionen" actions={props.sessionActions(session)} />
+              </span>
+            </button>
+          </ActionContextMenu>
         </li>
       ))}
     </ul>
@@ -148,19 +150,19 @@ function ProjectTreeItem({ project, ...props }: AppSidebarProps & { project: Pro
   return (
     <li>
       <Collapsible open={expanded} onOpenChange={(open) => props.onToggleProject(project.id, open)}>
-        <CollapsibleTrigger className={cn(rowClassName, "font-medium")} title={project.path}>
-          <ProjectAvatar name={project.name} icon={project.icon} />
-          <span className="truncate">{project.name}</span>
-          <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", expanded && "rotate-90")} />
-          <span className="ml-auto flex items-center gap-0.5">
-            <HoverAction label="Icon ändern" onClick={() => props.onEditProjectIcon(project)}>
-              <Smile className="size-3.5" />
-            </HoverAction>
-            <HoverAction label="Neue Session" onClick={() => props.onCreateSession(project.id)}>
-              <Plus className="size-3.5" />
-            </HoverAction>
-          </span>
-        </CollapsibleTrigger>
+        <ActionContextMenu actions={props.projectActions(project)}>
+          <CollapsibleTrigger className={cn(rowClassName, "font-medium")} title={project.path}>
+            <ProjectAvatar name={project.name} icon={project.icon} />
+            <span className="truncate">{project.name}</span>
+            <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", expanded && "rotate-90")} />
+            <span className="ml-auto flex items-center gap-0.5">
+              <ActionMenuButton label="Projekt-Aktionen" actions={props.projectActions(project)} />
+              <HoverAction label="Neue Session" onClick={() => props.onCreateSession(project.id)}>
+                <Plus className="size-3.5" />
+              </HoverAction>
+            </span>
+          </CollapsibleTrigger>
+        </ActionContextMenu>
         <CollapsibleContent className="collapsible-animated">
           {hasSessions ? (
             <ConversationList projectId={project.id} className="py-0.5 pl-3" {...props} />

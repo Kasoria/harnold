@@ -33,12 +33,24 @@ try {
   /* column exists */
 }
 
+// Migration: access scope (one project or the whole Harnold instance).
+try {
+  database.exec("ALTER TABLE channels ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'");
+} catch {
+  /* column exists */
+}
+
+/** "project": every conversation runs in projectId. "workspace": starts in Quick Chats and may switch to any project. */
+export type ChannelScope = "project" | "workspace";
+
 export type VoiceReplyMode = "off" | "voice" | "always";
 
 export type Channel = {
   id: string;
   type: ChannelType;
   name: string;
+  scope: ChannelScope;
+  /** Fixed project (scope "project") or where new conversations start (scope "workspace": Quick Chats). */
   projectId: string;
   enabled: boolean;
   permissionMode: PermissionMode;
@@ -60,6 +72,7 @@ const mapChannel = (row: Row): Channel => ({
   id: String(row.id),
   type: String(row.type) as ChannelType,
   name: String(row.name),
+  scope: (row.scope ? String(row.scope) : "project") as ChannelScope,
   projectId: String(row.project_id),
   enabled: Boolean(row.enabled),
   permissionMode: String(row.permission_mode) as PermissionMode,
@@ -107,14 +120,14 @@ export const channelStore = {
     };
     database
       .prepare(
-        `INSERT INTO channels (id, type, name, project_id, enabled, permission_mode, allowed_senders, voice_replies, settings, secrets, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET type = excluded.type, name = excluded.name, project_id = excluded.project_id, enabled = excluded.enabled,
+        `INSERT INTO channels (id, type, name, scope, project_id, enabled, permission_mode, allowed_senders, voice_replies, settings, secrets, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET type = excluded.type, name = excluded.name, scope = excluded.scope, project_id = excluded.project_id, enabled = excluded.enabled,
            permission_mode = excluded.permission_mode, allowed_senders = excluded.allowed_senders, voice_replies = excluded.voice_replies,
            settings = excluded.settings, secrets = excluded.secrets`,
       )
       .run(
-        channel.id, channel.type, channel.name, channel.projectId, channel.enabled ? 1 : 0, channel.permissionMode,
+        channel.id, channel.type, channel.name, channel.scope, channel.projectId, channel.enabled ? 1 : 0, channel.permissionMode,
         JSON.stringify(channel.allowedSenders), channel.voiceReplies, JSON.stringify(channel.settings), encryptSecret(JSON.stringify(channel.secrets)), channel.createdAt,
       );
     return channel;

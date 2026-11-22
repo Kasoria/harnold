@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
@@ -26,6 +27,7 @@ import { mcpServerInputSchema, mcpServerStore, skillStore, testMcpServer, toPubl
 import { memoryConfig, memoryIndex, memoryNotes, memorySettingsSchema, startMemory } from "./memory.ts";
 import { deleteExpiredQuickChats, quickChatProject, quickChatSettings, startQuickChatCleanup } from "./quick-chats.ts";
 import { pluginStore } from "./plugins.ts";
+import { discoverExternalMcpServers, importExternalMcpServer } from "./mcp-discovery.ts";
 import { saveAttachment } from "./attachments.ts";
 import { memoryFiles } from "./memory-files.ts";
 import { createProjectRecord } from "./setup-tools.ts";
@@ -93,7 +95,20 @@ app.delete("/api/projects/:projectId", (context) => {
   // Removes only Harnold's record; the folder on disk stays untouched.
   unwatchProject(context.req.param("projectId"));
   environmentStore.assignProject(context.req.param("projectId"), null);
+  for (const task of taskStore.list().filter((candidate) => candidate.projectId === context.req.param("projectId"))) {
+    unscheduleTask(task.id);
+    taskStore.remove(task.id);
+  }
+  eventHub.publish({ type: "tasks_changed" });
   projectStore.remove(context.req.param("projectId"));
+  return context.json({ ok: true });
+});
+
+/** Desktop: shows the project folder in Finder / the file manager of the machine the Core runs on. */
+app.post("/api/projects/:projectId/reveal", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const [command, args] = process.platform === "darwin" ? ["open", [project.path]] : process.platform === "win32" ? ["explorer", [project.path]] : ["xdg-open", [project.path]];
+  spawn(command, args, { detached: true, stdio: "ignore" }).on("error", () => undefined).unref();
   return context.json({ ok: true });
 });
 
@@ -354,7 +369,8 @@ app.get("/api/tasks/:taskId/runs", (context) => context.json(taskStore.listRuns(
 const channelInputSchema = z.object({
   type: z.enum(["telegram", "discord", "slack", "email"]),
   name: z.string().min(1),
-  projectId: z.string().min(1),
+  scope: z.enum(["project", "workspace"]).default("project"),
+  projectId: z.string().default(""),
   enabled: z.boolean(),
   permissionMode: permissionModeSchema,
   allowedSenders: z.array(z.string()),
@@ -362,6 +378,14 @@ const channelInputSchema = z.object({
   settings: z.record(z.string(), z.string()),
   secrets: z.record(z.string(), z.string().optional()),
 });
+
+/** Workspace channels start in Quick Chats; project channels need an existing project. */
+const parseChannelInput = (body: unknown) => {
+  const channelInput = channelInputSchema.parse(body);
+  if (channelInput.scope === "workspace") return { ...channelInput, projectId: quickChatProject().id };
+  requireProject(channelInput.projectId);
+  return channelInput;
+};
 
 const presentChannel = (channel: ReturnType<typeof channelStore.list>[number]) => ({
   ...toPublicChannel(channel),
@@ -371,7 +395,7 @@ const presentChannel = (channel: ReturnType<typeof channelStore.list>[number]) =
 app.get("/api/channels", (context) => context.json(channelStore.list().map(presentChannel)));
 
 app.post("/api/channels", async (context) => {
-  const channel = channelStore.save(channelInputSchema.parse(await context.req.json()));
+  const channel = channelStore.save(parseChannelInput(await context.req.json()));
   await channelManager.start(channel.id);
   return context.json(presentChannel(channel));
 });
@@ -379,7 +403,7 @@ app.post("/api/channels", async (context) => {
 app.put("/api/channels/:channelId", async (context) => {
   const channelId = context.req.param("channelId");
   if (!channelStore.get(channelId)) throw new Error("Channel nicht gefunden");
-  const channel = channelStore.save(channelInputSchema.parse(await context.req.json()), channelId);
+  const channel = channelStore.save(parseChannelInput(await context.req.json()), channelId);
   await channelManager.start(channel.id);
   return context.json(presentChannel(channel));
 });
@@ -640,6 +664,15 @@ app.post("/api/projects/:projectId/images", async (context) => {
 
 // --- Integrations ---
 app.get("/api/mcp-servers", (context) => context.json(mcpServerStore.list().map(toPublicMcpServer)));
+
+app.get("/api/mcp-servers/external", (context) => context.json(discoverExternalMcpServers(projectStore.get(context.req.query("projectId") ?? "") ?? null)));
+app.post("/api/mcp-servers/import", async (context) => {
+  const body = z
+    .object({ sourceId: z.enum(["claude-code", "claude-code-project", "claude-desktop", "cursor", "vscode", "windsurf", "gemini"]), name: z.string().min(1), projectId: z.string().nullish() })
+    .parse(await context.req.json());
+  importExternalMcpServer(body.sourceId, body.name, body.projectId ?? null);
+  return context.json({ ok: true });
+});
 
 app.post("/api/mcp-servers", async (context) => {
   const serverInput = mcpServerInputSchema.parse(await context.req.json());

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
 import { permissionModeOptions } from "@/components/form-field";
 import { agentModels, ModelSelect, type InheritedModel } from "@/components/model-select";
 
@@ -42,7 +43,9 @@ type ComposerProps = {
   insertion: { text: string; nonce: number } | null;
   /** Files dropped anywhere on the chat; attached like files picked here. */
   droppedFiles: { files: File[]; nonce: number } | null;
-  sttReady: boolean;
+  /** "system": free recognition of the browser/OS, "server": provider configured in the Core. */
+  sttMode: "off" | "system" | "server";
+  sttLanguage: string;
   ttsReady: boolean;
   readAloud: boolean;
   onReadAloudChange: (readAloud: boolean) => void;
@@ -213,13 +216,22 @@ export function Composer(props: ComposerProps) {
     } else setComposerText(text);
   };
 
+  const systemSpeechRef = useRef<SystemSpeechSession | null>(null);
+
+  const cancelRecording = () => {
+    systemSpeechRef.current?.cancel();
+    systemSpeechRef.current = null;
+    void voiceRecorder.cancel();
+  };
+
   const startRecording = async () => {
-    if (!props.sttReady) {
+    if (props.sttMode === "off") {
       props.onError(new Error("Spracherkennung zuerst in Einstellungen → Voice einrichten."));
       return;
     }
     try {
       await voiceRecorder.start();
+      if (props.sttMode === "system") systemSpeechRef.current = startSystemSpeech(props.sttLanguage);
     } catch (microphoneError) {
       props.onError(microphoneError instanceof Error && microphoneError.name === "NotAllowedError" ? new Error("Kein Zugriff auf das Mikrofon.") : microphoneError);
     }
@@ -228,10 +240,12 @@ export function Composer(props: ComposerProps) {
   /** Stops recording and puts the transcript into the composer for editing. */
   const finishRecording = async () => {
     const recordedAudio = await voiceRecorder.stop();
-    if (!recordedAudio) return;
+    const systemSpeech = systemSpeechRef.current;
+    systemSpeechRef.current = null;
+    if (!recordedAudio && !systemSpeech) return;
     setTranscribing(true);
     try {
-      const transcript = await api.transcribe(recordedAudio);
+      const transcript = systemSpeech ? await systemSpeech.finish() : await api.transcribe(recordedAudio!);
       if (transcript) insertText(transcript);
     } catch (transcriptionError) {
       props.onError(transcriptionError);
@@ -363,7 +377,7 @@ export function Composer(props: ComposerProps) {
 
           {voiceRecorder.recording ? (
             <>
-              <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={() => void voiceRecorder.cancel()} aria-label="Aufnahme verwerfen">
+              <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={cancelRecording} aria-label="Aufnahme verwerfen">
                 <X className="size-4" />
               </Button>
               <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={() => void finishRecording()} aria-label="Aufnahme beenden">
@@ -385,7 +399,7 @@ export function Composer(props: ComposerProps) {
                     {transcribing ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{props.sttReady ? "Sprachnachricht" : "Voice in den Einstellungen einrichten"}</TooltipContent>
+                <TooltipContent>{props.sttMode !== "off" ? "Sprachnachricht" : "Voice in den Einstellungen einrichten"}</TooltipContent>
               </Tooltip>
               {props.running ? (
                 <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label="Stopp">

@@ -45,6 +45,7 @@ const imageProviderLabels: Record<ImageProvider, string> = { none: "Aus", gemini
 
 const sttProviderLabels: Record<SttProvider, string> = {
   none: "Aus",
+  system: "System (kostenlos, nur Eingabe in der App)",
   openai: "OpenAI",
   elevenlabs: "ElevenLabs",
   deepgram: "Deepgram",
@@ -62,6 +63,7 @@ type OptionFieldDefinition = { key: string; label: string; placeholder?: string 
 
 const sttOptionFields: Record<SttProvider, OptionFieldDefinition[]> = {
   none: [],
+  system: [],
   openai: [{ key: "openaiSttModel", label: "Modell", placeholder: "gpt-4o-transcribe" }],
   elevenlabs: [{ key: "elevenlabsSttModel", label: "Modell", placeholder: "scribe_v1" }],
   deepgram: [{ key: "deepgramModel", label: "Modell", placeholder: "nova-3" }],

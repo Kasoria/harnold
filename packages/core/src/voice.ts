@@ -9,7 +9,7 @@ import { settingsStore } from "./settings.ts";
 
 const execFileAsync = promisify(execFile);
 
-export const sttProviders = ["none", "openai", "elevenlabs", "deepgram", "whisper-cpp"] as const;
+export const sttProviders = ["none", "system", "openai", "elevenlabs", "deepgram", "whisper-cpp"] as const;
 export const ttsProviders = ["none", "openai", "elevenlabs", "piper"] as const;
 
 export const voiceSettingsSchema = z.object({
@@ -44,7 +44,7 @@ const optionDefaults: Record<string, string> = {
   ffmpegBinary: "ffmpeg",
 };
 
-const defaultVoiceSettings: VoiceSettings = { sttProvider: "none", ttsProvider: "none", language: "de", options: {} };
+const defaultVoiceSettings: VoiceSettings = { sttProvider: "system", ttsProvider: "none", language: "de", options: {} };
 
 export type AudioClip = { data: Buffer; mimeType: string };
 
@@ -131,6 +131,8 @@ export async function transcribe(audioClip: AudioClip): Promise<string> {
   const audioBlob = new Blob([new Uint8Array(audioClip.data)], { type: audioClip.mimeType });
 
   switch (sttProvider) {
+    case "system":
+      throw new Error("Die System-Spracherkennung gibt es nur bei der Eingabe in der App. Für Sprachnachrichten aus Channels einen Anbieter in Einstellungen → Voice wählen.");
     case "openai": {
       const formData = new FormData();
       formData.append("file", audioBlob, fileName);

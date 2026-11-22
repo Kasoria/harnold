@@ -1,4 +1,4 @@
-import type { ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -46,6 +46,8 @@ export const api = {
   importCurrentAccounts: (environmentId: string) =>
     request<{ environment: Environment; found: string[]; notFound: string[] }>("POST", `/api/environments/${environmentId}/import`),
   checkEnvironmentAccounts: (environmentId: string) => request<EnvironmentAccountChecks>("POST", `/api/environments/${environmentId}/check`),
+  deleteProject: (projectId: string) => request<{ ok: true }>("DELETE", `/api/projects/${projectId}`),
+  revealProject: (projectId: string) => request<{ ok: true }>("POST", `/api/projects/${projectId}/reveal`),
   updateProject: (projectId: string, changes: { name?: string; icon?: string | null }) => request<Project>("PATCH", `/api/projects/${projectId}`, changes),
   createQuickChat: () => request<Session>("POST", "/api/quick-chats"),
   readQuickChatSettings: () => request<QuickChatSettings>("GET", "/api/settings/quick-chats"),
@@ -119,6 +121,8 @@ export const api = {
   submitClaudeLoginCode: (code: string, environmentId?: string) => request<ClaudeAuthStatus>("POST", "/api/claude/login/code", { code, environmentId }),
   cancelClaudeLogin: (environmentId?: string) => request<{ ok: true }>("POST", "/api/claude/login/cancel", { environmentId }),
   logoutClaude: (environmentId?: string) => request<ClaudeAuthStatus>("POST", "/api/claude/logout", { environmentId }),
+  listExternalMcpServers: (projectId: string | null) => request<ExternalMcpServer[]>("GET", `/api/mcp-servers/external?projectId=${encodeURIComponent(projectId ?? "")}`),
+  importMcpServer: (sourceId: string, name: string, projectId: string | null) => request<{ ok: true }>("POST", "/api/mcp-servers/import", { sourceId, name, projectId }),
   listMcpServers: () => request<McpServer[]>("GET", "/api/mcp-servers"),
   createMcpServer: (serverInput: McpServerInput) => request<McpServer>("POST", "/api/mcp-servers", serverInput),
   updateMcpServer: (serverId: string, serverInput: McpServerInput) => request<McpServer>("PUT", `/api/mcp-servers/${serverId}`, serverInput),

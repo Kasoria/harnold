@@ -28,7 +28,11 @@ import type { InheritedModel } from "@/components/model-select";
 import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/components/confirm-dialog";
 import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
+import { TextPromptDialogHost, askForText } from "@/components/text-prompt-dialog";
+import type { MenuAction } from "@/components/action-menu";
+import { Copy, FolderOpen, FolderInput, Layers, MessageSquarePlus, Pencil, Smile, Trash2 } from "lucide-react";
 import { conversationMembers, latestVersionId } from "@/lib/session-versions";
+import { systemSpeechAvailable } from "@/lib/system-speech";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
@@ -398,6 +402,84 @@ export function App() {
       .then((updatedProject) => setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate))))
       .catch(reportError);
 
+  const isDesktopApp = "__TAURI_INTERNALS__" in window;
+
+  const renameProject = async (project: Project) => {
+    const name = await askForText({ title: "Projekt umbenennen", initialValue: project.name });
+    if (!name || name === project.name) return;
+    api
+      .updateProject(project.id, { name })
+      .then((updatedProject) => setProjects((previous) => previous.map((candidate) => (candidate.id === updatedProject.id ? updatedProject : candidate))))
+      .catch(reportError);
+  };
+
+  const removeProject = async (project: Project) => {
+    const sessionCount = (sessionsByProjectId[project.id] ?? []).length;
+    const confirmed = await confirmAction({
+      title: `Projekt „${project.name}“ aus Harnold entfernen?`,
+      description: `${sessionCount ? `${sessionCount} Session(s) und zugehörige Tasks werden gelöscht. ` : ""}Der Ordner ${project.path} bleibt mit allen Dateien erhalten.`,
+      confirmLabel: "Entfernen",
+    });
+    if (!confirmed) return;
+    try {
+      await api.deleteProject(project.id);
+      setProjects((previous) => previous.filter((candidate) => candidate.id !== project.id));
+      if (activeProjectId === project.id) {
+        setActiveProjectId(null);
+        setActiveSessionId(null);
+      }
+      void refreshEnvironments();
+      void refreshTasks();
+    } catch (removeError) {
+      reportError(removeError);
+    }
+  };
+
+  const projectActions = (project: Project): MenuAction[] => [
+    { label: "Neue Session", icon: MessageSquarePlus, onSelect: () => void createSession(project.id) },
+    { label: "Umbenennen", icon: Pencil, onSelect: () => void renameProject(project), separated: true },
+    { label: "Icon ändern", icon: Smile, onSelect: () => setIconDialogProject(project) },
+    {
+      label: "Umgebung",
+      icon: Layers,
+      hidden: environments.length === 0,
+      children: [null, ...environments].map((environment) => ({
+        label: environment?.name ?? "Keine",
+        checked: environment ? environment.projectIds.includes(project.id) : !environments.some((candidate) => candidate.projectIds.includes(project.id)),
+        onSelect: () => api.setProjectEnvironment(project.id, environment?.id ?? null).then(() => refreshEnvironments()).catch(reportError),
+      })),
+    },
+    { label: "Im Finder zeigen", icon: FolderOpen, hidden: !isDesktopApp, onSelect: () => api.revealProject(project.id).catch(reportError), separated: true },
+    { label: "Pfad kopieren", icon: Copy, onSelect: () => void navigator.clipboard.writeText(project.path).catch(reportError), separated: !isDesktopApp },
+    { label: "Aus Harnold entfernen", icon: Trash2, destructive: true, onSelect: () => void removeProject(project), separated: true },
+  ];
+
+  const sessionActions = (session: Session): MenuAction[] => [
+    {
+      label: "Umbenennen",
+      icon: Pencil,
+      onSelect: async () => {
+        const title = await askForText({ title: "Session umbenennen", initialValue: session.title });
+        if (title && title !== session.title) api.updateSession(session.id, { title }).catch(reportError);
+      },
+    },
+    {
+      label: "Verschieben nach",
+      icon: FolderInput,
+      children: projects
+        .filter((project) => project.id !== session.projectId)
+        .map((project) => ({
+          label: project.name,
+          onSelect: () =>
+            api
+              .updateSession(session.id, { projectId: project.id })
+              .then((moveResult) => moveResult.deferred && setToast({ message: "Wird nach diesem Durchlauf verschoben", tone: "info" }))
+              .catch(reportError),
+        })),
+    },
+    { label: "Löschen", icon: Trash2, destructive: true, separated: true, onSelect: () => void deleteSession(session) },
+  ];
+
   const deleteSession = async (session: Session) => {
     const projectSessions = sessionsByProjectId[session.projectId] ?? [];
     const removedSessionIds = new Set(conversationMembers(session.id, projectSessions).map((member) => member.id));
@@ -637,10 +719,10 @@ export function App() {
                 navigate("/");
                 void createSession(projectId);
               }}
-              onDeleteSession={deleteSession}
+              sessionActions={sessionActions}
+              projectActions={projectActions}
               onNewProject={() => setNewProjectDialogOpen(true)}
               onNewQuickChat={() => void createQuickChat()}
-              onEditProjectIcon={setIconDialogProject}
               activeScreen={route.screen}
               onOpenScreen={(screen) => navigate(screen === "workspace" ? "/" : routePath(screen))}
               darkMode={resolvedTheme === "dark"}
@@ -702,7 +784,8 @@ export function App() {
               projectSessions={activeProjectId ? (sessionsByProjectId[activeProjectId] ?? []) : []}
               onOpenVersion={setActiveSessionId}
               onEditMessage={(itemId, text) => void editMessage(itemId, text)}
-              sttReady={voiceSettings?.sttReady ?? false}
+              sttMode={voiceSettings?.sttProvider === "system" ? (systemSpeechAvailable() ? "system" : "off") : voiceSettings?.sttReady ? "server" : "off"}
+              sttLanguage={voiceSettings?.language ?? "de"}
               ttsReady={voiceSettings?.ttsReady ?? false}
               onError={reportError}
             />
@@ -747,6 +830,7 @@ export function App() {
         <ClaudeOnboarding status={claudeStatus} onStatusChange={setClaudeStatus} onError={reportError} onDismiss={() => setOnboardingVisible(false)} />
       )}
       <ConfirmDialogHost />
+      <TextPromptDialogHost />
       <ProjectIconDialog
         target={iconDialogProject}
         onOpenChange={(open) => !open && setIconDialogProject(null)}

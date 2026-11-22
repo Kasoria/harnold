@@ -63,6 +63,11 @@ export function channelStatusDot(channel: Channel): SessionStatus {
   return "idle";
 }
 
+const workspaceScopeValue = "__workspace__";
+const workspaceScopeLabel = "Ganz Harnold (alle Projekte)";
+const scopeLabelOf = (channel: Channel, projects: Project[]) =>
+  channel.scope === "workspace" ? workspaceScopeLabel : (projects.find((project) => project.id === channel.projectId)?.name ?? "—");
+
 function ChannelEditor(props: {
   channel: Channel | null;
   projects: Project[];
@@ -74,7 +79,7 @@ function ChannelEditor(props: {
   const [channelInput, setChannelInput] = useState<ChannelInput>(() =>
     props.channel
       ? { ...props.channel, secrets: {} }
-      : { type: "telegram", name: "Telegram", projectId: props.defaultProjectId, enabled: true, permissionMode: "default", allowedSenders: [], voiceReplies: "voice", settings: {}, secrets: {} },
+      : { type: "telegram", name: "Telegram", scope: "workspace", projectId: "", enabled: true, permissionMode: "default", allowedSenders: [], voiceReplies: "voice", settings: {}, secrets: {} },
   );
   const [allowedSendersText, setAllowedSendersText] = useState((props.channel?.allowedSenders ?? []).join("\n"));
   const [saving, setSaving] = useState(false);
@@ -127,13 +132,17 @@ function ChannelEditor(props: {
         <FormField label="Name">
           <Input value={channelInput.name} onChange={(event) => updateInput({ name: event.target.value })} />
         </FormField>
-        <FormField label="Projekt">
-          <Select value={channelInput.projectId} onValueChange={(projectId) => updateInput({ projectId })}>
+        <FormField label="Zugriff">
+          <Select
+            value={channelInput.scope === "workspace" ? workspaceScopeValue : channelInput.projectId}
+            onValueChange={(value) => updateInput(value === workspaceScopeValue ? { scope: "workspace", projectId: "" } : { scope: "project", projectId: value })}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Projekt wählen" />
             </SelectTrigger>
             <SelectContent>
-              {props.projects.map((project) => (
+              <SelectItem value={workspaceScopeValue}>{workspaceScopeLabel}</SelectItem>
+              {props.projects.filter((project) => project.kind !== "quick").map((project) => (
                 <SelectItem key={project.id} value={project.id}>
                   {project.name}
                 </SelectItem>
@@ -196,7 +205,7 @@ function ChannelEditor(props: {
       </FormField>
 
       <div className="flex items-center gap-2">
-        <Button size="sm" disabled={saving || !channelInput.name.trim() || !channelInput.projectId || missingSecret} onClick={save}>
+        <Button size="sm" disabled={saving || !channelInput.name.trim() || (channelInput.scope === "project" && !channelInput.projectId) || missingSecret} onClick={save}>
           {props.channel ? "Speichern & neu verbinden" : "Verbinden"}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => props.onDone(null)}>
@@ -233,7 +242,6 @@ type ChannelsScreenProps = {
 export function ChannelsScreen(props: ChannelsScreenProps) {
   const defaultProjectId = props.defaultProjectId ?? props.projects[0]?.id ?? "";
   const selectedChannel = props.channels.find((channel) => channel.id === props.selectedChannelId) ?? null;
-  const projectNameOf = (projectId: string) => props.projects.find((project) => project.id === projectId)?.name ?? "—";
 
   const toggleEnabled = async (channel: Channel, enabled: boolean) => {
     const { id: _id, createdAt: _createdAt, secretsSet: _secretsSet, status: _status, ...channelInput } = channel;
@@ -252,7 +260,7 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
         subtitle={
           <span className="inline-flex items-center gap-1.5">
             <StatusDot status={channelStatusDot(selectedChannel)} /> {statusLabels[selectedChannel.status.state]} · {channelTypeDefinitions[selectedChannel.type].label} ·{" "}
-            {projectNameOf(selectedChannel.projectId)}
+            {scopeLabelOf(selectedChannel, props.projects)}
           </span>
         }
       >
@@ -304,7 +312,7 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
                   <StatusDot status={channelStatusDot(channel)} />
                 </div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
-                  {channelTypeDefinitions[channel.type].label} · {projectNameOf(channel.projectId)}
+                  {channelTypeDefinitions[channel.type].label} · {scopeLabelOf(channel, props.projects)}
                 </div>
               </ListRow>
             ))

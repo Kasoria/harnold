@@ -14,6 +14,7 @@ import { createWorkspaceServer, workspaceInstructions, workspaceServerName, work
 import { createMemoryServer, memoryInstructions, memoryServerName, memoryToolNames } from "./memory-tools.ts";
 import { agentCommands } from "./slash-commands.ts";
 import { agentPluginOptions } from "./plugins.ts";
+import { recordClaudeMcpServers } from "./mcp-discovery.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
@@ -219,6 +220,7 @@ export const agentRuntime = {
       for await (const agentMessage of agentStream) {
         handleAgentMessage(sessionId, project.id, agentMessage, turnTracking);
         if (agentMessage.type === "system" && agentMessage.subtype === "init") {
+          recordClaudeMcpServers(agentMessage.mcp_servers ?? []);
           const terminalOnlyNames = agentMessage.terminal_slash_commands ?? [];
           agentStream
             .supportedCommands()

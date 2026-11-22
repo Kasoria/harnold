@@ -2,6 +2,7 @@ import { projectStore, sessionStore } from "../db.ts";
 import { agentRuntime } from "../agent.ts";
 import { eventHub } from "../events.ts";
 import { setTaskRunNotifier } from "../tasks.ts";
+import { sessionActions } from "../session-actions.ts";
 import { synthesize, toOggOpus, transcribe, voiceConfig } from "../voice.ts";
 import { channelStore, conversationStore, type Channel } from "./store.ts";
 import type { ChannelAdapter, ChannelAdapterContext, ChannelType, InboundMessage } from "./types.ts";
@@ -39,13 +40,54 @@ function describeToolInput(toolName: string, input: unknown): string {
   return `${toolName}${typeof primaryValue === "string" ? `: ${primaryValue}` : ""}`;
 }
 
+/** Project the conversation currently runs in: fixed for project channels, switchable for workspace channels. */
+function currentProjectId(channel: Channel, chatId: string): string {
+  if (channel.scope !== "workspace") return channel.projectId;
+  const linkedSession = sessionStore.get(conversationStore.sessionFor(channel.id, chatId) ?? "");
+  return linkedSession && projectStore.get(linkedSession.projectId) ? linkedSession.projectId : channel.projectId;
+}
+
 function sessionForConversation(channel: Channel, inboundMessage: InboundMessage, forceNew = false): string {
   const existingSessionId = conversationStore.sessionFor(channel.id, inboundMessage.chatId);
   if (existingSessionId && !forceNew && sessionStore.get(existingSessionId)) return existingSessionId;
-  const session = sessionStore.create(channel.projectId, `${channelTypeLabels[channel.type]} · ${inboundMessage.senderName}`);
+  const projectId = currentProjectId(channel, inboundMessage.chatId);
+  const session = sessionStore.create(projectId, `${channelTypeLabels[channel.type]} · ${inboundMessage.senderName}`);
   conversationStore.link(channel.id, inboundMessage.chatId, session.id);
-  eventHub.publish({ type: "sessions_changed", projectId: channel.projectId });
+  eventHub.publish({ type: "sessions_changed", projectId });
   return session.id;
+}
+
+const regularProjects = () => projectStore.list().filter((project) => project.kind !== "quick");
+
+/** /projekte, /projekt <Name|Nr>, /allgemein – only for channels with access to the whole instance. */
+async function handleProjectCommand(channel: Channel, inboundMessage: InboundMessage, commandText: string, reply: (text: string) => Promise<void>): Promise<boolean> {
+  const commandMatch = commandText.match(/^\/(projekte|projects|projekt|project|allgemein|general)\b\s*(.*)$/i);
+  if (!commandMatch) return false;
+  if (channel.scope !== "workspace") {
+    await reply("Dieser Channel ist fest mit einem Projekt verbunden.");
+    return true;
+  }
+  const [, command, argument] = commandMatch;
+  const projects = regularProjects();
+  const activeProjectId = currentProjectId(channel, inboundMessage.chatId);
+  if (/^(projekte|projects)$/i.test(command) || (!argument.trim() && !/^(allgemein|general)$/i.test(command))) {
+    const lines = projects.map((project, projectIndex) => `${projectIndex + 1}. ${project.name}${project.id === activeProjectId ? " ←" : ""}`);
+    await reply(lines.length ? `Projekte:\n${lines.join("\n")}\n\nWechseln: /projekt <Name oder Nr.> · Zurück: /allgemein` : "Noch keine Projekte.");
+    return true;
+  }
+  const searchText = argument.trim().toLowerCase();
+  const targetProject = /^(allgemein|general)$/i.test(command)
+    ? projectStore.get(channel.projectId)
+    : (projects[Number(searchText) - 1] ?? projects.find((project) => project.name.toLowerCase() === searchText) ?? projects.find((project) => project.name.toLowerCase().includes(searchText)));
+  if (!targetProject) {
+    await reply(`Kein Projekt „${argument.trim()}“. /projekte zeigt alle.`);
+    return true;
+  }
+  // The conversation moves along (history stays); a fresh one starts if there is none yet.
+  const sessionId = sessionForConversation(channel, inboundMessage);
+  const moveResult = sessionActions.move(sessionId, targetProject.id);
+  await reply(`${moveResult.deferred ? "Nach dieser Antwort weiter" : "Weiter"} in „${targetProject.kind === "quick" ? "Allgemein" : targetProject.name}“.`);
+  return true;
 }
 
 async function handleInbound(channelId: string, inboundMessage: InboundMessage): Promise<void> {
@@ -59,7 +101,7 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
     if (channel.type !== "email") await reply(`Nicht freigeschaltet. Deine ID: ${inboundMessage.senderId}`);
     return;
   }
-  if (!projectStore.get(channel.projectId)) {
+  if (!projectStore.get(currentProjectId(channel, inboundMessage.chatId))) {
     await reply("Das verknüpfte Projekt existiert nicht mehr.");
     return;
   }
@@ -85,10 +127,15 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
     await reply("Neue Session gestartet.");
     return;
   }
-  if (/^\/start\b/i.test(trimmedText)) {
-    await reply("Hallo! Schreib mir einfach. /neu startet eine neue Session.");
+  if (/^\/(start|hilfe|help)\b/i.test(trimmedText)) {
+    await reply(
+      channel.scope === "workspace"
+        ? "Hallo! Schreib mir einfach – ich habe Zugriff auf ganz Harnold. /projekte zeigt alle Projekte, /projekt <Name> wechselt dorthin, /allgemein zurück, /neu startet eine neue Session."
+        : "Hallo! Schreib mir einfach. /neu startet eine neue Session.",
+    );
     return;
   }
+  if (await handleProjectCommand(channel, inboundMessage, trimmedText, reply)) return;
 
   const pendingRequestId = pendingPermissionByConversation.get(conversationKey(channel.id, inboundMessage.chatId));
   if (pendingRequestId) {

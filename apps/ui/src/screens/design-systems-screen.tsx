@@ -4,7 +4,6 @@ import { api } from "@/api";
 import type { DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, Project, Session } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SegmentedControl } from "@/components/segmented-control";
 import { FormField, formatRelativeTime } from "@/components/form-field";
@@ -13,6 +12,7 @@ import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./s
 import { confirmAction } from "@/components/confirm-dialog";
 import { isActionEnter } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import { Combobox } from "@/components/ui/combobox";
 
 type DesignSystemsScreenProps = {
   /** Selected system id, "new" for the create form, null for none. */
@@ -191,19 +191,11 @@ function CreateDesignSystemForm(props: {
           />
         </FormField>
         <FormField label={projectRequired ? t("Projekt") : t("Verknüpfen mit")}>
-          <Select value={projectId} onValueChange={setProjectId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">{projectRequired ? t("Projekt wählen …") : t("Nichts")}</SelectItem>
-              {props.projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={projectId}
+            options={[{ value: "none", label: projectRequired ? t("Projekt wählen …") : t("Nichts") }, ...props.projects.map((project) => ({ value: project.id, label: project.name }))]}
+            onValueChange={setProjectId}
+          />
         </FormField>
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!canCreate}>

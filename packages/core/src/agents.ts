@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { database, sessionStore, type Project } from "./db.ts";
+import { database, projectStore, sessionStore, type Project } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { environmentStore } from "./environments.ts";
 import { t } from "./i18n.ts";
@@ -79,8 +79,9 @@ export const teamStore = {
     database.prepare("UPDATE sessions SET agent_id = NULL WHERE agent_id = ?").run(agentId);
     eventHub.publish({ type: "team_changed" });
   },
-  /** Team of a project: agents of its environment plus those available everywhere. */
+  /** Team of a project: agents of its environment plus those available everywhere; Quick Chats reach everyone. */
   forProject(projectId: string): TeamAgent[] {
+    if (projectStore.get(projectId)?.kind === "quick") return teamStore.list();
     const environmentId = environmentStore.forProject(projectId)?.id ?? null;
     return teamStore.list().filter((agent) => agent.environmentId === null || agent.environmentId === environmentId);
   },

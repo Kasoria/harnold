@@ -13,6 +13,7 @@ import { FormField, formatRelativeTime, permissionModeOptions } from "@/componen
 import { ModelSelect, type InheritedModel } from "@/components/model-select";
 import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
+import { Combobox } from "@/components/ui/combobox";
 
 const schedulePresets = [
   { value: "0 * * * *", label: t("Stündlich") },
@@ -105,18 +106,12 @@ function TaskEditor(props: {
         <Input value={taskInput.name} placeholder={t("z. B. Morgen-Briefing")} onChange={(event) => updateInput({ name: event.target.value })} />
       </FormField>
       <FormField label={t("Projekt")}>
-        <Select value={taskInput.projectId} onValueChange={(projectId) => updateInput({ projectId })}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder={t("Projekt wählen")} />
-          </SelectTrigger>
-          <SelectContent>
-            {props.projects.map((project) => (
-              <SelectItem key={project.id} value={project.id}>
-                {project.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Combobox
+          value={taskInput.projectId}
+          placeholder={t("Projekt wählen")}
+          options={props.projects.map((project) => ({ value: project.id, label: project.name }))}
+          onValueChange={(projectId) => updateInput({ projectId })}
+        />
       </FormField>
       <FormField label={t("Auftrag")}>
         <Textarea
@@ -181,20 +176,11 @@ function TaskEditor(props: {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <FormField label={t("Agent")}>
-          <Select value={taskInput.agentId ?? "default"} onValueChange={(value) => updateInput({ agentId: value === "default" ? null : value })}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">{t("Harnold (Standard)")}</SelectItem>
-              {projectTeam.map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
-                  {agent.role && <span className="text-muted-foreground"> · {agent.role}</span>}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={taskInput.agentId ?? "default"}
+            options={[{ value: "default", label: t("Harnold (Standard)") }, ...projectTeam.map((agent) => ({ value: agent.id, label: agent.name, description: agent.role || undefined }))]}
+            onValueChange={(value) => updateInput({ agentId: value === "default" ? null : value })}
+          />
         </FormField>
         <FormField label={t("Session")}>
           <Select value={taskInput.sessionMode} onValueChange={(value) => updateInput({ sessionMode: value as TaskInput["sessionMode"] })}>
@@ -211,25 +197,15 @@ function TaskEditor(props: {
       {taskInput.sessionMode === "continue" && <p className="-mt-2 text-[12px] text-muted-foreground">{t("Der Agent sieht frühere Läufe und kann daran anknüpfen.")}</p>}
       <FormField label={t("Ergebnis zusätzlich senden an")}>
         <div className="flex gap-2">
-          <Select
+          <Combobox
+            className="w-44 shrink-0"
             value={taskInput.notifyChannelId ?? "none"}
+            options={[{ value: "none", label: t("Nur in Harnold") }, ...props.channels.map((channel) => ({ value: channel.id, label: channel.name }))]}
             onValueChange={(value) => {
               const channel = props.channels.find((candidate) => candidate.id === value);
               updateInput({ notifyChannelId: channel?.id ?? null, notifyChatId: channel ? (taskInput.notifyChatId ?? channel.allowedSenders[0] ?? "") : null });
             }}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">{t("Nur in Harnold")}</SelectItem>
-              {props.channels.map((channel) => (
-                <SelectItem key={channel.id} value={channel.id}>
-                  {channel.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
           {taskInput.notifyChannelId && (
             <Input
               className="flex-1 animate-in fade-in duration-200"

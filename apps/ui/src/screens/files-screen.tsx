@@ -13,6 +13,7 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
 import { EmptyState, ScreenLayout } from "./screen-layout";
 import { t } from "@/lib/i18n";
+import { Combobox } from "@/components/ui/combobox";
 
 type FilesScreenProps = {
   environments: Environment[];
@@ -140,19 +141,13 @@ export function FilesScreen(props: FilesScreenProps) {
           <Input className="h-8 pl-8" placeholder={t("Name, Pfad oder Session …")} value={searchText} onChange={(changeEvent) => setSearchText(changeEvent.target.value)} />
         </div>
         <div className="flex gap-2">
-          <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-            <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-[12.5px]" aria-label={t("Projekt")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("Alle Orte")}</SelectItem>
-              {owners.map(([ownerKey, ownerName]) => (
-                <SelectItem key={ownerKey} value={ownerKey}>
-                  {ownerName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            size="sm"
+            className="h-8 min-w-0 flex-1 text-[12.5px]"
+            value={ownerFilter}
+            options={[{ value: "all", label: t("Alle Orte") }, ...owners.map(([ownerKey, ownerName]) => ({ value: ownerKey, label: ownerName }))]}
+            onValueChange={setOwnerFilter}
+          />
           <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
             <SelectTrigger size="sm" className="h-8 w-28 text-[12.5px]" aria-label={t("Sortierung")}>
               <SelectValue />

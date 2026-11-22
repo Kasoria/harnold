@@ -365,6 +365,7 @@ export function App() {
 
   /** Team of a project: agents of its environment plus those available everywhere. */
   const teamForProject = (projectId: string | null) => {
+    if (projects.find((project) => project.id === projectId)?.kind === "quick") return teamAgents;
     const environmentId = environments.find((environment) => projectId && environment.projectIds.includes(projectId))?.id ?? null;
     return teamAgents.filter((agent) => agent.environmentId === null || agent.environmentId === environmentId);
   };

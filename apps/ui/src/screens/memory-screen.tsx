@@ -11,9 +11,9 @@ import { SegmentedControl } from "@/components/segmented-control";
 import { formatRelativeTime } from "@/components/form-field";
 import { EmptyState, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
-import { ProjectAvatar } from "@/components/project-avatar";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
 import { t } from "@/lib/i18n";
+import { Combobox } from "@/components/ui/combobox";
 
 /** `{ scope, path }` of the open note, "new" for a draft, null for none. */
 export type MemorySelection = { scope: MemoryScope; path: string } | "new" | null;
@@ -461,19 +461,14 @@ export function MemoryScreen(props: MemoryScreenProps) {
       title={t("Memory")}
       tabs={
         props.projects.length > 0 && (
-          <Select value={props.project?.id ?? ""} onValueChange={props.onProjectChange}>
-            <SelectTrigger size="sm" className="h-7 min-w-40 text-[12.5px]" aria-label={t("Projekt")}>
-              <SelectValue placeholder={t("Projekt wählen")} />
-            </SelectTrigger>
-            <SelectContent>
-              {props.projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  <ProjectAvatar name={project.name} icon={project.icon} className="size-4 text-[9px]" />
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            size="sm"
+            className="h-7 w-48 text-[12.5px]"
+            value={props.project?.id ?? ""}
+            placeholder={t("Projekt wählen")}
+            options={props.projects.map((project) => ({ value: project.id, label: project.name }))}
+            onValueChange={props.onProjectChange}
+          />
         )
       }
       actions={

@@ -5,13 +5,13 @@ import type { Environment, TeamAgent, TeamAgentInput } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FormField } from "@/components/form-field";
 import { ModelSelect } from "@/components/model-select";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { confirmAction } from "@/components/confirm-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { t } from "@/lib/i18n";
+import { Combobox } from "@/components/ui/combobox";
 
 const everywhereValue = "__everywhere__";
 
@@ -60,19 +60,11 @@ function TeamAgentEditor(props: { agent: TeamAgent | null; environments: Environ
           <Input value={agentInput.name} placeholder={t("z. B. Designerin")} onChange={(changeEvent) => updateInput({ name: changeEvent.target.value })} />
         </FormField>
         <FormField label={t("Team")}>
-          <Select value={agentInput.environmentId ?? everywhereValue} onValueChange={(value) => updateInput({ environmentId: value === everywhereValue ? null : value })}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={everywhereValue}>{t("Alle Umgebungen")}</SelectItem>
-              {props.environments.map((environment) => (
-                <SelectItem key={environment.id} value={environment.id}>
-                  {environment.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={agentInput.environmentId ?? everywhereValue}
+            options={[{ value: everywhereValue, label: t("Alle Umgebungen") }, ...props.environments.map((environment) => ({ value: environment.id, label: environment.name }))]}
+            onValueChange={(value) => updateInput({ environmentId: value === everywhereValue ? null : value })}
+          />
         </FormField>
       </div>
       <FormField label={t("Rolle")} hint={t("Ein Satz – daran erkennen die anderen Agenten, wann sie fragen sollten.")}>

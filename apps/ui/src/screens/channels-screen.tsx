@@ -13,6 +13,7 @@ import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { FormField, permissionModeOptions } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
+import { Combobox } from "@/components/ui/combobox";
 
 type FieldDefinition = { key: string; label: string; placeholder?: string; secret?: boolean };
 
@@ -134,22 +135,15 @@ function ChannelEditor(props: {
           <Input value={channelInput.name} onChange={(event) => updateInput({ name: event.target.value })} />
         </FormField>
         <FormField label={t("Zugriff")}>
-          <Select
+          <Combobox
             value={channelInput.scope === "workspace" ? workspaceScopeValue : channelInput.projectId}
+            placeholder={t("Projekt wählen")}
+            options={[
+              { value: workspaceScopeValue, label: workspaceScopeLabel },
+              ...props.projects.filter((project) => project.kind !== "quick").map((project) => ({ value: project.id, label: project.name })),
+            ]}
             onValueChange={(value) => updateInput(value === workspaceScopeValue ? { scope: "workspace", projectId: "" } : { scope: "project", projectId: value })}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={t("Projekt wählen")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={workspaceScopeValue}>{workspaceScopeLabel}</SelectItem>
-              {props.projects.filter((project) => project.kind !== "quick").map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         </FormField>
       </div>
       <div className="grid grid-cols-2 gap-3">

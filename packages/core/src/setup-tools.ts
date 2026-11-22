@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import { normalizeBackendId } from "./agent-backend-settings.ts";
+import { agentRoleSettings } from "./agent-roles.ts";
 import { config } from "./config.ts";
 import { projectStore, type Project } from "./db.ts";
 import { eventHub } from "./events.ts";
@@ -15,6 +17,8 @@ import { mcpServerInputSchema, mcpServerStore, skillStore } from "./integrations
 import { pluginStore } from "./plugins.ts";
 import { channelStore } from "./channels/store.ts";
 import { channelFieldDefinitions } from "./channels/types.ts";
+import { mailAutonomyLabels, mailInboxInputSchema, mailInboxStore } from "./mail/inbox.ts";
+import { teamStore } from "./agents.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -43,7 +47,8 @@ Harnold einrichten (Tools harnold): Der Nutzer kann Harnold komplett im Chat ein
 - Projekte: project_create, project_update (Name, Emoji-Icon), project_set_environment.
 - Kontext: memory_write für Notizen, memory_add_file für Dateien (z. B. Anhänge dieser Nachricht) – Ebene "project", "environment" (alle Projekte der Umgebung) oder "workspace" (alle Projekte). HARNOLD.md einer Ebene = dauerhafte Anweisungen.
 - Einstellungen: settings_overview zeigt den Stand, settings_update ändert Standardmodell, Quick-Chat-Aufräumen, Memory (Ordner, Embeddings), Bilder und Sprache – auch API-Keys, wenn der Nutzer sie nennt.
-- Integrationen: mcp_server_save/mcp_server_delete, skill_create/skill_delete, skill_set_enabled, plugin_list/plugin_set_enabled/plugin_add_folder/plugin_remove_folder. Channels: channel_save/channel_delete.
+- Integrationen: mcp_server_save/mcp_server_delete, skill_create/skill_delete, skill_set_enabled, plugin_list/plugin_set_enabled/plugin_add_folder/plugin_remove_folder. Channels: channel_save/channel_delete. Postfächer: mail_inbox_save/mail_inbox_delete (Auftrag, Ton, Signatur, Absender-Filter, eigenes Modell).
+- Agenten und Einheiten können ein eigenes Agent-Programm und Modell bekommen (backendId/model bei team_save, channel_save, task_save, mail_inbox_save): null = wie Einstellungen/Umgebung.
 - Löschen (immer über die Freigabe): project_delete, session_delete, team_delete, memory_delete, skill_delete, plugin_remove_folder.
 - API-Keys und Tokens nie in Antworten wiederholen, nur bestätigen, dass sie gesetzt sind.
 `.trim();
@@ -57,9 +62,15 @@ export const entityIconNames = [
 const iconHint = `("lucide:<name>", Namen: ${entityIconNames.join(", ")}). Optional Hintergrund anhängen: ";bg=none" (ohne), ";bg=auto" oder ";bg=<Farbton 0–360>" – z. B. "lucide:rocket;bg=265", "🚀;bg=145". Nur ";bg=145" = Buchstabe in dieser Farbe`;
 
 const textResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
+const errorResult = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true });
 const yesNo = (value: boolean) => (value ? "ja" : "nein");
 
+/** "Codex · gpt-5" (or "wie oben"), for tool output. */
+const describeRoleDefaults = (defaults: { backendId: string | null; model: string | null }) =>
+  [defaults.backendId ?? "Programm wie oben", defaults.model ?? "Modell wie oben"].join(" · ");
+
 const channelTypeSchema = z.enum(["telegram", "discord", "slack", "email"]);
+const mailInboxFieldDefinitionsHint = "imapHost, imapPort, smtpHost, smtpPort, username, fromAddress; Passwort als Secret";
 const channelFieldsText = Object.entries(channelFieldDefinitions)
   .map(([channelType, fields]) => `${channelType}: settings ${fields.settings.join(", ") || "–"}; secrets ${fields.secrets.join(", ")}`)
   .join(" · ");
@@ -67,6 +78,7 @@ const channelFieldsText = Object.entries(channelFieldDefinitions)
 // Loaded on use: both import the agent runtime, which imports these tools (cycle).
 const loadChannelManager = async () => (await import("./channels/manager.ts")).channelManager;
 const loadQuickChatSettings = async () => (await import("./quick-chats.ts")).quickChatSettings;
+const loadMailManager = async () => (await import("./mail/manager.ts")).mailManager;
 
 type Safely = <Input>(handler: (input: Input) => Promise<ReturnType<typeof textResult>> | ReturnType<typeof textResult>) => (input: Input) => Promise<ReturnType<typeof textResult>>;
 
@@ -123,6 +135,7 @@ export function createSetupTools(project: Project, safely: Safely) {
         return textResult(
           [
             `Standardmodell: ${agentModelSettings.read()}`,
+            `Rollen: Unterhaltungen ${describeRoleDefaults(agentRoleSettings.of("chat"))} · Hintergrundläufe ${describeRoleDefaults(agentRoleSettings.of("automation"))}`,
             `Claude-Zugang eingerichtet: ${yesNo(claudeStatus.ready)} (Anmeldung macht der Nutzer im Einstellungen-Screen)`,
             `Quick Chats automatisch löschen nach: ${(await loadQuickChatSettings()).read().autoDeleteDays ?? "nie"} Tagen`,
             `Memory: Workspace-Ordner ${memorySettings.resolvedWorkspaceDirectory} · Embeddings ${memorySettings.embeddingProvider}${memorySettings.embeddingModel ? ` (${memorySettings.embeddingModel})` : ""} · OpenAI-Key ${yesNo(memorySettings.openaiKeySet)}`,
@@ -138,6 +151,13 @@ export function createSetupTools(project: Project, safely: Safely) {
       "Ändert Einstellungen; nur angegebene Felder werden geändert. API-Keys werden verschlüsselt gespeichert (leer = unverändert).",
       {
         defaultModel: z.string().optional().describe("z. B. claude-opus-5-5"),
+        agentRoles: z
+          .object({
+            chat: z.object({ backendId: z.string().nullable(), model: z.string().nullable() }).optional().describe("Unterhaltungen (Chats, Channels, Team)"),
+            automation: z.object({ backendId: z.string().nullable(), model: z.string().nullable() }).optional().describe("Hintergrundläufe (Tasks, Postfach)"),
+          })
+          .optional()
+          .describe("Programm/Modell je Rolle, gilt wenn eine Einheit nichts Eigenes wählt; null = erben"),
         quickChatAutoDeleteDays: z.number().int().min(1).nullable().optional().describe("null = nie löschen"),
         memory: z
           .object({ workspaceDirectory: z.string().optional(), embeddingProvider: z.enum(["off", "openai", "ollama"]).optional(), embeddingModel: z.string().optional(), ollamaUrl: z.string().optional(), openaiApiKey: z.string().optional() })
@@ -149,11 +169,15 @@ export function createSetupTools(project: Project, safely: Safely) {
           .object({ sttProvider: z.string().optional(), ttsProvider: z.string().optional(), language: z.string().optional(), options: z.record(z.string(), z.string()).optional(), secrets: z.record(z.string(), z.string()).optional() })
           .optional(),
       },
-      safely(async ({ defaultModel, quickChatAutoDeleteDays, memory, images, voice }) => {
+      safely(async ({ defaultModel, agentRoles, quickChatAutoDeleteDays, memory, images, voice }) => {
         const changedAreas: string[] = [];
         if (defaultModel) {
           agentModelSettings.write(defaultModel);
           changedAreas.push("Standardmodell");
+        }
+        if (agentRoles) {
+          agentRoleSettings.write(agentRoles);
+          changedAreas.push("Rollen");
         }
         if (quickChatAutoDeleteDays !== undefined) {
           (await loadQuickChatSettings()).write({ autoDeleteDays: quickChatAutoDeleteDays });
@@ -286,13 +310,24 @@ export function createSetupTools(project: Project, safely: Safely) {
         permissionMode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan"]).default("default"),
         allowedSenders: z.array(z.string()).default([]),
         voiceReplies: z.enum(["off", "voice", "always"]).default("voice"),
+        backendId: z.string().nullable().optional().describe("Agent-Programm (claude-code, codex, native) nur für diesen Channel; null = wie Einstellungen/Umgebung, weglassen = unverändert"),
+        model: z.string().nullable().optional().describe("Modell nur für diesen Channel; null = Standard des Programms, weglassen = unverändert"),
         settings: z.record(z.string(), z.string()).default({}),
         secrets: z.record(z.string(), z.string()).default({}),
       },
       safely(async ({ channelId, projectId, ...channelFields }) => {
         if (channelId && !channelStore.get(channelId)) throw new Error(t("Channel nicht gefunden"));
         const startProjectId = channelFields.scope === "workspace" ? (await import("./quick-chats.ts")).quickChatProject().id : requireProject(projectId).id;
-        const savedChannel = channelStore.save({ ...channelFields, projectId: startProjectId }, channelId);
+        const existingChannel = channelId ? channelStore.get(channelId) : undefined;
+        const savedChannel = channelStore.save(
+          {
+            ...channelFields,
+            backendId: channelFields.backendId === undefined ? (existingChannel?.backendId ?? null) : normalizeBackendId(channelFields.backendId),
+            model: channelFields.model === undefined ? (existingChannel?.model ?? null) : channelFields.model,
+            projectId: startProjectId,
+          },
+          channelId,
+        );
         const channelManager = await loadChannelManager();
         await channelManager.start(savedChannel.id);
         return textResult(`Channel „${savedChannel.name}“ gespeichert (id ${savedChannel.id}), Status: ${JSON.stringify(channelManager.statusOf(savedChannel.id))}.`);
@@ -307,6 +342,83 @@ export function createSetupTools(project: Project, safely: Safely) {
         channelStore.remove(channelId);
         eventHub.publish({ type: "channels_changed" });
         return textResult("Channel entfernt.");
+      }),
+    ),
+
+    // ------------------------------------------------------------ Mailboxes (integration, not a channel)
+    tool(
+      "mail_inbox_save",
+      "Verbindet ein E-Mail-Postfach (Integration „KI im Postfach“) oder ändert es (inboxId): Zugang (IMAP/SMTP), Auftrag, Ton, Signatur, Hintergrundwissen, Absender-Filter, Autonomie, Agent, eigenes Agent-Programm und Modell. Der gebundene Agent liest neue Mails und arbeitet den Auftrag ab. Secrets werden gespeichert, nie zurückgegeben.",
+      {
+        inboxId: z.string().optional().describe("Bestehendes Postfach ändern; weglassen = neues anlegen"),
+        name: z.string().min(1).max(80),
+        scope: z.enum(["project", "global"]).default("global").describe('"global" = überall verfügbar, "project" = nur projectId'),
+        projectId: z.string().optional().describe("Projekt bei scope project"),
+        agentName: z.string().nullable().optional().describe("Teammitglied, das das Postfach bearbeitet; null = Standard-Agent"),
+        autonomy: z.enum(["readonly", "drafts", "approve", "auto"]).default("approve"),
+        enabled: z.boolean().default(true),
+        backendId: z.string().nullable().optional().describe("Agent-Programm nur für dieses Postfach; null = wie Einstellungen/Umgebung"),
+        model: z.string().nullable().optional().describe("Modell nur für dieses Postfach; null = Standard des Programms"),
+        instructions: z.string().optional().describe("Auftrag: was tun, was lassen, wie priorisieren"),
+        tone: z.string().optional().describe("Anrede, Ton, Sprache für Antworten"),
+        signature: z.string().optional().describe("Signatur für Entwürfe und Antworten"),
+        context: z.string().optional().describe("Hintergrundwissen über den Nutzer/das Geschäft"),
+        includeSenders: z.string().optional().describe("Nur diese Absender (Muster, * erlaubt, kommagetrennt); leer = alle"),
+        excludeSenders: z.string().optional().describe("Diese Absender überspringen (Muster, * erlaubt)"),
+        folders: z.string().optional().describe("Ordner (kommagetrennt); leer = INBOX"),
+        settings: z.record(z.string(), z.string()).default({}).describe(`Verbindung: ${mailInboxFieldDefinitionsHint}`),
+        secrets: z.record(z.string(), z.string()).default({}).describe("Passwort des Postfachs"),
+      },
+      safely(async ({ inboxId, projectId, agentName, ...fields }) => {
+        const existing = inboxId ? mailInboxStore.get(inboxId) : undefined;
+        if (inboxId && !existing) return errorResult("Postfach nicht gefunden");
+        const scope = fields.scope ?? existing?.scope ?? "global";
+        const targetProjectId = scope === "global" ? "" : requireProject(projectId ?? existing?.projectId).id;
+        let agentId = existing?.agentId ?? null;
+        if (agentName === null || agentName === "") agentId = null;
+        else if (agentName) {
+          const member = teamStore.forProject(targetProjectId || project.id).find((agent) => agent.name.toLowerCase() === agentName.trim().toLowerCase());
+          if (!member) return errorResult(`Kein Teammitglied „${agentName}“ in diesem Projekt`);
+          agentId = member.id;
+        }
+        const keep = <T,>(value: T | undefined, fallback: T) => (value === undefined ? fallback : value);
+        const savedInbox = mailInboxStore.save(
+          mailInboxInputSchema.parse({
+            name: fields.name,
+            scope,
+            projectId: targetProjectId,
+            agentId,
+            autonomy: fields.autonomy ?? existing?.autonomy ?? "approve",
+            enabled: fields.enabled ?? existing?.enabled ?? true,
+            backendId: fields.backendId === undefined ? (existing?.backendId ?? null) : fields.backendId,
+            model: fields.model === undefined ? (existing?.model ?? null) : fields.model,
+            instructions: keep(fields.instructions, existing?.instructions ?? ""),
+            tone: keep(fields.tone, existing?.tone ?? ""),
+            signature: keep(fields.signature, existing?.signature ?? ""),
+            context: keep(fields.context, existing?.context ?? ""),
+            includeSenders: keep(fields.includeSenders, existing?.includeSenders ?? ""),
+            excludeSenders: keep(fields.excludeSenders, existing?.excludeSenders ?? ""),
+            folders: keep(fields.folders, existing?.folders ?? ""),
+            settings: { ...(existing?.settings ?? {}), ...fields.settings },
+            secrets: fields.secrets,
+          }),
+          inboxId,
+        );
+        await (await loadMailManager()).start(savedInbox.id);
+        return textResult(
+          `Postfach „${savedInbox.name}“ ${existing ? "gespeichert" : "eingerichtet"} (id ${savedInbox.id}), Autonomie: ${mailAutonomyLabels[savedInbox.autonomy]}.` +
+            (Object.keys(fields.secrets).length ? "" : ` Ohne Passwort bleibt das Postfach unverbunden.`),
+        );
+      }),
+    ),
+    tool(
+      "mail_inbox_delete",
+      "Entfernt ein verbundenes Postfach (Integration „KI im Postfach“).",
+      { inboxId: z.string() },
+      safely(async ({ inboxId }) => {
+        await (await loadMailManager()).stop(inboxId);
+        mailInboxStore.remove(inboxId);
+        return textResult("Postfach entfernt.");
       }),
     ),
   ];

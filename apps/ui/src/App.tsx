@@ -20,6 +20,7 @@ import { TodayScreen } from "@/screens/today-screen";
 import { AgentOnboarding } from "@/components/agent-connection";
 import { modelsForBackend, setActiveModels } from "@/components/model-select";
 import { setAgentBackendsView } from "@/lib/agent-backends";
+import { setAgentModelSources } from "@/lib/model-sources";
 import { TasksScreen } from "@/screens/tasks-screen";
 import { MemoryScreen, type MemorySelection } from "@/screens/memory-screen";
 import { FilesScreen } from "@/screens/files-screen";
@@ -28,6 +29,7 @@ import { ChannelsScreen, channelStatusDot } from "@/screens/channels-screen";
 import { MailScreen } from "@/screens/mail-screen";
 import { Button } from "@/components/ui/button";
 import type { InheritedModel } from "@/components/model-select";
+import type { AgentRole, AgentRoleSettings } from "@/types";
 import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/components/confirm-dialog";
 import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
@@ -78,6 +80,7 @@ export function App() {
   const [teamAgents, setTeamAgents] = useState<TeamAgent[]>([]);
   const [todayReloadCounter, setTodayReloadCounter] = useState(0);
   const [defaultModel, setDefaultModel] = useState("claude-opus-5-5");
+  const [agentRoles, setAgentRoles] = useState<AgentRoleSettings>({ chat: { backendId: null, model: null }, automation: { backendId: null, model: null } });
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => safeStorage.getItem(activeEnvironmentStorageKey));
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [iconDialogProject, setIconDialogProject] = useState<Project | null>(null);
@@ -139,6 +142,7 @@ export function App() {
       )
       .catch(reportError);
     api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(reportError);
+    api.readAgentRoles().then(setAgentRoles).catch(() => undefined);
     api.readProviders().then(setProviders).catch(reportError);
     api.readVoiceSettings().then(setVoiceSettings).catch(reportError);
     api.readCodexStatus().then(setCodexStatus).catch(() => undefined);
@@ -298,6 +302,7 @@ export function App() {
             return;
           case "settings_changed":
             api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(() => undefined);
+            api.readAgentRoles().then(setAgentRoles).catch(() => undefined);
             api.readVoiceSettings().then(setVoiceSettings).catch(() => undefined);
             return;
           case "claude_auth_changed":
@@ -306,6 +311,7 @@ export function App() {
             api.readAgentBackends().then(setAgentBackends).catch(() => undefined);
             api.readCodexStatus().then(setCodexStatus).catch(() => undefined);
             api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(() => undefined);
+            api.readAgentRoles().then(setAgentRoles).catch(() => undefined);
             return;
           case "task_run_finished":
             setTodayReloadCounter((previous) => previous + 1);
@@ -328,12 +334,19 @@ export function App() {
   useEffect(() => {
     setActiveModels(modelsForBackend(agentBackends?.activeId, providers, codexStatus));
     setAgentBackendsView(agentBackends);
+    // Pickers that let a unit choose its own program need the sources too, not just the active list.
+    setAgentModelSources({ providers, codex: codexStatus });
   }, [providers, agentBackends, codexStatus]);
 
-  /** Model a turn in this project uses when the composer/task picks none: environment model, else settings. */
-  const inheritedModelFor = (projectId: string | null): InheritedModel => {
+  /**
+   * Model a turn uses when neither the unit nor the team member picks one: the role's default (chat or background),
+   * else the environment model, else the workspace default. Shown by name in the pickers.
+   */
+  const inheritedModelFor = (projectId: string | null, role: AgentRole = "chat"): InheritedModel => {
+    const roleModel = agentRoles[role].model;
+    if (roleModel) return { model: roleModel, source: role === "automation" ? t("Rolle Hintergrundläufe") : t("Rolle Unterhaltungen") };
     const environment = environments.find((candidate) => projectId && candidate.projectIds.includes(projectId));
-    return environment?.model ? { model: environment.model, source: environment.name } : { model: defaultModel, source: "Einstellungen" };
+    return environment?.model ? { model: environment.model, source: environment.name } : { model: defaultModel, source: t("Einstellungen") };
   };
 
   const sessionReferenceFor = (sessionId: string): SessionReference | null => {
@@ -658,6 +671,7 @@ export function App() {
             channels={channels}
             projects={projects}
             defaultProjectId={activeProjectId}
+            inheritedModelFor={inheritedModelFor}
             onError={reportError}
           />
         );
@@ -669,6 +683,7 @@ export function App() {
             inboxes={inboxes}
             projects={projects}
             teamAgents={teamAgents}
+            inheritedModelFor={inheritedModelFor}
             onOpenSession={openSessionFromScreen}
             onError={reportError}
           />
@@ -742,6 +757,7 @@ export function App() {
           <TeamScreen
             agents={teamAgents}
             environments={environments}
+            inheritedModel={inheritedModelFor(activeProjectId)}
             selection={route.itemId}
             onSelect={(selection) => navigate(routePath("team", selection))}
             onTeamChange={() => void refreshTeam()}
@@ -779,6 +795,7 @@ export function App() {
             onCodexChange={setCodexStatus}
             defaultModel={defaultModel}
             onDefaultModelChange={setDefaultModel}
+            onAgentRolesChange={setAgentRoles}
             onClaudeStatusChange={setClaudeStatus}
             onSectionChange={(section) => navigate(routePath("settings", section))}
             themePreference={themePreference}

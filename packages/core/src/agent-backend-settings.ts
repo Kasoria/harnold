@@ -9,6 +9,9 @@ const activeKey = "agent.backend";
 
 export const isAgentBackendId = (value: unknown): value is AgentBackendId => agentBackendIds.includes(value as AgentBackendId);
 
+/** A unit's own backend choice (team agent, channel, mailbox, task): null = inherit the workspace/environment one. */
+export const normalizeBackendId = (value: string | null | undefined): AgentBackendId | null => (isAgentBackendId(value) ? value : null);
+
 /** Workspace-wide choice; sessions remember the backend they started with. */
 export const agentBackendSettings = {
   read: (): AgentBackendId => {

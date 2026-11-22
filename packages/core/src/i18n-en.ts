@@ -14,6 +14,7 @@ export const englishTexts: Record<string, string> = {
   "API-Key für die Bild-Generierung fehlt (Einstellungen → Bilder).": "API key for image generation is missing (Settings → Images).",
   "Agent gehört nicht zum Team dieses Projekts": "Agent is not part of this project's team",
   "Agent nicht gefunden": "Agent not found",
+  "Durch den Absender-Filter übersprungen": "Skipped by the sender filter",
   "Allgemein": "General",
   "Anmeldung hat zu lange gedauert": "Sign-in took too long",
   "Aufnahme zu lang (max. 25 MB)": "Recording too long (max. 25 MB)",

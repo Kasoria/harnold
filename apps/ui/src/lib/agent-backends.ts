@@ -22,3 +22,8 @@ export function useSessionBackend(sessionBackendId: AgentBackendId | null | unde
   const backendId = sessionBackendId ?? view.activeId;
   return view.backends.find((backend) => backend.id === backendId) ?? null;
 }
+
+/** Every agent program with its status – for pickers that let a unit choose its own program. */
+export function useAgentBackends(): AgentBackendsView | null {
+  return useSyncExternalStore(subscribe, () => currentView);
+}

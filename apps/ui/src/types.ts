@@ -134,6 +134,8 @@ export type TaskInput = {
   enabled: boolean;
   permissionMode: PermissionMode;
   model: string | null;
+  /** Agent program of the runs; null = the project's environment, else the workspace default. */
+  backendId: AgentBackendId | null;
   /** Team member that runs the task (null = default agent). */
   agentId: string | null;
   /** "new": own session per run; "continue": all runs in one session. */
@@ -162,6 +164,10 @@ export type ChannelInput = {
   permissionMode: PermissionMode;
   allowedSenders: string[];
   voiceReplies: "off" | "voice" | "always";
+  /** Agent program of the channel's conversations; null = workspace/environment default. */
+  backendId: AgentBackendId | null;
+  /** Model its conversations start with; null = the backend's default. */
+  model: string | null;
   settings: Record<string, string>;
   secrets: Record<string, string>;
 };
@@ -183,6 +189,24 @@ export type MailInboxInput = {
   agentId: string | null;
   autonomy: MailAutonomy;
   enabled: boolean;
+  /** Own agent program for this mailbox; null = the workspace/environment default. */
+  backendId: AgentBackendId | null;
+  /** Its own model; null = the backend's default. */
+  model: string | null;
+  /** The brief: what to do with incoming mail, what to leave alone. */
+  instructions: string;
+  /** Appended to every draft and answer. */
+  signature: string;
+  /** Address, tone, language. */
+  tone: string;
+  /** Background about the user, the business, recurring correspondents. */
+  context: string;
+  /** Sender patterns (comma separated, * allowed); empty = every sender. */
+  includeSenders: string;
+  /** Sender patterns to leave untouched. */
+  excludeSenders: string;
+  /** Folders to watch (comma separated); empty = INBOX. */
+  folders: string;
   settings: Record<string, string>;
   secrets: Record<string, string>;
 };
@@ -349,6 +373,11 @@ export type BackendCapabilities = { interactivePermissions: boolean; questions: 
 /** runtime null = nothing to install (Harnold-Agent). */
 export type BackendStatus = { id: AgentBackendId; name: string; ready: boolean; runtime: AgentRuntimeStatus | null; capabilities: BackendCapabilities };
 export type AgentBackendsView = { activeId: AgentBackendId; backends: BackendStatus[] };
+
+/** Workspace defaults per role: what runs conversations and what runs unattended work (tasks, mailbox). */
+export type AgentRole = "chat" | "automation";
+export type AgentRoleDefaults = { backendId: AgentBackendId | null; model: string | null };
+export type AgentRoleSettings = Record<AgentRole, AgentRoleDefaults>;
 export type CodexAuthMode = "login" | "apiKey";
 export type CodexStatus = {
   mode: CodexAuthMode;
@@ -463,5 +492,14 @@ export type ExternalMcpServer = {
   importable: boolean;
 };
 
-export type TeamAgentInput = { environmentId: string | null; name: string; role: string; instructions: string; model: string | null; icon: string | null };
+export type TeamAgentInput = {
+  environmentId: string | null;
+  name: string;
+  role: string;
+  instructions: string;
+  model: string | null;
+  /** Agent program of this member; null = the workspace/environment default. */
+  backendId: AgentBackendId | null;
+  icon: string | null;
+};
 export type TeamAgent = TeamAgentInput & { id: string; createdAt: number };

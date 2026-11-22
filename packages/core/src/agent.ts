@@ -12,7 +12,8 @@ import { folderStore } from "./folders.ts";
 import { mentionHintFor, teamContextFor, teamStore } from "./agents.ts";
 import { agentBackends } from "./backends/index.ts";
 import type { AgentBackend, PermissionDecision, PermissionMode, TurnContext, TurnEvent } from "./backends/types.ts";
-import type { AgentBackendId } from "./agent-backend-settings.ts";
+import { defaultAgentBackendId, normalizeBackendId, type AgentBackendId } from "./agent-backend-settings.ts";
+import { agentRoleSettings, defaultAgentRole, type AgentRole } from "./agent-roles.ts";
 import { t } from "./i18n.ts";
 
 /** Chat folders plus the project's folder context (memory levels) – every agent program gets access to them. */
@@ -27,7 +28,18 @@ const whereAllowedContext = (directories: string[], project: Project) =>
 export type { ContextBreakdown } from "./backends/types.ts";
 import type { ContextBreakdown } from "./backends/types.ts";
 
-export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
+export type TurnRequest = {
+  sessionId: string;
+  text: string;
+  permissionMode: PermissionMode;
+  /** Model of the unit that starts the turn (task, channel, mailbox); empty = inherit. */
+  model?: string;
+  /** Agent program of the unit that starts the turn; empty = the role's/environment's/workspace default. */
+  backendId?: string | null;
+  /** Role of the turn when neither the unit nor the team member names a program: conversation or background run. */
+  role?: AgentRole;
+  attachments?: Attachment[];
+};
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
 /** A message sent while a turn runs; it starts once the current turn is done. */
 export type QueuedMessage = Omit<TurnRequest, "sessionId"> & { id: string; createdAt: string };
@@ -88,22 +100,41 @@ function modelFitsBackend(model: string, backendId: AgentBackendId): boolean {
   return backendId === "codex" ? !looksLikeClaude : !looksLikeCodex;
 }
 
-/** Backend of this conversation: the one it started with, or – for a fresh context – the environment's/active one. */
-function backendIdFor(sessionId: string): AgentBackendId {
+/**
+ * Program of this conversation: the one its context already lives in, else the unit's own choice, else the role's
+ * default (interactive or background), else the environment's, else the workspace-wide one.
+ */
+function backendIdFor(sessionId: string, requestedBackendId: string | null | undefined, role: AgentRole): AgentBackendId {
   const session = sessionStore.get(sessionId);
   if (!session) throw new Error(t("Session nicht gefunden"));
-  return session.agentSessionId ? ((session.backendId as AgentBackendId | null) ?? "claude-code") : environmentStore.backendFor(session.projectId);
+  // A conversation that already has a program keeps it – its context lives in that program.
+  const running = session.agentSessionId ? (normalizeBackendId(session.backendId) ?? defaultAgentBackendId) : null;
+  return (
+    running ??
+    normalizeBackendId(requestedBackendId) ??
+    agentRoleSettings.of(role).backendId ??
+    normalizeBackendId(session.backendId) ??
+    environmentStore.backendFor(session.projectId)
+  );
 }
 
 /** What a turn and a context check of this session share (same tools, prompt and model, so the numbers match). */
-async function turnContextFor(sessionId: string, permissionMode: PermissionMode, model?: string): Promise<{ backend: AgentBackend; context: TurnContext }> {
+async function turnContextFor(
+  sessionId: string,
+  permissionMode: PermissionMode,
+  model?: string,
+  requestedBackendId?: string | null,
+  role: AgentRole = defaultAgentRole,
+): Promise<{ backend: AgentBackend; context: TurnContext }> {
   const session = sessionStore.get(sessionId);
   if (!session) throw new Error(t("Session nicht gefunden"));
   const project = projectStore.get(session.projectId);
   if (!project) throw new Error(t("Projekt nicht gefunden"));
-  const backendId = backendIdFor(sessionId);
-  const backend = agentBackends.get(backendId);
   const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
+  // The unit's own program (task, channel, mailbox, team member) wins over the role's and the workspace's one.
+  const backendId = backendIdFor(sessionId, requestedBackendId ?? teamAgent?.backendId ?? null, role);
+  const roleDefaults = agentRoleSettings.of(role);
+  const backend = agentBackends.get(backendId);
   const agentSetup = await environmentStore.agentSetupFor(project.id, backendId);
   // Folders of the project's context (chat + memory levels) apply to every turn, whichever backend runs.
   const directories = sessionDirectories(session);
@@ -116,7 +147,8 @@ async function turnContextFor(sessionId: string, permissionMode: PermissionMode,
       project,
       teamAgentId: session.agentId,
       permissionMode,
-      model: fitting(teamAgent?.model) || fitting(model) || fitting(agentSetup.model) || backend.defaultModel(),
+      // The caller's model (composer or unit), then the team member's, the role's, the environment's, then the default.
+      model: fitting(model) || fitting(teamAgent?.model) || fitting(roleDefaults.model) || fitting(agentSetup.model) || backend.defaultModel(),
       env: agentSetup.env,
       systemPromptAppend: [harnoldSystemAppend(), whereAllowedContext(directories, project), folderStore.contextFor(project), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
         .filter(Boolean)
@@ -159,14 +191,14 @@ export const agentRuntime = {
     return runningTurns.has(sessionId);
   },
 
-  async runTurn({ sessionId, text, permissionMode, model, attachments = [] }: TurnRequest): Promise<TurnOutcome> {
+  async runTurn({ sessionId, text, permissionMode, model, backendId, role = defaultAgentRole, attachments = [] }: TurnRequest): Promise<TurnOutcome> {
     const session = sessionStore.get(sessionId);
     if (!session) throw new Error(t("Session nicht gefunden"));
     const project = projectStore.get(session.projectId);
     if (!project) throw new Error(t("Projekt nicht gefunden"));
     if (runningTurns.has(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
     // Fail early (before the message is stored) when the agent program is missing or not signed in.
-    const { backend, context } = await turnContextFor(sessionId, permissionMode, model);
+    const { backend, context } = await turnContextFor(sessionId, permissionMode, model, backendId, role);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
       sessionStore.update(sessionId, { title: (text.trim() || attachments.map((attachment) => attachment.name).join(", ")).slice(0, 60) });
@@ -264,14 +296,14 @@ export const agentRuntime = {
 
   /** Context window by category; model = the one the composer has picked (window size depends on it). */
   async measureContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
-    const { backend, context } = await turnContextFor(sessionId, "default", model);
+    const { backend, context } = await turnContextFor(sessionId, "default", model, null, defaultAgentRole);
     if (!backend.measureContext) throw new Error(t("{0} bietet keine Kontextanzeige", backend.name));
     return backend.measureContext(context);
   },
 
   /** Throws a friendly error when the agent program of this session cannot run (not installed / signed in). */
   async assertReady(sessionId: string): Promise<void> {
-    await agentBackends.get(backendIdFor(sessionId)).assertReady();
+    await agentBackends.get(backendIdFor(sessionId, null, defaultAgentRole)).assertReady();
   },
 
   queueFor(sessionId: string): QueuedMessage[] {

@@ -12,18 +12,20 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusDot } from "@/components/status-dot";
 import { FormField, formatRelativeTime, permissionModeOptions } from "@/components/form-field";
-import { ModelSelect, type InheritedModel } from "@/components/model-select";
+import type { InheritedModel } from "@/components/model-select";
+import { AgentModelPicker } from "@/components/agent-model-picker";
 import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
 import { describeSchedule, ScheduleEditor } from "@/components/schedule-editor";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 import { toast } from "@/lib/toast";
+import { UnitModelLabel } from "@/components/unit-model-label";
 
 export { describeSchedule };
 
 type TasksScreenProps = {
-  inheritedModelFor: (projectId: string) => InheritedModel;
+  inheritedModelFor: (projectId: string, role?: "chat" | "automation") => InheritedModel;
   teamForProject: (projectId: string) => TeamAgent[];
   selectedTaskId: string | "new" | null;
   onSelectTask: (taskId: string | "new" | null) => void;
@@ -44,6 +46,7 @@ function emptyTaskInput(projectId: string): TaskInput {
     enabled: true,
     permissionMode: "acceptEdits",
     model: null,
+    backendId: null,
     agentId: null,
     sessionMode: "new",
     cleanupAfterDays: null,
@@ -55,7 +58,7 @@ function emptyTaskInput(projectId: string): TaskInput {
 }
 
 function TaskEditor(props: {
-  inheritedModelFor: (projectId: string) => InheritedModel;
+  inheritedModelFor: (projectId: string, role?: "chat" | "automation") => InheritedModel;
   teamForProject: (projectId: string) => TeamAgent[];
   task: Task | null;
   initialInput: TaskInput;
@@ -153,6 +156,19 @@ function TaskEditor(props: {
           onRemove={(folderPath) => updateInput({ directories: taskInput.directories.filter((existing) => existing !== folderPath) })}
         />
       </FormField>
+      <AgentModelPicker
+        backendId={taskInput.backendId}
+        model={taskInput.model}
+        inheritedModel={props.inheritedModelFor(taskInput.projectId, "automation")}
+        onChange={(choice) => updateInput({ backendId: choice.backendId, model: choice.model })}
+      />
+      <FormField label={t("Agent")} hint={t("Wer den Task ausführt. Ein Teammitglied bringt eigene Rolle und Anweisungen mit.")}>
+        <Combobox
+          value={taskInput.agentId ?? "default"}
+          options={[{ value: "default", label: t("Harnold (Standard)") }, ...projectTeam.map((agent) => ({ value: agent.id, label: agent.name, description: agent.role || undefined }))]}
+          onValueChange={(value) => updateInput({ agentId: value === "default" ? null : value })}
+        />
+      </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label={t("Rechte")}>
           <Select value={taskInput.permissionMode} onValueChange={(value) => updateInput({ permissionMode: value as TaskInput["permissionMode"] })}>
@@ -167,18 +183,6 @@ function TaskEditor(props: {
               ))}
             </SelectContent>
           </Select>
-        </FormField>
-        <FormField label={t("Modell")}>
-          <ModelSelect className="w-full" value={taskInput.model ?? ""} onChange={(model) => updateInput({ model: model || null })} inherited={props.inheritedModelFor(taskInput.projectId)} />
-        </FormField>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <FormField label={t("Agent")}>
-          <Combobox
-            value={taskInput.agentId ?? "default"}
-            options={[{ value: "default", label: t("Harnold (Standard)") }, ...projectTeam.map((agent) => ({ value: agent.id, label: agent.name, description: agent.role || undefined }))]}
-            onValueChange={(value) => updateInput({ agentId: value === "default" ? null : value })}
-          />
         </FormField>
         <FormField label={t("Session")}>
           <Select value={taskInput.sessionMode} onValueChange={(value) => updateInput({ sessionMode: value as TaskInput["sessionMode"] })}>
@@ -367,6 +371,7 @@ export function TasksScreen(props: TasksScreenProps) {
           enabled: selectedTask.enabled,
           permissionMode: selectedTask.permissionMode,
           model: selectedTask.model,
+          backendId: selectedTask.backendId,
           agentId: selectedTask.agentId,
           sessionMode: selectedTask.sessionMode,
           cleanupAfterDays: selectedTask.cleanupAfterDays,
@@ -423,6 +428,7 @@ export function TasksScreen(props: TasksScreenProps) {
                 </div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
                   {describeSchedule(task.schedule)} · {projectNameOf(task.projectId)}
+                  <UnitModelLabel backendId={task.backendId} model={task.model} />
                 </div>
               </ListRow>
             ))

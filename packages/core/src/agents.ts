@@ -5,6 +5,7 @@ import { database, projectStore, sessionStore, type Project } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { environmentStore } from "./environments.ts";
 import { t } from "./i18n.ts";
+import { normalizeBackendId, type AgentBackendId } from "./agent-backend-settings.ts";
 
 /**
  * Team: several agents (experts) per environment – each with its own role, instructions and model. Every conversation
@@ -18,10 +19,18 @@ database.exec(`
     role TEXT NOT NULL DEFAULT '',
     instructions TEXT NOT NULL DEFAULT '',
     model TEXT,
+    backend_id TEXT,
     icon TEXT,
     created_at INTEGER NOT NULL
   );
 `);
+
+// Migration: own agent program per team member (added after the first release of the team).
+try {
+  database.exec("ALTER TABLE team_agents ADD COLUMN backend_id TEXT");
+} catch {
+  /* column exists */
+}
 
 export const teamAgentInputSchema = z.object({
   /** null = available in every environment. */
@@ -30,10 +39,12 @@ export const teamAgentInputSchema = z.object({
   role: z.string().trim().max(200),
   instructions: z.string().max(20_000),
   model: z.string().trim().nullable(),
+  /** Agent program of this member; null = the workspace/environment default. */
+  backendId: z.string().trim().nullable().default(null).transform(normalizeBackendId),
   icon: z.string().trim().max(40).nullable(),
 });
 export type TeamAgentInput = z.infer<typeof teamAgentInputSchema>;
-export type TeamAgent = TeamAgentInput & { id: string; createdAt: number };
+export type TeamAgent = Omit<TeamAgentInput, "backendId"> & { backendId: AgentBackendId | null; id: string; createdAt: number };
 
 type Row = Record<string, unknown>;
 const mapAgent = (row: Row): TeamAgent => ({
@@ -43,6 +54,7 @@ const mapAgent = (row: Row): TeamAgent => ({
   role: String(row.role),
   instructions: String(row.instructions),
   model: row.model ? String(row.model) : null,
+  backendId: normalizeBackendId(row.backend_id ? String(row.backend_id) : null),
   icon: row.icon ? String(row.icon) : null,
   createdAt: Number(row.created_at),
 });
@@ -66,11 +78,21 @@ export const teamStore = {
     const id = existing?.id ?? randomUUID();
     database
       .prepare(
-        `INSERT INTO team_agents (id, environment_id, name, role, instructions, model, icon, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO team_agents (id, environment_id, name, role, instructions, model, backend_id, icon, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET environment_id = excluded.environment_id, name = excluded.name, role = excluded.role,
-           instructions = excluded.instructions, model = excluded.model, icon = excluded.icon`,
+           instructions = excluded.instructions, model = excluded.model, backend_id = excluded.backend_id, icon = excluded.icon`,
       )
-      .run(id, agentInput.environmentId, agentInput.name, agentInput.role, agentInput.instructions, agentInput.model || null, agentInput.icon || null, existing?.createdAt ?? Date.now());
+      .run(
+        id,
+        agentInput.environmentId,
+        agentInput.name,
+        agentInput.role,
+        agentInput.instructions,
+        agentInput.model || null,
+        normalizeBackendId(agentInput.backendId),
+        agentInput.icon || null,
+        existing?.createdAt ?? Date.now(),
+      );
     eventHub.publish({ type: "team_changed" });
     return teamStore.get(id)!;
   },
@@ -153,10 +175,18 @@ export function createTeamTools(project: Project, sessionId: string, permissionM
         role: z.string().max(200).default(""),
         instructions: z.string().default(""),
         model: z.string().nullable().default(null),
+        backendId: z.string().nullable().optional().describe("Agent-Programm (claude-code, codex, native) nur für dieses Mitglied; null = wie Einstellungen/Umgebung, weglassen = unverändert"),
       },
-      async ({ agentId, ...agentFields }) => {
+      async ({ agentId, backendId, ...agentFields }) => {
         try {
-          const savedAgent = teamStore.save({ ...agentFields, icon: agentId ? (teamStore.get(agentId)?.icon ?? null) : null }, agentId);
+          const savedAgent = teamStore.save(
+            {
+              ...agentFields,
+              backendId: backendId === undefined ? (agentId ? (teamStore.get(agentId)?.backendId ?? null) : null) : normalizeBackendId(backendId),
+              icon: agentId ? (teamStore.get(agentId)?.icon ?? null) : null,
+            },
+            agentId,
+          );
           return textResult(`Teammitglied „${savedAgent.name}“ gespeichert (id ${savedAgent.id}).`);
         } catch (saveError) {
           return textResult(saveError instanceof Error ? saveError.message : String(saveError), true);

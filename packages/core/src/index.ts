@@ -28,7 +28,8 @@ import { environmentInputSchema, environmentStore } from "./environments.ts";
 import { presentProviders } from "./environment-providers.ts";
 import { discoverProviderModels, providerInputSchema, providerStore } from "./providers.ts";
 import { agentBackends } from "./backends/index.ts";
-import { agentBackendSettings, isAgentBackendId } from "./agent-backend-settings.ts";
+import { agentBackendSettings, isAgentBackendId, normalizeBackendId } from "./agent-backend-settings.ts";
+import { agentRoleSettings } from "./agent-roles.ts";
 import { codexAuth, codexSettings } from "./codex-auth.ts";
 import { harnoldMcp } from "./mcp-http.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
@@ -507,6 +508,8 @@ const taskInputSchema = z.object({
   enabled: z.boolean(),
   permissionMode: permissionModeSchema,
   model: z.string().nullable(),
+  /** Agent program of the runs; null = the project's environment, else the workspace default. */
+  backendId: z.string().trim().nullable().default(null).transform(normalizeBackendId),
   agentId: z.string().nullable().default(null),
   sessionMode: z.enum(["new", "continue"]).default("new"),
   cleanupAfterDays: z.number().int().min(1).max(3650).nullable().default(null),
@@ -581,6 +584,10 @@ const channelInputSchema = z.object({
   permissionMode: permissionModeSchema,
   allowedSenders: z.array(z.string()),
   voiceReplies: z.enum(["off", "voice", "always"]).default("voice"),
+  /** Agent program of the channel's conversations; null = the workspace/environment default. */
+  backendId: z.string().trim().nullable().default(null).transform(normalizeBackendId),
+  /** Model its conversations start with; null = the backend's default. */
+  model: z.string().trim().nullable().default(null),
   settings: z.record(z.string(), z.string()),
   secrets: z.record(z.string(), z.string().optional()),
 });
@@ -630,6 +637,15 @@ const presentMailInbox = (inbox: MailInbox) => ({
   agentId: inbox.agentId,
   autonomy: inbox.autonomy,
   enabled: inbox.enabled,
+  backendId: inbox.backendId,
+  model: inbox.model,
+  instructions: inbox.instructions,
+  signature: inbox.signature,
+  tone: inbox.tone,
+  context: inbox.context,
+  includeSenders: inbox.includeSenders,
+  excludeSenders: inbox.excludeSenders,
+  folders: inbox.folders,
   settings: inbox.settings,
   secretsSet: Object.fromEntries(mailInboxFieldDefinitions.secrets.map((secretName) => [secretName, Boolean(inbox.secrets[secretName])])),
   agentName: inbox.agentId ? (teamStore.get(inbox.agentId)?.name ?? null) : null,
@@ -908,6 +924,17 @@ app.put("/api/settings/model", async (context) => {
 });
 
 app.put("/api/claude/settings", async (context) => context.json(await claudeAuth.save(claudeSettingsSchema.parse(await context.req.json()))));
+
+// --- Rollen: welches Agent-Programm/Modell für Unterhaltungen und für Hintergrundläufe ---
+const agentRoleDefaultsSchema = z.object({ backendId: z.string().nullable(), model: z.string().nullable() });
+const agentRolesSchema = z.object({ chat: agentRoleDefaultsSchema.optional(), automation: agentRoleDefaultsSchema.optional() }).partial();
+
+app.get("/api/agent-roles", (context) => context.json(agentRoleSettings.read()));
+app.put("/api/agent-roles", async (context) => {
+  const roles = agentRoleSettings.write(agentRolesSchema.parse(await context.req.json()));
+  eventHub.publish({ type: "claude_auth_changed" });
+  return context.json(roles);
+});
 
 // --- Agent programs (Claude Code, Codex, …) ---
 const codexSettingsSchema = z.object({ mode: z.enum(["login", "apiKey"]), apiKey: z.string().optional(), models: z.array(z.string()).optional() });

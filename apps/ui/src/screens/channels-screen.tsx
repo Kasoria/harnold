@@ -15,7 +15,10 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { AgentModelPicker } from "@/components/agent-model-picker";
+import type { InheritedModel } from "@/components/model-select";
 import { toast } from "@/lib/toast";
+import { UnitModelLabel } from "@/components/unit-model-label";
 
 type FieldDefinition = { key: string; label: string; placeholder?: string; secret?: boolean };
 
@@ -76,6 +79,7 @@ function ChannelEditor(props: {
   channel: Channel | null;
   projects: Project[];
   defaultProjectId: string;
+  inheritedModelFor: (projectId: string | null, role?: "chat" | "automation") => InheritedModel;
   /** Saved channel id; null on cancel/removal. */
   onDone: (savedChannelId: string | null) => void;
   onError: (unknownError: unknown) => void;
@@ -83,7 +87,20 @@ function ChannelEditor(props: {
   const [channelInput, setChannelInput] = useState<ChannelInput>(() =>
     props.channel
       ? { ...props.channel, secrets: {} }
-      : { type: "telegram", name: "Telegram", scope: "workspace", projectId: "", enabled: true, permissionMode: "default", allowedSenders: [], voiceReplies: "voice", settings: {}, secrets: {} },
+      : {
+          type: "telegram",
+          name: "Telegram",
+          scope: "workspace",
+          projectId: "",
+          enabled: true,
+          permissionMode: "default",
+          allowedSenders: [],
+          voiceReplies: "voice",
+          backendId: null,
+          model: null,
+          settings: {},
+          secrets: {},
+        },
   );
   const [allowedSendersText, setAllowedSendersText] = useState((props.channel?.allowedSenders ?? []).join("\n"));
   const [saving, setSaving] = useState(false);
@@ -180,6 +197,15 @@ function ChannelEditor(props: {
       >
         <Textarea rows={3} className="font-mono text-[12.5px]" value={allowedSendersText} onChange={(event) => setAllowedSendersText(event.target.value)} />
       </FormField>
+      <AgentModelPicker
+        backendId={channelInput.backendId}
+        model={channelInput.model}
+        inheritedModel={props.inheritedModelFor(channelInput.scope === "workspace" ? null : channelInput.projectId)}
+        onChange={(choice) => updateInput({ backendId: choice.backendId, model: choice.model })}
+      />
+      <p className="-mt-2 text-[11.5px] leading-snug text-muted-foreground">
+        {t("Ein anderes Agent-Programm beginnt die Chats dieses Channels neu – ein Programm kann seinen Kontext nicht mit einem anderen teilen.")}
+      </p>
       <FormField label={t("Rechte des Agents")}>
         <Select value={channelInput.permissionMode} onValueChange={(value) => updateInput({ permissionMode: value as ChannelInput["permissionMode"] })}>
           <SelectTrigger className="w-full">
@@ -245,6 +271,8 @@ type ChannelsScreenProps = {
   channels: Channel[];
   projects: Project[];
   defaultProjectId: string | null;
+  /** Model that applies when a channel inherits – shown by name instead of a bare "Standard". */
+  inheritedModelFor: (projectId: string | null, role?: "chat" | "automation") => InheritedModel;
   onError: (unknownError: unknown) => void;
 };
 
@@ -260,7 +288,14 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
   const detail =
     props.selectedChannelId === "new" ? (
       <DetailPane detailKey="new" title={t("Channel hinzufügen")} subtitle={t("Mit dem Agent über Telegram, Discord, Slack oder E-Mail sprechen.")}>
-        <ChannelEditor channel={null} projects={props.projects} defaultProjectId={defaultProjectId} onDone={(savedId) => props.onSelectChannel(savedId)} onError={props.onError} />
+        <ChannelEditor
+          channel={null}
+          projects={props.projects}
+          defaultProjectId={defaultProjectId}
+          inheritedModelFor={props.inheritedModelFor}
+          onDone={(savedId) => props.onSelectChannel(savedId)}
+          onError={props.onError}
+        />
       </DetailPane>
     ) : selectedChannel ? (
       <DetailPane
@@ -279,6 +314,7 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
           channel={selectedChannel}
           projects={props.projects}
           defaultProjectId={defaultProjectId}
+          inheritedModelFor={props.inheritedModelFor}
           onDone={(savedId) => props.onSelectChannel(savedId)}
           onError={props.onError}
         />
@@ -322,6 +358,7 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
                 </div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
                   {channelTypeDefinitions[channel.type].label} · {scopeLabelOf(channel, props.projects)}
+                  <UnitModelLabel backendId={channel.backendId} model={channel.model} />
                 </div>
               </ListRow>
             ))

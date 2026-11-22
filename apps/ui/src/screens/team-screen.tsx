@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/form-field";
-import { ModelSelect } from "@/components/model-select";
+import { AgentModelPicker } from "@/components/agent-model-picker";
+import type { InheritedModel } from "@/components/model-select";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { confirmAction } from "@/components/confirm-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
@@ -14,23 +15,41 @@ import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 import { toast } from "@/lib/toast";
+import { UnitModelLabel } from "@/components/unit-model-label";
 
 const everywhereValue = "__everywhere__";
 
 type TeamScreenProps = {
   agents: TeamAgent[];
   environments: Environment[];
+  /** Model that applies when a member inherits – shown by name instead of a bare "Standard". */
+  inheritedModel: InheritedModel;
   selection: string | null;
   onSelect: (selection: string | null) => void;
   onTeamChange: () => void;
   onError: (unknownError: unknown) => void;
 };
 
-function TeamAgentEditor(props: { agent: TeamAgent | null; environments: Environment[]; onDone: (savedId: string | null) => void; onTeamChange: () => void; onError: (unknownError: unknown) => void }) {
+function TeamAgentEditor(props: {
+  agent: TeamAgent | null;
+  environments: Environment[];
+  inheritedModel: InheritedModel;
+  onDone: (savedId: string | null) => void;
+  onTeamChange: () => void;
+  onError: (unknownError: unknown) => void;
+}) {
   const [agentInput, setAgentInput] = useState<TeamAgentInput>(() =>
     props.agent
-      ? { environmentId: props.agent.environmentId, name: props.agent.name, role: props.agent.role, instructions: props.agent.instructions, model: props.agent.model, icon: props.agent.icon }
-      : { environmentId: null, name: "", role: "", instructions: "", model: null, icon: null },
+      ? {
+          environmentId: props.agent.environmentId,
+          name: props.agent.name,
+          role: props.agent.role,
+          instructions: props.agent.instructions,
+          model: props.agent.model,
+          backendId: props.agent.backendId,
+          icon: props.agent.icon,
+        }
+      : { environmentId: null, name: "", role: "", instructions: "", model: null, backendId: null, icon: null },
   );
   const [saving, setSaving] = useState(false);
   const { saved, flashSaved } = useSavedFlash();
@@ -86,9 +105,15 @@ function TeamAgentEditor(props: { agent: TeamAgent | null; environments: Environ
           onChange={(changeEvent) => updateInput({ instructions: changeEvent.target.value })}
         />
       </FormField>
-      <FormField label={t("Modell")}>
-        <ModelSelect value={agentInput.model ?? ""} inherited={{ model: "claude-opus-5-5", source: t("wie die Umgebung") }} onChange={(model) => updateInput({ model: model || null })} />
-      </FormField>
+      <AgentModelPicker
+        backendId={agentInput.backendId}
+        model={agentInput.model}
+        inheritedModel={props.inheritedModel}
+        onChange={(choice) => updateInput({ backendId: choice.backendId, model: choice.model })}
+      />
+      <p className="-mt-2 text-[11.5px] leading-snug text-muted-foreground">
+        {t("Ein anderes Agent-Programm gilt für neue Unterhaltungen mit diesem Mitglied; laufende behalten ihres, bis der Kontext neu beginnt.")}
+      </p>
       <div className="flex gap-2">
         <Button size="sm" disabled={saving || !agentInput.name.trim()} onClick={() => void save()}>
           {saving && <Loader2 className="size-3.5 animate-spin" />} {t("Speichern")}
@@ -117,11 +142,26 @@ export function TeamScreen(props: TeamScreenProps) {
   const detail =
     props.selection === "new" ? (
       <DetailPane detailKey="new" title={t("Teammitglied hinzufügen")} subtitle={t("Ein Agent mit eigener Rolle, eigenen Anweisungen und eigenem Modell.")}>
-        <TeamAgentEditor agent={null} environments={props.environments} onDone={props.onSelect} onTeamChange={props.onTeamChange} onError={props.onError} />
+        <TeamAgentEditor
+          agent={null}
+          environments={props.environments}
+          inheritedModel={props.inheritedModel}
+          onDone={props.onSelect}
+          onTeamChange={props.onTeamChange}
+          onError={props.onError}
+        />
       </DetailPane>
     ) : selectedAgent ? (
       <DetailPane detailKey={selectedAgent.id} title={selectedAgent.name} subtitle={`${selectedAgent.role || t("Ohne Rolle")} · ${environmentNameOf(selectedAgent.environmentId)}`}>
-        <TeamAgentEditor key={selectedAgent.id} agent={selectedAgent} environments={props.environments} onDone={props.onSelect} onTeamChange={props.onTeamChange} onError={props.onError} />
+        <TeamAgentEditor
+          key={selectedAgent.id}
+          agent={selectedAgent}
+          environments={props.environments}
+          inheritedModel={props.inheritedModel}
+          onDone={props.onSelect}
+          onTeamChange={props.onTeamChange}
+          onError={props.onError}
+        />
       </DetailPane>
     ) : (
       <EmptyState
@@ -157,6 +197,7 @@ export function TeamScreen(props: TeamScreenProps) {
                 <div className="truncate text-[13px] font-medium">{agent.name}</div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
                   {agent.role || t("Ohne Rolle")} · {environmentNameOf(agent.environmentId)}
+                  <UnitModelLabel backendId={agent.backendId} model={agent.model} />
                 </div>
               </ListRow>
             ))

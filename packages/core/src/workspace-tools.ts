@@ -18,6 +18,7 @@ import { sessionActions } from "./session-actions.ts";
 import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./setup-tools.ts";
 import { createTeamTools, teamStore, teamToolNames } from "./agents.ts";
 import { createMailTools, mailToolNames } from "./mail/tools.ts";
+import { normalizeBackendId } from "./agent-backend-settings.ts";
 import { mailAutonomyLabels, mailInboxStore } from "./mail/inbox.ts";
 import { unwatchProject } from "./files.ts";
 import { folderStore } from "./folders.ts";
@@ -435,8 +436,10 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           agentName: z.string().nullable().optional().describe("Name aus team_list; null = Standard-Agent"),
           sessionMode: z.enum(["new", "continue"]).optional().describe("new: neue Session je Lauf, continue: immer dieselbe Session"),
           directories: z.array(z.string()).optional().describe("Ordner, in denen die Läufe arbeiten dürfen (zusätzlich zum Projektordner)"),
+          backendId: z.string().nullable().optional().describe("Agent-Programm (claude-code, codex, native) nur für diesen Task; null = wie Einstellungen/Umgebung, weglassen = unverändert"),
+          model: z.string().nullable().optional().describe("Modell nur für diesen Task; null = Standard des Programms, weglassen = unverändert"),
         },
-        safely(({ taskId, name, prompt, schedule, projectId, enabled, permissionMode, agentName, sessionMode, directories }) => {
+        safely(({ taskId, name, prompt, schedule, projectId, enabled, permissionMode, agentName, sessionMode, directories, backendId, model }) => {
           const existingTask = taskId ? taskStore.get(taskId) : undefined;
           if (taskId && !existingTask) return errorResult("Task nicht gefunden");
           const targetProjectId = projectId ?? existingTask?.projectId ?? project.id;
@@ -456,7 +459,8 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
               schedule,
               enabled: enabled ?? existingTask?.enabled ?? true,
               permissionMode: permissionMode ?? existingTask?.permissionMode ?? "acceptEdits",
-              model: existingTask?.model ?? null,
+              model: model === undefined ? (existingTask?.model ?? null) : model,
+              backendId: backendId === undefined ? (existingTask?.backendId ?? null) : normalizeBackendId(backendId),
               agentId,
               sessionMode: sessionMode ?? existingTask?.sessionMode ?? "new",
               cleanupAfterDays: existingTask?.cleanupAfterDays ?? null,

@@ -105,6 +105,8 @@ Heute: Artifact erstellen → teilen → Claude Code öffnen → Ordner wählen 
 - **UI:** React, identisch für Desktop und Web.
 - **Desktop:** Tauri (Mac zuerst). Verbindet wahlweise mit lokalem oder entferntem Core (Workspace-Umschalter). Kein Sync: Daten liegen beim jeweiligen Core; Projekte bei Bedarf per Git spiegeln.
 - **Modelle:** Claude via Agent SDK (Claude-Abo-Login, API-Key, Bedrock, Vertex). Provider-Interface für OpenAI, Gemini, Ollama.
+  Agent-Programm und Modell sind nicht global festgelegt: Team-Mitglied, Channel, Postfach und Task dürfen eigenes
+  Programm und Modell wählen, leer = erben (siehe [agent-modelle.md](agent-modelle.md)).
 - **Daten:** Projekte im Dateisystem, Metadaten/Sessions/Tasks in SQLite.
 - **Auth:** Server-Betrieb mit Login (Single-User Standard, Multi-User vorbereitet). Lokal ohne Login.
 

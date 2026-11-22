@@ -14,7 +14,11 @@ import { confirmAction } from "@/components/confirm-dialog";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
+import { AgentModelPicker } from "@/components/agent-model-picker";
+import type { InheritedModel } from "@/components/model-select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
+import { UnitModelLabel } from "@/components/unit-model-label";
 
 const mailboxFields: { key: string; label: string; placeholder?: string; secret?: boolean }[] = [
   { key: "imapHost", label: t("IMAP-Server"), placeholder: "imap.example.com" },
@@ -56,13 +60,32 @@ function MailInboxEditor(props: {
   inbox: MailInbox | null;
   projects: Project[];
   teamAgents: TeamAgent[];
+  inheritedModelFor: (projectId: string | null, role?: "chat" | "automation") => InheritedModel;
   onDone: (savedId: string | null) => void;
   onError: (unknownError: unknown) => void;
 }) {
   const [input, setInput] = useState<MailInboxInput>(() =>
     props.inbox
       ? { ...props.inbox, secrets: {} }
-      : { name: "", scope: "global", projectId: "", agentId: null, autonomy: "approve", enabled: true, settings: {}, secrets: {} },
+      : {
+          name: "",
+          scope: "global",
+          projectId: "",
+          agentId: null,
+          autonomy: "approve",
+          enabled: true,
+          backendId: null,
+          model: null,
+          instructions: "",
+          signature: "",
+          tone: "",
+          context: "",
+          includeSenders: "",
+          excludeSenders: "",
+          folders: "",
+          settings: {},
+          secrets: {},
+        },
   );
   const [saving, setSaving] = useState(false);
   const { saved, flashSaved } = useSavedFlash();
@@ -107,6 +130,25 @@ function MailInboxEditor(props: {
         </FormField>
       </div>
       <div className="grid grid-cols-2 gap-3">
+        {mailboxFields.map((field) => (
+          <div key={field.key} className={cn(field.secret && "col-span-2")}>
+            <FormField label={field.label}>
+              <Input
+                type={field.secret ? "password" : "text"}
+                autoComplete="off"
+                placeholder={field.secret && props.inbox?.secretsSet[field.key] ? t("•••••• (gespeichert)") : field.placeholder}
+                value={field.secret ? (input.secrets[field.key] ?? "") : (input.settings[field.key] ?? "")}
+                onChange={(event) =>
+                  field.secret
+                    ? updateInput({ secrets: { ...input.secrets, [field.key]: event.target.value } })
+                    : updateInput({ settings: { ...input.settings, [field.key]: event.target.value } })
+                }
+              />
+            </FormField>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <FormField label={t("Agent")} hint={t("Wer das Postfach bearbeitet.")}>
           <Combobox
             value={input.agentId ?? defaultAgentValue}
@@ -134,25 +176,64 @@ function MailInboxEditor(props: {
         </FormField>
       </div>
       <p className="-mt-2 text-[11.5px] leading-snug text-muted-foreground">{autonomyOptions.find((option) => option.value === input.autonomy)?.hint}</p>
-      <div className="grid grid-cols-2 gap-3">
-        {mailboxFields.map((field) => (
-          <div key={field.key} className={cn(field.secret && "col-span-2")}>
-            <FormField label={field.label}>
-              <Input
-                type={field.secret ? "password" : "text"}
-                autoComplete="off"
-                placeholder={field.secret && props.inbox?.secretsSet[field.key] ? t("•••••• (gespeichert)") : field.placeholder}
-                value={field.secret ? (input.secrets[field.key] ?? "") : (input.settings[field.key] ?? "")}
-                onChange={(event) =>
-                  field.secret
-                    ? updateInput({ secrets: { ...input.secrets, [field.key]: event.target.value } })
-                    : updateInput({ settings: { ...input.settings, [field.key]: event.target.value } })
-                }
-              />
-            </FormField>
-          </div>
-        ))}
+
+      <div className="grid gap-3 rounded-lg border bg-foreground/[0.02] p-3">
+        <div>
+          <div className="text-[12px] font-semibold">{t("Auftrag & Regeln")}</div>
+          <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+            {t("Ohne Auftrag fasst der Agent nur zusammen und antwortet, wenn es offensichtlich passt. Mit Auftrag arbeitet er genau nach deinen Regeln.")}
+          </p>
+        </div>
+        <FormField label={t("Was soll der Agent tun – und was nicht?")}>
+          <Textarea
+            rows={5}
+            value={input.instructions}
+            placeholder={t(
+              "z. B. Rechnungen und Terminanfragen zuerst erledigen, Newsletter ignorieren, bei Absagen höflich absagen. Nichts versprechen, was Preise oder Fristen angeht.",
+            )}
+            onChange={(event) => updateInput({ instructions: event.target.value })}
+          />
+        </FormField>
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label={t("Anrede, Ton, Sprache")} hint={t("z. B. „Sie, sachlich und kurz, Deutsch“")}>
+            <Input value={input.tone} placeholder={t("Sie, freundlich, Deutsch")} onChange={(event) => updateInput({ tone: event.target.value })} />
+          </FormField>
+          <FormField label={t("Signatur")} hint={t("Wird an Entwürfe und Antworten automatisch angehängt.")}>
+            <Textarea rows={2} value={input.signature} placeholder={t("Viele Grüße\nChristian")} onChange={(event) => updateInput({ signature: event.target.value })} />
+          </FormField>
+        </div>
+        <FormField label={t("Hintergrundwissen")} hint={t("Wer du bist, Firma, Produkte, wichtige Kontakte. Das Projekt-Memory geht zusätzlich mit.")}>
+          <Textarea
+            rows={4}
+            value={input.context}
+            placeholder={t("z. B. Ich bin Christian, Einzelunternehmer in Hamburg, baue Websites. Stammkunden: …")}
+            onChange={(event) => updateInput({ context: event.target.value })}
+          />
+        </FormField>
+        <div className="grid grid-cols-3 gap-3">
+          <FormField label={t("Nur von")} hint={t("Leer = alle Absender. Muster mit * erlaubt.")}>
+            <Input value={input.includeSenders} placeholder="*@kunde.de" onChange={(event) => updateInput({ includeSenders: event.target.value })} />
+          </FormField>
+          <FormField label={t("Nie von")} hint={t("Wird übersprungen, ohne den Agenten zu starten.")}>
+            <Input value={input.excludeSenders} placeholder="noreply@*,*@newsletter.de" onChange={(event) => updateInput({ excludeSenders: event.target.value })} />
+          </FormField>
+          <FormField label={t("Ordner")} hint={t("Leer = INBOX.")}>
+            <Input value={input.folders} placeholder="INBOX" onChange={(event) => updateInput({ folders: event.target.value })} />
+          </FormField>
+        </div>
       </div>
+      <div>
+        <div className="text-[12px] font-semibold">{t("Agent-Programm & Modell")}</div>
+        <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">
+          {t("Leer lassen heißt: wie in den Einstellungen bzw. der Umgebung. Praktisch, um ein Postfach mit einem günstigeren Modell laufen zu lassen.")}
+        </p>
+      </div>
+      <AgentModelPicker
+        backendId={input.backendId}
+        model={input.model}
+        inheritedModel={props.inheritedModelFor(input.scope === "global" ? null : input.projectId, "automation")}
+        onChange={(choice) => updateInput({ backendId: choice.backendId, model: choice.model })}
+      />
 
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={saving || !input.name.trim() || missingSecret} onClick={save}>
@@ -292,6 +373,8 @@ type MailScreenProps = {
   inboxes: MailInbox[];
   projects: Project[];
   teamAgents: TeamAgent[];
+  /** Model that applies when a mailbox inherits – shown by name instead of a bare "Standard". */
+  inheritedModelFor: (projectId: string | null, role?: "chat" | "automation") => InheritedModel;
   onOpenSession: (projectId: string, sessionId: string) => void;
   onError: (unknownError: unknown) => void;
 };
@@ -307,7 +390,14 @@ export function MailScreen(props: MailScreenProps) {
   const detail =
     props.selectedInboxId === "new" ? (
       <DetailPane detailKey="new" title={t("Postfach verbinden")} subtitle={t("Ein Agent bearbeitet dieses Postfach im Namen des Users.")}>
-        <MailInboxEditor inbox={null} projects={props.projects} teamAgents={props.teamAgents} onDone={(id) => props.onSelectInbox(id)} onError={props.onError} />
+        <MailInboxEditor
+          inbox={null}
+          projects={props.projects}
+          teamAgents={props.teamAgents}
+          inheritedModelFor={props.inheritedModelFor}
+          onDone={(id) => props.onSelectInbox(id)}
+          onError={props.onError}
+        />
       </DetailPane>
     ) : selectedInbox ? (
       <DetailPane
@@ -326,6 +416,7 @@ export function MailScreen(props: MailScreenProps) {
           inbox={selectedInbox}
           projects={props.projects}
           teamAgents={props.teamAgents}
+          inheritedModelFor={props.inheritedModelFor}
           onDone={(id) => props.onSelectInbox(id)}
           onError={props.onError}
         />
@@ -370,6 +461,7 @@ export function MailScreen(props: MailScreenProps) {
                 </div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
                   {inbox.agentName ?? t("Standard-Agent")} · {autonomyOptions.find((option) => option.value === inbox.autonomy)?.label} · {scopeLabelOf(inbox, props.projects)}
+                  <UnitModelLabel backendId={inbox.backendId} model={inbox.model} />
                 </div>
               </ListRow>
             ))

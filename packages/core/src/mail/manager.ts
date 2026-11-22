@@ -1,10 +1,11 @@
-import { mailAutonomyLabels, mailInboxStore, mailMessageStore, type MailInbox } from "./inbox.ts";
+import { mailAutonomyLabels, mailFilterAllows, mailFoldersOf, mailInboxStore, mailMessageStore, type MailInbox } from "./inbox.ts";
 import { createMailTransport, type MailContent } from "./transport.ts";
 import { mailToolContext } from "./tools.ts";
 import { agentRuntime } from "../agent.ts";
 import { database, projectStore, sessionStore } from "../db.ts";
 import { quickChatProject } from "../quick-chats.ts";
 import { eventHub } from "../events.ts";
+import { t } from "../i18n.ts";
 
 /** Polling loop handing new mails to the bound agent, one turn per mail. */
 const pollIntervalMs = 60_000;
@@ -36,8 +37,19 @@ function autonomyInstruction(inbox: MailInbox): string {
   }
 }
 
+/** The mailbox's own briefing: job, tone, signature, background. Without it the agent only gets generic instructions. */
+function briefingFor(inbox: MailInbox): string[] {
+  return [
+    inbox.instructions.trim() && `Auftrag des Users für dieses Postfach:\n${inbox.instructions.trim()}`,
+    inbox.tone.trim() && `Anrede, Ton und Sprache für Antworten:\n${inbox.tone.trim()}`,
+    inbox.signature.trim() && `Signatur (wird an Entwürfe und Antworten automatisch angehängt):\n${inbox.signature.trim()}`,
+    inbox.context.trim() && `Hintergrundwissen (nutze es, wenn es zur Mail passt, und erfinde nichts darüber hinaus):\n${inbox.context.trim()}`,
+  ].filter(Boolean) as string[];
+}
+
 function buildPrompt(inbox: MailInbox, mail: MailContent): string {
   const body = (mail.text || (typeof mail.html === "string" ? mail.html : "")).slice(0, 15_000);
+  const briefing = briefingFor(inbox);
   return [
     `Neue E-Mail im Postfach „${inbox.name}“ (Ordner ${mail.folder}, UID ${mail.uid}).`,
     `Von: ${mail.fromName} <${mail.fromAddress}>`,
@@ -48,7 +60,10 @@ function buildPrompt(inbox: MailInbox, mail: MailContent): string {
     "",
     body,
     "",
-    `[Harnold: Du bearbeitest dieses Postfach im Namen des Users. Autonomie-Stufe: ${mailAutonomyLabels[inbox.autonomy]} – ${autonomyInstruction(inbox)} Fasse die Mail zusammen, beantworte oder sortiere sie passend. Nutze dafür die mail_*-Tools (mail_read_message, mail_record, mail_draft_reply, mail_move, mail_flag, mail_send).]`,
+    ...briefing,
+    `[Harnold: Du bearbeitest dieses Postfach im Namen des Users. Autonomie-Stufe: ${mailAutonomyLabels[inbox.autonomy]} – ${autonomyInstruction(inbox)} ` +
+      `${inbox.instructions.trim() ? "Halte dich an den Auftrag oben." : "Fasse die Mail zusammen, beantworte oder sortiere sie passend."} ` +
+      "Nutze dafür die mail_*-Tools (mail_read_message, mail_record, mail_draft_reply, mail_move, mail_flag, mail_send).]",
   ]
     .filter(Boolean)
     .join("\n");
@@ -73,7 +88,15 @@ async function processMail(inbox: MailInbox, mail: MailContent): Promise<void> {
   });
   mailToolContext.set(session.id, { inboxId: inbox.id });
   try {
-    const outcome = await agentRuntime.runTurn({ sessionId: session.id, text: buildPrompt(inbox, mail), permissionMode: "acceptEdits" });
+    const outcome = await agentRuntime.runTurn({
+      sessionId: session.id,
+      text: buildPrompt(inbox, mail),
+      permissionMode: "acceptEdits",
+      backendId: inbox.backendId,
+      model: inbox.model ?? undefined,
+      // Mail is unattended work: it uses the background role when the mailbox names no program.
+      role: "automation",
+    });
     mailMessageStore.upsert({
       inboxId: inbox.id,
       uid: mail.uid,
@@ -106,11 +129,27 @@ async function pollInbox(inboxId: string): Promise<void> {
     return;
   }
   try {
-    const unseen = await transport.fetchUnseen("INBOX");
+    const unseen: MailContent[] = [];
+    for (const folder of mailFoldersOf(inbox)) unseen.push(...(await transport.fetchUnseen(folder)));
     setStatus(inboxId, { state: "connected" });
     for (const mail of unseen) {
       if (mailMessageStore.byUid(inboxId, mail.folder, mail.uid)) continue;
       await transport.markSeen(mail.folder, mail.uid);
+      // Sender filters run here, before the agent: an ignored sender never costs a turn.
+      if (!mailFilterAllows(inbox, mail.fromAddress)) {
+        mailMessageStore.upsert({
+          inboxId,
+          uid: mail.uid,
+          folder: mail.folder,
+          subject: mail.subject,
+          fromAddress: mail.fromAddress,
+          fromName: mail.fromName,
+          snippet: (mail.text || "").slice(0, 200),
+          status: "ignored",
+          action: t("Durch den Absender-Filter übersprungen"),
+        });
+        continue;
+      }
       await processMail(inbox, mail).catch((processError) => console.error("[mail] process failed:", processError));
     }
   } catch (pollError) {

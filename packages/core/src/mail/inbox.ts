@@ -4,6 +4,7 @@ import { database, projectStore } from "../db.ts";
 import { decryptSecret, encryptSecret } from "../secrets.ts";
 import { eventHub } from "../events.ts";
 import { t } from "../i18n.ts";
+import { normalizeBackendId, type AgentBackendId } from "../agent-backend-settings.ts";
 
 /**
  * E-Mail as an integration ("KI im Postfach"): a mailbox is bound to a team agent that reads, summarizes,
@@ -53,6 +54,22 @@ database.exec(`
 /** How autonomous the bound agent may act. Enforced server-side by the mail tools, not just by the prompt. */
 export type MailAutonomy = "readonly" | "drafts" | "approve" | "auto";
 
+// Migration: the mailbox's own briefing and its own agent program (added after the first release of the integration).
+const mailInboxColumns = new Set((database.prepare("PRAGMA table_info(mail_inboxes)").all() as { name: string }[]).map((column) => column.name));
+for (const columnDefinition of [
+  "backend_id TEXT",
+  "model TEXT",
+  "instructions TEXT NOT NULL DEFAULT ''",
+  "signature TEXT NOT NULL DEFAULT ''",
+  "tone TEXT NOT NULL DEFAULT ''",
+  "context TEXT NOT NULL DEFAULT ''",
+  "include_senders TEXT NOT NULL DEFAULT ''",
+  "exclude_senders TEXT NOT NULL DEFAULT ''",
+  "folders TEXT NOT NULL DEFAULT ''",
+]) {
+  if (!mailInboxColumns.has(columnDefinition.split(" ")[0])) database.exec(`ALTER TABLE mail_inboxes ADD COLUMN ${columnDefinition}`);
+}
+
 export const mailAutonomyLabels: Record<MailAutonomy, string> = {
   readonly: "Nur lesen",
   drafts: "Entwürfe",
@@ -79,20 +96,34 @@ export const mailInboxInputSchema = z.object({
   enabled: z.boolean(),
   settings: z.record(z.string(), z.string()),
   secrets: z.record(z.string(), z.string().optional()),
+  /** Own agent program for this mailbox; null = the workspace/environment default. */
+  backendId: z.string().trim().nullable().default(null).transform(normalizeBackendId),
+  /** Its own model; null = the backend's default. */
+  model: z.string().trim().nullable().default(null),
+  /** The brief: what to do with incoming mail, what to leave alone. */
+  instructions: z.string().max(20_000).default(""),
+  /** Appended to every draft and answer. */
+  signature: z.string().max(2_000).default(""),
+  /** Address, tone, language. */
+  tone: z.string().max(2_000).default(""),
+  /** Background about the user, the business, recurring correspondents. */
+  context: z.string().max(20_000).default(""),
+  /** Sender patterns (comma separated, * allowed); empty = every sender. */
+  includeSenders: z.string().max(2_000).default(""),
+  /** Sender patterns to leave untouched. */
+  excludeSenders: z.string().max(2_000).default(""),
+  /** Folders to watch (comma separated); empty = INBOX. */
+  folders: z.string().max(1_000).default(""),
 });
 export type MailInboxInput = z.infer<typeof mailInboxInputSchema>;
 
-export type MailInbox = {
+export type MailInbox = Omit<MailInboxInput, "backendId" | "secrets"> & {
+  /** Normalized: an unknown program falls back to inheriting. */
+  backendId: AgentBackendId | null;
+  secrets: Record<string, string>;
   id: string;
-  name: string;
-  scope: MailScope;
   /** Empty for global mailboxes. */
   projectId: string;
-  agentId: string | null;
-  autonomy: MailAutonomy;
-  enabled: boolean;
-  settings: Record<string, string>;
-  secrets: Record<string, string>;
   createdAt: number;
 };
 
@@ -142,6 +173,15 @@ const mapInbox = (row: Row): MailInbox => ({
   agentId: row.agent_id ? String(row.agent_id) : null,
   autonomy: String(row.autonomy) as MailAutonomy,
   enabled: Boolean(row.enabled),
+  backendId: normalizeBackendId(row.backend_id ? String(row.backend_id) : null),
+  model: row.model ? String(row.model) : null,
+  instructions: String(row.instructions ?? ""),
+  signature: String(row.signature ?? ""),
+  tone: String(row.tone ?? ""),
+  context: String(row.context ?? ""),
+  includeSenders: String(row.include_senders ?? ""),
+  excludeSenders: String(row.exclude_senders ?? ""),
+  folders: String(row.folders ?? ""),
   settings: JSON.parse(String(row.settings)),
   secrets: row.secrets ? JSON.parse(decryptSecret(String(row.secrets))) : {},
   createdAt: Number(row.created_at),
@@ -172,6 +212,7 @@ export const mailInboxStore = {
     const settings = Object.fromEntries(mailInboxFieldDefinitions.settings.map((settingName) => [settingName, input.settings[settingName]?.trim() ?? ""]));
     const inbox: MailInbox = {
       ...input,
+      backendId: normalizeBackendId(input.backendId),
       projectId: input.scope === "global" ? "" : input.projectId,
       settings,
       secrets: mergedSecrets,
@@ -180,13 +221,19 @@ export const mailInboxStore = {
     };
     database
       .prepare(
-        `INSERT INTO mail_inboxes (id, name, scope, project_id, agent_id, autonomy, enabled, settings, secrets, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO mail_inboxes (id, name, scope, project_id, agent_id, autonomy, enabled, backend_id, model, instructions, signature, tone, context,
+           include_senders, exclude_senders, folders, settings, secrets, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, scope = excluded.scope, project_id = excluded.project_id, agent_id = excluded.agent_id,
-           autonomy = excluded.autonomy, enabled = excluded.enabled, settings = excluded.settings, secrets = excluded.secrets`,
+           autonomy = excluded.autonomy, enabled = excluded.enabled, backend_id = excluded.backend_id, model = excluded.model,
+           instructions = excluded.instructions, signature = excluded.signature, tone = excluded.tone, context = excluded.context,
+           include_senders = excluded.include_senders, exclude_senders = excluded.exclude_senders, folders = excluded.folders,
+           settings = excluded.settings, secrets = excluded.secrets`,
       )
       .run(
         inbox.id, inbox.name, inbox.scope, inbox.projectId, inbox.agentId, inbox.autonomy, inbox.enabled ? 1 : 0,
+        inbox.backendId, inbox.model, inbox.instructions, inbox.signature, inbox.tone, inbox.context,
+        inbox.includeSenders, inbox.excludeSenders, inbox.folders,
         JSON.stringify(inbox.settings), encryptSecret(JSON.stringify(inbox.secrets)), inbox.createdAt,
       );
     eventHub.publish({ type: "mail_changed" });
@@ -203,6 +250,40 @@ export const mailInboxStore = {
     return mailInboxStore.list().filter((inbox) => inbox.scope === "global" || inbox.projectId === projectId);
   },
 };
+
+/** Sender patterns of a mailbox: comma/semicolon/line separated, * as wildcard. Empty list = matches nothing (used differently below). */
+const senderPatterns = (value: string): RegExp[] =>
+  value
+    .split(/[,;\n]/)
+    .map((pattern) => pattern.trim())
+    .filter(Boolean)
+    .map((pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`, "i"));
+
+/** Folders the mailbox watches; empty = INBOX. */
+export const mailFoldersOf = (inbox: MailInbox): string[] =>
+  inbox.folders
+    .split(/[,;\n]/)
+    .map((folder) => folder.trim())
+    .filter(Boolean)
+    .concat(inbox.folders.trim() ? [] : ["INBOX"]);
+
+/** Should the agent see a mail from this sender? Filters run before the agent, so ignored senders cost no tokens. */
+export function mailFilterAllows(inbox: MailInbox, fromAddress: string): boolean {
+  const address = fromAddress.trim().toLowerCase();
+  if (inbox.excludeSenders.trim() && senderPatterns(inbox.excludeSenders).some((pattern) => pattern.test(address))) return false;
+  const included = inbox.includeSenders.trim() ? senderPatterns(inbox.includeSenders) : [];
+  return included.length === 0 || included.some((pattern) => pattern.test(address));
+}
+
+/** Appends the mailbox's signature to a draft/answer unless the agent already wrote it. */
+export function withSignature(text: string, inbox: MailInbox): string {
+  const signature = inbox.signature.trim();
+  if (!signature) return text;
+  const normalized = text.replace(/\r\n/g, "\n").trimEnd();
+  const signatureLines = signature.replace(/\r\n/g, "\n").split("\n").map((line) => line.trim()).filter(Boolean);
+  if (normalized.includes(signature) || (signatureLines.length === 2 && signatureLines.every((line) => normalized.includes(line)))) return text;
+  return `${normalized}\n\n${signature}`;
+}
 
 const mapMessage = (row: Row): MailMessage => ({
   id: String(row.id),

@@ -7,6 +7,7 @@ import { eventHub } from "./events.ts";
 import { teamStore } from "./agents.ts";
 import { currentLanguage, t } from "./i18n.ts";
 import { checkTaskDirectories } from "./folders.ts";
+import { normalizeBackendId, type AgentBackendId } from "./agent-backend-settings.ts";
 
 database.exec(`
   CREATE TABLE IF NOT EXISTS tasks (
@@ -41,6 +42,7 @@ if (!taskColumns.has("cleanup_after_days")) database.exec("ALTER TABLE tasks ADD
 if (!taskColumns.has("context_reset_runs")) database.exec("ALTER TABLE tasks ADD COLUMN context_reset_runs INTEGER");
 if (!taskColumns.has("runs_since_reset")) database.exec("ALTER TABLE tasks ADD COLUMN runs_since_reset INTEGER NOT NULL DEFAULT 0");
 if (!taskColumns.has("directories")) database.exec("ALTER TABLE tasks ADD COLUMN directories TEXT");
+if (!taskColumns.has("backend_id")) database.exec("ALTER TABLE tasks ADD COLUMN backend_id TEXT");
 // Sessions of earlier runs belong to their task too.
 database.exec(
   "UPDATE sessions SET task_id = (SELECT task_id FROM task_runs WHERE task_runs.session_id = sessions.id LIMIT 1) WHERE task_id IS NULL AND id IN (SELECT session_id FROM task_runs WHERE session_id IS NOT NULL)",
@@ -58,6 +60,8 @@ export type Task = {
   enabled: boolean;
   permissionMode: PermissionMode;
   model: string | null;
+  /** Agent program of the runs; null = the project's environment, else the workspace default. */
+  backendId: AgentBackendId | null;
   /** Team member that runs the task (null = default agent). */
   agentId: string | null;
   sessionMode: TaskSessionMode;
@@ -95,6 +99,7 @@ const mapTask = (row: Row): Task => ({
   enabled: Boolean(row.enabled),
   permissionMode: String(row.permission_mode) as PermissionMode,
   model: row.model ? String(row.model) : null,
+  backendId: normalizeBackendId(row.backend_id ? String(row.backend_id) : null),
   agentId: row.agent_id ? String(row.agent_id) : null,
   sessionMode: row.session_mode === "continue" ? "continue" : "new",
   cleanupAfterDays: row.cleanup_after_days ? Number(row.cleanup_after_days) : null,
@@ -148,13 +153,19 @@ export const taskStore = {
   save(taskInput: TaskInput, taskId?: string): Task {
     validateSchedule(taskInput.schedule);
     const existing = taskId ? taskStore.get(taskId) : undefined;
-    const task: Task = { ...taskInput, directories: checkTaskDirectories(taskInput.directories ?? []), id: existing?.id ?? randomUUID(), createdAt: existing?.createdAt ?? Date.now() };
+    const task: Task = {
+      ...taskInput,
+      backendId: normalizeBackendId(taskInput.backendId),
+      directories: checkTaskDirectories(taskInput.directories ?? []),
+      id: existing?.id ?? randomUUID(),
+      createdAt: existing?.createdAt ?? Date.now(),
+    };
     database
       .prepare(
-        `INSERT INTO tasks (id, project_id, name, prompt, schedule, enabled, permission_mode, model, agent_id, session_mode, cleanup_after_days, context_reset_runs, directories, notify_channel_id, notify_chat_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO tasks (id, project_id, name, prompt, schedule, enabled, permission_mode, model, backend_id, agent_id, session_mode, cleanup_after_days, context_reset_runs, directories, notify_channel_id, notify_chat_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id, name = excluded.name, prompt = excluded.prompt,
-           schedule = excluded.schedule, enabled = excluded.enabled, permission_mode = excluded.permission_mode, model = excluded.model,
+           schedule = excluded.schedule, enabled = excluded.enabled, permission_mode = excluded.permission_mode, model = excluded.model, backend_id = excluded.backend_id,
            agent_id = excluded.agent_id, session_mode = excluded.session_mode,
            cleanup_after_days = excluded.cleanup_after_days, context_reset_runs = excluded.context_reset_runs,
            directories = excluded.directories,
@@ -169,6 +180,7 @@ export const taskStore = {
         task.enabled ? 1 : 0,
         task.permissionMode,
         task.model,
+        task.backendId,
         task.agentId,
         task.sessionMode,
         task.cleanupAfterDays,
@@ -246,8 +258,10 @@ function sessionForRun(task: Task, startedAt: number) {
     const continuedSession = taskRow?.continued_session_id ? sessionStore.get(taskRow.continued_session_id) : undefined;
     if (continuedSession && continuedSession.projectId === task.projectId) {
       const resetDue = task.contextResetRuns !== null && (taskRow?.runs_since_reset ?? 0) >= task.contextResetRuns;
-      if (continuedSession.agentId !== agentId || resetDue) {
-        sessionStore.update(continuedSession.id, { agentId, agentSessionId: null });
+      // A conversation lives inside one agent program: a different program starts it without the old context.
+      const programChanged = task.backendId !== null && task.backendId !== continuedSession.backendId;
+      if (continuedSession.agentId !== agentId || resetDue || programChanged) {
+        sessionStore.update(continuedSession.id, { agentId, agentSessionId: null, ...(programChanged ? { backendId: task.backendId } : {}) });
         database.prepare("UPDATE tasks SET runs_since_reset = 0 WHERE id = ?").run(task.id);
         if (resetDue) {
           const chatItem = chatItemStore.append(continuedSession.id, { kind: "notice", text: t("Neuer Kontext: Der Agent beginnt ab hier ohne die Läufe davor (nach {0} Läufen).", task.contextResetRuns) });
@@ -302,6 +316,8 @@ export async function runTask(taskId: string): Promise<TaskRun> {
     text: task.prompt,
     permissionMode: task.permissionMode,
     model: task.model ?? undefined,
+    backendId: task.backendId,
+    role: "automation",
   });
 
   taskRun.finishedAt = Date.now();

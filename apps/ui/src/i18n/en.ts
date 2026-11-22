@@ -765,4 +765,56 @@ export const englishTexts: Record<string, string> = {
   "Verschoben": "Moved",
   "Markiert": "Flagged",
   "Gesendet": "Sent",
+  // Agent program & model per unit (team member, channel, mailbox, task)
+  "Agent-Programm": "Agent program",
+  "Programm und Modell je Rolle": "Program and model per role",
+  "Gilt, wenn eine Einheit (Team-Mitglied, Channel, Postfach, Task) nichts Eigenes wählt. Die Einheit selbst sticht diese Vorgabe.":
+    "Applies when a unit (team member, channel, mailbox, task) picks nothing of its own. The unit itself overrides this.",
+  "Unterhaltungen": "Conversations",
+  "Chats, Channels und Teammitglieder – alles, wo ein Mensch mitliest und antwortet.":
+    "Chats, channels and team members – anything a human reads and answers.",
+  "Hintergrundläufe": "Background runs",
+  "Tasks und Postfach – Läufe ohne Aufsicht. Hier lohnt oft ein günstigeres Modell.":
+    "Tasks and mailbox – runs without supervision. Often worth a cheaper model.",
+  "Wie oben": "As above",
+  "Standardmodell oben": "Default model above",
+  "Rolle Hintergrundläufe": "background role",
+  "Rolle Unterhaltungen": "conversation role",
+  "{0} · Standard": "{0} · default",
+  "Modell · {0}": "model · {0}",
+  "Leer = wie in den Einstellungen bzw. der Umgebung.": "Empty = as in the settings or the environment.",
+  "Wie überall ({0})": "As everywhere ({0})",
+  "nicht bereit": "not ready",
+  "Leer = erbt {0}": "Empty = inherits {0}",
+  "Standard von {0}": "{0} default",
+  "Standard des Programms": "Default of the program",
+  "Erbt: {0}": "Inherits: {0}",
+  "Ein anderes Agent-Programm gilt für neue Unterhaltungen mit diesem Mitglied; laufende behalten ihres, bis der Kontext neu beginnt.":
+    "A different agent program applies to new conversations with this member; running ones keep theirs until the context starts fresh.",
+  "Ein anderes Agent-Programm beginnt die Chats dieses Channels neu – ein Programm kann seinen Kontext nicht mit einem anderen teilen.":
+    "A different agent program starts this channel's chats fresh – one program cannot share its context with another.",
+
+  // Mailbox briefing
+  "Auftrag & Regeln": "Brief & rules",
+  "Agent-Programm & Modell": "Agent program & model",
+  "Leer lassen heißt: wie in den Einstellungen bzw. der Umgebung. Praktisch, um ein Postfach mit einem günstigeren Modell laufen zu lassen.":
+    "Leave empty to use the settings or the environment. Handy for running a mailbox on a cheaper model.",
+  "Ohne Auftrag fasst der Agent nur zusammen und antwortet, wenn es offensichtlich passt. Mit Auftrag arbeitet er genau nach deinen Regeln.":
+    "Without a brief the agent only summarizes and answers when it obviously fits. With a brief it works exactly by your rules.",
+  "Was soll der Agent tun – und was nicht?": "What should the agent do – and what not?",
+  "z. B. Rechnungen und Terminanfragen zuerst erledigen, Newsletter ignorieren, bei Absagen höflich absagen. Nichts versprechen, was Preise oder Fristen angeht.":
+    "e.g. handle invoices and appointment requests first, ignore newsletters, decline politely. Never promise anything about prices or deadlines.",
+  "Anrede, Ton, Sprache": "Salutation, tone, language",
+  "z. B. „Sie, sachlich und kurz, Deutsch“": "e.g. “formal, factual and short, German”",
+  "Sie, freundlich, Deutsch": "formal, friendly, German",
+  "Signatur": "Signature",
+  "Wird an Entwürfe und Antworten automatisch angehängt.": "Added to drafts and replies automatically.",
+  "Hintergrundwissen": "Background",
+  "Wer du bist, Firma, Produkte, wichtige Kontakte. Das Projekt-Memory geht zusätzlich mit.":
+    "Who you are, your business, products, key contacts. The project's memory goes along as well.",
+  "Nur von": "Only from",
+  "Leer = alle Absender. Muster mit * erlaubt.": "Empty = every sender. Patterns with * allowed.",
+  "Nie von": "Never from",
+  "Wird übersprungen, ohne den Agenten zu starten.": "Skipped without starting the agent.",
+  "Leer = INBOX.": "Empty = INBOX.",
 };

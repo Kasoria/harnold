@@ -45,3 +45,29 @@ Das ist **keine** User↔Harnold-Kommunikation, sondern ein Assistent, der das P
 Die Mail-Tools prüfen server-seitig das Autonomie-Level des gebundenen Postfachs und verweigern
 z. B. `mail_send` bei allem unter `auto`, bzw. Schreibaktionen bei `readonly`. Der Prompt teilt dem
 Agenten das Level mit, sodass er sich entsprechend verhält.
+
+### Konfiguration pro Postfach
+
+Ein Postfach ist nicht nur ein Zugang, sondern bekommt einen eigenen Auftrag. Alle Felder liegen in
+`mail_inboxes` (Spalten, per Migration ergänzt) und im UI im Postfach-Screen:
+
+- `instructions` – **Auftrag & Regeln**: was der Agent mit eingehenden Mails tun soll, was er lassen soll,
+  wie er priorisiert. Ohne Auftrag bleibt der generische Prompt („zusammenfassen, beantworten oder sortieren").
+- `tone` – Anrede, Ton, Sprache für Antworten (z. B. „Sie, sachlich und kurz, Deutsch").
+- `signature` – wird an Entwürfe und Antworten **automatisch** angehängt (`withSignature()` in `mail/inbox.ts`),
+  unabhängig davon, ob das Modell sie selbst geschrieben hat (Doppelung wird erkannt).
+- `context` – Hintergrundwissen über den Nutzer/das Geschäft. Das Projekt-Memory des Postfach-Projekts geht
+  zusätzlich über den Systemprompt mit.
+- `includeSenders` / `excludeSenders` – Absender-Muster (Komma/semikolongetrennt, `*` als Wildcard).
+  Filter laufen **vor** dem Agenten (`mailFilterAllows()`): ausgeschlossene Absender werden als `ignored`
+  protokolliert, ohne einen Turn zu kosten.
+- `folders` – zu beobachtende Ordner (leer = INBOX).
+- `backendId` / `model` – eigenes Agent-Programm und Modell für dieses Postfach (siehe
+  [agent-modelle.md](agent-modelle.md)). Da jede Mail eine neue Session startet, gilt die Wahl sofort.
+
+Prompt-Bau: `briefingFor()` in `mail/manager.ts` hängt Auftrag, Ton, Signatur und Hintergrundwissen an
+jeden Mail-Prompt. Die Autonomie-Stufe bleibt davon unberührt und wird weiterhin serverseitig in
+`mail/tools.ts` erzwungen.
+
+Der Agent kann Postfächer auch selbst einrichten: Tools `mail_inbox_save` / `mail_inbox_delete`
+(`setup-tools.ts`).

@@ -3,6 +3,7 @@ import type { PermissionMode } from "../backends/types.ts";
 import { database } from "../db.ts";
 import { decryptSecret, encryptSecret } from "../secrets.ts";
 import { channelFieldDefinitions, type ChannelType } from "./types.ts";
+import { normalizeBackendId, type AgentBackendId } from "../agent-backend-settings.ts";
 
 database.exec(`
   CREATE TABLE IF NOT EXISTS channels (
@@ -40,6 +41,15 @@ try {
   /* column exists */
 }
 
+// Migration: own agent program and model per channel (added after the first release of channels).
+for (const columnDefinition of ["backend_id TEXT", "model TEXT"]) {
+  try {
+    database.exec(`ALTER TABLE channels ADD COLUMN ${columnDefinition}`);
+  } catch {
+    /* column exists */
+  }
+}
+
 /** "project": every conversation runs in projectId. "workspace": starts in Quick Chats and may switch to any project. */
 export type ChannelScope = "project" | "workspace";
 
@@ -56,6 +66,10 @@ export type Channel = {
   permissionMode: PermissionMode;
   allowedSenders: string[];
   voiceReplies: VoiceReplyMode;
+  /** Agent program of this channel's conversations; null = workspace/environment default. */
+  backendId: AgentBackendId | null;
+  /** Model its conversations start with; null = the backend's default. */
+  model: string | null;
   settings: Record<string, string>;
   secrets: Record<string, string>;
   createdAt: number;
@@ -78,6 +92,8 @@ const mapChannel = (row: Row): Channel => ({
   permissionMode: String(row.permission_mode) as PermissionMode,
   allowedSenders: JSON.parse(String(row.allowed_senders)),
   voiceReplies: (row.voice_replies ? String(row.voice_replies) : "voice") as VoiceReplyMode,
+  backendId: normalizeBackendId(row.backend_id ? String(row.backend_id) : null),
+  model: row.model ? String(row.model) : null,
   settings: JSON.parse(String(row.settings)),
   secrets: row.secrets ? JSON.parse(decryptSecret(String(row.secrets))) : {},
   createdAt: Number(row.created_at),
@@ -113,6 +129,8 @@ export const channelStore = {
     const channel: Channel = {
       ...channelInput,
       settings,
+      backendId: normalizeBackendId(channelInput.backendId),
+      model: channelInput.model?.trim() || null,
       secrets: mergedSecrets,
       allowedSenders: channelInput.allowedSenders.map((sender) => sender.trim()).filter(Boolean),
       id: existing?.id ?? randomUUID(),
@@ -120,16 +138,19 @@ export const channelStore = {
     };
     database
       .prepare(
-        `INSERT INTO channels (id, type, name, scope, project_id, enabled, permission_mode, allowed_senders, voice_replies, settings, secrets, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO channels (id, type, name, scope, project_id, enabled, permission_mode, allowed_senders, voice_replies, backend_id, model, settings, secrets, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET type = excluded.type, name = excluded.name, scope = excluded.scope, project_id = excluded.project_id, enabled = excluded.enabled,
            permission_mode = excluded.permission_mode, allowed_senders = excluded.allowed_senders, voice_replies = excluded.voice_replies,
-           settings = excluded.settings, secrets = excluded.secrets`,
+           backend_id = excluded.backend_id, model = excluded.model, settings = excluded.settings, secrets = excluded.secrets`,
       )
       .run(
         channel.id, channel.type, channel.name, channel.scope, channel.projectId, channel.enabled ? 1 : 0, channel.permissionMode,
-        JSON.stringify(channel.allowedSenders), channel.voiceReplies, JSON.stringify(channel.settings), encryptSecret(JSON.stringify(channel.secrets)), channel.createdAt,
+        JSON.stringify(channel.allowedSenders), channel.voiceReplies, channel.backendId, channel.model, JSON.stringify(channel.settings),
+        encryptSecret(JSON.stringify(channel.secrets)), channel.createdAt,
       );
+    // A conversation holds the context of one agent program: switching it starts the chats fresh.
+    if (existing && existing.backendId !== channel.backendId) conversationStore.reset(channel.id);
     return channel;
   },
   remove(channelId: string): void {
@@ -154,5 +175,9 @@ export const conversationStore = {
   findBySession(sessionId: string): { channelId: string; chatId: string } | undefined {
     const row = database.prepare("SELECT channel_id, chat_id FROM channel_conversations WHERE session_id = ?").get(sessionId);
     return row ? { channelId: String(row.channel_id), chatId: String(row.chat_id) } : undefined;
+  },
+  /** Drops every conversation of a channel: the next message starts in a fresh session. */
+  reset(channelId: string): void {
+    database.prepare("DELETE FROM channel_conversations WHERE channel_id = ?").run(channelId);
   },
 };

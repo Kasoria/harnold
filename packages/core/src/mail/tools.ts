@@ -1,6 +1,6 @@
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { mailActionStore, mailInboxStore, mailAutonomyLabels, type MailAutonomy, type MailActionStatus } from "./inbox.ts";
+import { mailActionStore, mailInboxStore, mailAutonomyLabels, withSignature, type MailAutonomy, type MailActionStatus } from "./inbox.ts";
 import { createMailTransport } from "./transport.ts";
 import { teamStore } from "../agents.ts";
 import { t } from "../i18n.ts";
@@ -118,7 +118,7 @@ export function createMailTools(sessionId: string) {
     ),
     tool(
       "mail_draft_reply",
-      "Erstellt einen Antwort-Entwurf auf eine Mail. Bei Autonomie „Mit Freigabe“ wird er im Postfach-Screen zur Freigabe vorgelegt; bei „Entwürfe“ wird er direkt als Entwurf im Postfach gespeichert.",
+      "Erstellt einen Antwort-Entwurf auf eine Mail. Bei Autonomie „Mit Freigabe“ wird er im Postfach-Screen zur Freigabe vorgelegt; bei „Entwürfe“ wird er direkt als Entwurf im Postfach gespeichert. Die Signatur des Postfachs wird automatisch ergänzt.",
       {
         to: z.string().describe("Empfängeradresse"),
         subject: z.string(),
@@ -129,18 +129,19 @@ export function createMailTools(sessionId: string) {
         try {
           const inbox = requireInbox(sessionId);
           requireLevel(inbox, "drafts");
+          const signedText = withSignature(text, inbox);
           if (inbox.autonomy === "approve") {
             const action = mailActionStore.add({
               inboxId: inbox.id,
               messageId: messageId ?? null,
               kind: "draft",
               description: `Entwurf an ${to}: ${subject}`,
-              payload: { to, subject, text, inReplyTo: messageId ?? "" },
+              payload: { to, subject, text: signedText, inReplyTo: messageId ?? "" },
               status: "pending",
             });
             return textResult(`Entwurf zur Freigabe vorgemerkt (id ${action.id}). Der Nutzer gibt ihn im Postfach-Screen frei.`);
           }
-          await createMailTransport(inbox).saveDraft(subject, to, text, messageId);
+          await createMailTransport(inbox).saveDraft(subject, to, signedText, messageId);
           mailActionStore.add({ inboxId: inbox.id, messageId: messageId ?? null, kind: "draft", description: `Entwurf an ${to}: ${subject}` });
           return textResult("Entwurf im Postfach gespeichert.");
         } catch (toolError) {
@@ -161,7 +162,7 @@ export function createMailTools(sessionId: string) {
         try {
           const inbox = requireInbox(sessionId);
           requireLevel(inbox, "auto");
-          await createMailTransport(inbox).sendMail(to, subject, text, { inReplyTo: messageId, messageId, references: messageId });
+          await createMailTransport(inbox).sendMail(to, subject, withSignature(text, inbox), { inReplyTo: messageId, messageId, references: messageId });
           mailActionStore.add({ inboxId: inbox.id, messageId: messageId ?? null, kind: "sent", description: `Gesendet an ${to}: ${subject}` });
           return textResult(`Gesendet an ${to}.`);
         } catch (toolError) {

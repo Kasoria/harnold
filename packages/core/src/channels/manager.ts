@@ -171,7 +171,14 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
   void adapter.indicateTyping?.(inboundMessage.chatId);
   const typingInterval = setInterval(() => void adapter.indicateTyping?.(inboundMessage.chatId), 4500);
   try {
-    const turnOutcome = await agentRuntime.runTurn({ sessionId, text: trimmedText, permissionMode: channel.permissionMode });
+    const turnOutcome = await agentRuntime.runTurn({
+      sessionId,
+      text: trimmedText,
+      permissionMode: channel.permissionMode,
+      backendId: channel.backendId,
+      model: channel.model ?? undefined,
+      role: "chat",
+    });
     const replyText = turnOutcome.success ? turnOutcome.finalText || t("Erledigt.") : `⚠️ ${turnOutcome.errorText || t("Fehlgeschlagen")}`;
     await reply(replyText);
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
+import type { AgentBackendsView, AgentRoleSettings, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api } from "@/api";
 import { Brain, Image as ImageIcon, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { AgentConnection } from "@/components/agent-connection";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
 import { QuickChatAutoDeleteSetting } from "./settings/quick-chat-settings";
+import { AgentRolesSection } from "./settings/agent-roles-section";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -36,6 +37,7 @@ type SettingsScreenProps = {
   onProvidersChange: (providers: ProvidersView) => void;
   defaultModel: string;
   onDefaultModelChange: (defaultModel: string) => void;
+  onAgentRolesChange: (roles: AgentRoleSettings) => void;
   onClaudeStatusChange: (claudeStatus: ClaudeAuthStatus) => void;
   onError: (unknownError: unknown) => void;
 };
@@ -233,6 +235,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                   onDefaultModelChange={props.onDefaultModelChange}
                   onError={props.onError}
                 />
+                <AgentRolesSection onRolesChange={props.onAgentRolesChange} onError={props.onError} />
               </div>
             ) : activeSection.value === "general" ? (
           <div key="general" className="grid animate-in gap-5 fade-in duration-200">

@@ -39,6 +39,31 @@ function hydrate(messages: StoredMessage[]): ChatMessage[] {
   });
 }
 
+/** Ergänzt fehlende Tool-Ergebnisse (z. B. nach hartem Beenden mitten im Turn), sonst lehnt der Anbieter die Anfrage ab. Gibt null zurück, wenn nichts zu reparieren war. */
+function withMissingToolResults(messages: StoredMessage[]): StoredMessage[] | null {
+  const repaired: StoredMessage[] = [];
+  let changed = false;
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    repaired.push(message);
+    if (message.role !== "assistant" || !message.toolCalls.length) continue;
+    const answered = new Set<string>();
+    let following = index + 1;
+    while (following < messages.length && messages[following].role === "tool") {
+      answered.add((messages[following] as { toolCallId: string }).toolCallId);
+      repaired.push(messages[following]);
+      following++;
+    }
+    index = following - 1;
+    for (const call of message.toolCalls) {
+      if (answered.has(call.id)) continue;
+      repaired.push({ role: "tool", toolCallId: call.id, name: call.name, content: "Abgebrochen", isError: true });
+      changed = true;
+    }
+  }
+  return changed ? repaired : null;
+}
+
 const sizeOf = (message: StoredMessage) => JSON.stringify(message).length;
 
 /** Keeps the history under budget: shortens old tool output first, then drops the oldest exchanges. */
@@ -138,6 +163,11 @@ export async function* runNativeTurn(input: TurnInput): AsyncGenerator<TurnEvent
   const { sessionId } = input;
   if (!input.resumeSessionId) agentMessageStore.clear(sessionId);
   const history = agentMessageStore.list(sessionId) as StoredMessage[];
+  const repairedHistory = withMissingToolResults(history);
+  if (repairedHistory) {
+    history.splice(0, history.length, ...repairedHistory);
+    agentMessageStore.replace(sessionId, history);
+  }
   const remember = (message: StoredMessage) => {
     history.push(message);
     agentMessageStore.append(sessionId, message);

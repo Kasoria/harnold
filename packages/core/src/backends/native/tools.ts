@@ -177,21 +177,40 @@ export const nativeTools: NativeTool[] = [
     run: (input, context) =>
       new Promise<string>((resolve) => {
         const timeoutMs = Math.min(600_000, Number(input.timeout_ms) || 120_000);
-        const child = spawn("/bin/sh", ["-c", text(input.command, "command")], { cwd: context.cwd, env: context.env, signal: context.signal });
+        // Eigene Prozessgruppe, damit Stop/Timeout auch Kindprozesse (z. B. Dev-Server) beendet.
+        const child = spawn("/bin/sh", ["-c", text(input.command, "command")], { cwd: context.cwd, env: context.env, detached: true });
         let output = "";
         let timedOut = false;
+        let finished = false;
+        const killProcessGroup = () => {
+          try {
+            if (child.pid) process.kill(-child.pid, "SIGKILL");
+          } catch {
+            child.kill("SIGKILL");
+          }
+        };
         const timer = setTimeout(() => {
           timedOut = true;
-          child.kill("SIGKILL");
+          killProcessGroup();
+          finish(`\n[Zeitüberschreitung nach ${timeoutMs / 1000} s]`);
         }, timeoutMs);
+        const onAbort = () => {
+          killProcessGroup();
+          finish("\n[Abgebrochen]");
+        };
+        if (context.signal.aborted) onAbort();
+        else context.signal.addEventListener("abort", onAbort, { once: true });
         const collect = (chunk: Buffer) => {
           output += chunk.toString();
           if (output.length > 200_000) output = output.slice(-100_000);
         };
         child.stdout.on("data", collect);
         child.stderr.on("data", collect);
-        const finish = (suffix: string) => {
+        function finish(suffix: string) {
+          if (finished) return;
+          finished = true;
           clearTimeout(timer);
+          context.signal.removeEventListener("abort", onAbort);
           resolve(clip(`${output}${suffix}`.trim() || "(keine Ausgabe)"));
         };
         child.on("error", (spawnError) => finish(`\n[Fehler: ${spawnError.message}]`));

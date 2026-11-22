@@ -87,14 +87,14 @@ function EnvironmentSwitcher(props: Pick<AppSidebarProps, "environments" | "acti
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className={cn(rowClassName, "mb-1 h-8 border bg-background font-medium hover:bg-foreground/[0.04]")}>
-        {activeEnvironment ? <ProjectAvatar name={activeEnvironment.name} /> : <Layers className="size-4 text-muted-foreground" />}
+        {activeEnvironment ? <ProjectAvatar name={activeEnvironment.name} icon={activeEnvironment.icon} /> : <Layers className="size-4 text-muted-foreground" />}
         <span className="truncate">{activeEnvironment?.name ?? "Alle Umgebungen"}</span>
         <ChevronsUpDown className="ml-auto size-3.5 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
         {[null, ...props.environments].map((environment) => (
           <DropdownMenuItem key={environment?.id ?? "all"} className="text-[13px]" onSelect={() => props.onActiveEnvironmentChange(environment?.id ?? null)}>
-            {environment ? <ProjectAvatar name={environment.name} /> : <Layers className="size-4" />}
+            {environment ? <ProjectAvatar name={environment.name} icon={environment.icon} /> : <Layers className="size-4" />}
             <span className="truncate">{environment?.name ?? "Alle Umgebungen"}</span>
             {(environment?.id ?? null) === props.activeEnvironmentId && <Check className="ml-auto size-3.5" />}
           </DropdownMenuItem>

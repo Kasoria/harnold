@@ -15,6 +15,7 @@ import { memoryConfig } from "./memory.ts";
 import { environmentStore } from "./environments.ts";
 import { environmentProviders } from "./environment-providers.ts";
 import { sessionActions } from "./session-actions.ts";
+import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./setup-tools.ts";
 
 /**
  * In-process MCP server giving the agent access to everything in Harnold (projects, sessions, design systems,
@@ -25,7 +26,7 @@ export const workspaceServerName = "harnold";
 const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list", "environment_check"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
 const autoAllowedWriteToolNames = ["session_rename", "design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
-export const workspaceToolNames = [...readOnlyToolNames, ...autoAllowedWriteToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
+export const workspaceToolNames = [...readOnlyToolNames, ...setupReadOnlyToolNames, ...autoAllowedWriteToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
 
 export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
@@ -33,6 +34,7 @@ Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in H
 - Umgebungen (Konten/Tokens je Kontext): environment_import_current übernimmt die auf dem Rechner angemeldeten Konten (gh, vercel, netlify, supabase, npm, git-Identität …) direkt im Core – Tokens laufen dabei nicht durch den Chat. environment_save legt an/ändert (auch Tokens, die der Nutzer nennt), environment_check prüft die Konten.
 - Sessions: session_move verschiebt eine Session in ein anderes Projekt/eine andere Umgebung (Projekte via project_list), session_rename benennt um.
 - Überblick: overview. Design Systems: design_system_create (verknüpft standardmäßig mit diesem Projekt), design_system_link, design_system_write_tokens, design_system_write_file. Ein neu verknüpftes System gilt sofort; binde dessen tokens.css wie im Tool-Ergebnis beschrieben ein.
+${setupInstructions}
 `.trim();
 
 const providerCatalogText = environmentProviders.map((provider) => `${provider.id} (${provider.label}): ${provider.fields.map((providerField) => providerField.key).join(", ")}`).join("; ");
@@ -103,7 +105,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
               `Design System hier: ${linkedSystem ? `${linkedSystem.name} (id ${linkedSystem.id})` : "keins verknüpft"}`,
               `Projekte: ${projectStore.list().length} · Design Systems: ${designSystemStore.list().length} · Tasks: ${taskStore.list().length} · Channels: ${channelStore.list().length} · MCP-Server: ${mcpServerStore.list().length}`,
               `Eingerichtet: Claude ${claudeStatus.ready ? "ja" : "nein"} · Spracherkennung ${voiceStatus.sttReady ? "ja" : "nein"} · Sprachausgabe ${voiceStatus.ttsReady ? "ja" : "nein"} · Bilder ${imageConfig.present().ready ? "ja" : "nein"} · Semantische Memory-Suche ${memoryStatus.embeddingProvider !== "off" ? "ja" : "nein"}`,
-              "Einstellungen mit API-Keys ändert der Nutzer selbst (Einstellungen-Screen).",
+              "Details und Ändern: settings_overview / settings_update.",
             ].join("\n"),
           );
         }),
@@ -463,6 +465,7 @@ export function createWorkspaceServer(project: Project, sessionId: string) {
           return textResult(`${skillName}: ${enabled ? "aktiv" : "aus"}.`);
         }),
       ),
+      ...createSetupTools(project, safely),
     ],
   });
 }

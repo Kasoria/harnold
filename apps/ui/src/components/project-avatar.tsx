@@ -1,30 +1,35 @@
 import { cn } from "@/lib/utils";
+import { hueForName, parseEntityIcon, tileColor } from "@/lib/entity-icons";
 
-const avatarHues = [25, 145, 265, 330, 200, 85, 0, 295];
-
-function hueForName(name: string): number {
-  let hash = 0;
-  for (const character of name) hash = (hash * 31 + character.charCodeAt(0)) | 0;
-  return avatarHues[Math.abs(hash) % avatarHues.length];
-}
-
-/** Project's own emoji/icon if set, else a coloured letter. */
+/**
+ * Avatar for projects and environments: symbol or emoji, with or without a coloured tile;
+ * without an icon a coloured letter.
+ */
 export function ProjectAvatar({ name, icon, className }: { name: string; icon?: string | null; className?: string }) {
-  if (icon) {
+  const { glyph, symbol: SymbolIcon, background } = parseEntityIcon(icon);
+  const content = SymbolIcon ? (
+    <SymbolIcon className="size-[66%]" strokeWidth={background === "none" ? 2 : 2.25} />
+  ) : glyph && !glyph.startsWith("lucide:") ? (
+    glyph
+  ) : (
+    name.trim().charAt(0).toUpperCase() || "?"
+  );
+  const isEmoji = Boolean(glyph && !SymbolIcon && !glyph.startsWith("lucide:"));
+
+  if (background === "none" && glyph) {
     return (
-      <span className={cn("inline-flex size-5 shrink-0 items-center justify-center text-[15px] leading-none", className)} aria-hidden>
-        {icon}
+      <span className={cn("inline-flex size-5 shrink-0 items-center justify-center leading-none", isEmoji ? "text-[15px]" : "text-foreground/80", className)} aria-hidden>
+        {content}
       </span>
     );
   }
-  const hue = hueForName(name);
   return (
     <span
-      className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white", className)}
-      style={{ background: `oklch(0.62 0.15 ${hue})` }}
+      className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-md font-semibold text-white", isEmoji ? "text-[11px] leading-none" : "text-[11px]", className)}
+      style={{ background: tileColor(background === "auto" || background === "none" ? hueForName(name) : background) }}
       aria-hidden
     >
-      {name.trim().charAt(0).toUpperCase() || "?"}
+      {content}
     </span>
   );
 }

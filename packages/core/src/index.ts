@@ -27,6 +27,7 @@ import { deleteExpiredQuickChats, quickChatProject, quickChatSettings, startQuic
 import { pluginStore } from "./plugins.ts";
 import { saveAttachment } from "./attachments.ts";
 import { memoryFiles } from "./memory-files.ts";
+import { createProjectRecord } from "./setup-tools.ts";
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -75,19 +76,12 @@ app.post("/api/projects", async (context) => {
   const body = z
     .object({ name: z.string().min(1), path: z.string().optional(), environmentId: z.string().nullable().optional() })
     .parse(await context.req.json());
-  const folderName = body.name.trim().replace(/[^\w.-]+/g, "-").toLowerCase();
-  const projectPath = path.resolve(body.path?.trim() || path.join(config.projectsDirectory, folderName));
-  fs.mkdirSync(projectPath, { recursive: true });
-  const project = projectStore.create(body.name.trim(), projectPath);
-  if (body.environmentId) environmentStore.assignProject(project.id, body.environmentId);
-  watchProject(project);
-  void memoryIndex.reindex("project", project);
-  return context.json(project);
+  return context.json(createProjectRecord(body.name, body.path, body.environmentId));
 });
 
 app.patch("/api/projects/:projectId", async (context) => {
   const project = requireProject(context.req.param("projectId"));
-  const body = z.object({ name: z.string().trim().min(1).optional(), icon: z.string().trim().max(16).nullable().optional() }).parse(await context.req.json());
+  const body = z.object({ name: z.string().trim().min(1).optional(), icon: z.string().trim().max(40).nullable().optional() }).parse(await context.req.json());
   projectStore.update(project.id, { name: body.name, icon: body.icon === "" ? null : body.icon });
   return context.json(projectStore.get(project.id));
 });
@@ -155,20 +149,21 @@ app.get("/api/projects/:projectId/sessions", (context) =>
   ),
 );
 
-app.post("/api/projects/:projectId/sessions", (context) => {
-  const project = requireProject(context.req.param("projectId"));
-  const session = sessionStore.create(project.id, "Neue Session");
-  eventHub.publish({ type: "sessions_changed", projectId: project.id });
-  return context.json(session);
-});
+/** "New session" reuses a still empty session of the project instead of piling up empty ones. */
+function emptyOrNewSession(projectId: string) {
+  const emptySession = sessionStore
+    .listByProject(projectId)
+    .find((session) => !session.agentSessionId && !session.forkOriginSessionId && !agentRuntime.isRunning(session.id) && chatItemStore.list(session.id).length === 0);
+  if (emptySession) return emptySession;
+  const session = sessionStore.create(projectId, "Neue Session");
+  eventHub.publish({ type: "sessions_changed", projectId });
+  return session;
+}
+
+app.post("/api/projects/:projectId/sessions", (context) => context.json(emptyOrNewSession(requireProject(context.req.param("projectId")).id)));
 
 // --- Quick Chats (no project) ---
-app.post("/api/quick-chats", (context) => {
-  const project = quickChatProject();
-  const session = sessionStore.create(project.id, "Neue Session");
-  eventHub.publish({ type: "sessions_changed", projectId: project.id });
-  return context.json(session);
-});
+app.post("/api/quick-chats", (context) => context.json(emptyOrNewSession(quickChatProject().id)));
 
 app.get("/api/settings/quick-chats", (context) => context.json(quickChatSettings.read()));
 app.put("/api/settings/quick-chats", async (context) => {
@@ -535,6 +530,11 @@ app.post("/api/environments", async (context) => context.json(environmentStore.c
 app.put("/api/environments/:environmentId", async (context) =>
   context.json(environmentStore.update(context.req.param("environmentId"), environmentInputSchema.parse(await context.req.json()))),
 );
+app.patch("/api/environments/:environmentId", async (context) => {
+  const body = z.object({ icon: z.string().trim().max(40).nullable() }).parse(await context.req.json());
+  return context.json(environmentStore.setIcon(context.req.param("environmentId"), body.icon));
+});
+
 app.delete("/api/environments/:environmentId", (context) => {
   environmentStore.remove(context.req.param("environmentId"));
   return context.json({ ok: true });

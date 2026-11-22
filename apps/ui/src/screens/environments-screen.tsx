@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { FormField } from "@/components/form-field";
 import { ModelSelect, modelLabel } from "@/components/model-select";
 import { ProjectAvatar } from "@/components/project-avatar";
+import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { DetailPane, EmptyState, ListRow, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
 
@@ -38,6 +39,11 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
     api.listEnvironmentProviders().then(setProviders).catch(onError);
   }, [onError]);
   const selectedEnvironment = props.environments.find((environment) => environment.id === props.selection) ?? null;
+  const [iconDialogEnvironment, setIconDialogEnvironment] = useState<Environment | null>(null);
+  const saveEnvironmentIcon = (icon: string | null) => {
+    if (!iconDialogEnvironment) return;
+    api.updateEnvironmentIcon(iconDialogEnvironment.id, icon).then(props.onEnvironmentsChange).catch(props.onError);
+  };
   return (
     <ScreenLayout
       title="Umgebungen"
@@ -57,7 +63,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
                 key={environment.id}
                 selected={environment.id === props.selection}
                 onSelect={() => props.onSelect(environment.id)}
-                leading={<ProjectAvatar name={environment.name} className="size-8 rounded-lg text-[13px]" />}
+                leading={<ProjectAvatar name={environment.name} icon={environment.icon} className="size-8 rounded-lg text-[13px]" />}
               >
                 <div className="truncate text-[13px] font-medium">{environment.name}</div>
                 <div className="truncate text-[11.5px] text-muted-foreground">
@@ -77,6 +83,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
               allEnvironments={props.environments}
               projects={props.projects}
               onOpenMemory={props.onOpenMemory}
+              onEditIcon={setIconDialogEnvironment}
               onSaved={(savedEnvironment) => {
                 props.onEnvironmentsChange();
                 props.onSelect(savedEnvironment.id);
@@ -101,6 +108,7 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
           )
         }
       />
+      <ProjectIconDialog target={iconDialogEnvironment} onOpenChange={(open) => !open && setIconDialogEnvironment(null)} onSave={saveEnvironmentIcon} />
     </ScreenLayout>
   );
 }
@@ -143,6 +151,7 @@ function EnvironmentEditor(props: {
   allEnvironments: Environment[];
   projects: Project[];
   onOpenMemory: (environment: Environment) => void;
+  onEditIcon: (environment: Environment) => void;
   onSaved: (savedEnvironment: Environment) => void;
   onDeleted: () => void;
   onCancel: () => void;
@@ -231,6 +240,9 @@ function EnvironmentEditor(props: {
       actions={
         existing && (
           <>
+            <Button size="icon" variant="ghost" className="size-7" aria-label="Icon ändern" title="Icon ändern" onClick={() => props.onEditIcon(existing)}>
+              <ProjectAvatar name={existing.name} icon={existing.icon} className="size-5" />
+            </Button>
             <Button
               size="sm"
               variant="secondary"

@@ -40,6 +40,7 @@ export const api = {
   listEnvironments: () => request<Environment[]>("GET", "/api/environments"),
   createEnvironment: (input: EnvironmentInput) => request<Environment>("POST", "/api/environments", input),
   updateEnvironment: (environmentId: string, input: EnvironmentInput) => request<Environment>("PUT", `/api/environments/${environmentId}`, input),
+  updateEnvironmentIcon: (environmentId: string, icon: string | null) => request<Environment>("PATCH", `/api/environments/${environmentId}`, { icon }),
   deleteEnvironment: (environmentId: string) => request<{ ok: true }>("DELETE", `/api/environments/${environmentId}`),
   listEnvironmentProviders: () => request<EnvironmentProvider[]>("GET", "/api/environment-providers"),
   importCurrentAccounts: (environmentId: string) =>

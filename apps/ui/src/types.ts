@@ -50,7 +50,9 @@ export type ServerEvent =
   | { type: "integrations_changed" }
   | { type: "design_systems_changed" }
   | { type: "claude_auth_changed" }
-  | { type: "environments_changed" };
+  | { type: "environments_changed" }
+  | { type: "projects_changed" }
+  | { type: "settings_changed" };
 
 export type CanvasElementType = "frame" | "artifact" | "note" | "text" | "rect" | "drawing";
 
@@ -228,6 +230,8 @@ export type EnvironmentVariable = { key: string; value: string; secret: boolean 
 export type Environment = {
   id: string;
   name: string;
+  /** Emoji or "lucide:<name>"; null = letter. */
+  icon: string | null;
   gitName: string;
   gitEmail: string;
   sshKeyPath: string;

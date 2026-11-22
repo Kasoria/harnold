@@ -27,7 +27,7 @@ database.exec(`
 `);
 
 // Added later: AI per environment.
-for (const columnDefinition of ["claude_mode TEXT NOT NULL DEFAULT 'inherit'", "model TEXT NOT NULL DEFAULT ''"]) {
+for (const columnDefinition of ["claude_mode TEXT NOT NULL DEFAULT 'inherit'", "model TEXT NOT NULL DEFAULT ''", "icon TEXT"]) {
   try {
     database.exec(`ALTER TABLE environments ADD COLUMN ${columnDefinition}`);
   } catch {
@@ -68,6 +68,8 @@ export type EnvironmentAccount = { provider: string; label: string; values: Reco
 export type Environment = {
   id: string;
   name: string;
+  /** Emoji or "lucide:<name>"; null = letter. */
+  icon: string | null;
   gitName: string;
   gitEmail: string;
   sshKeyPath: string;
@@ -105,6 +107,7 @@ function present(row: Row): Environment {
   return {
     id: String(row.id),
     name: String(row.name),
+    icon: row.icon ? String(row.icon) : null,
     gitName: String(row.git_name),
     gitEmail: String(row.git_email),
     sshKeyPath: String(row.ssh_key_path),
@@ -203,6 +206,13 @@ export const environmentStore = {
     database.prepare("DELETE FROM environments WHERE id = ?").run(environmentId);
     removeClaudeProfile(environmentId);
     publishChange();
+  },
+
+  setIcon(environmentId: string, icon: string | null): Environment {
+    requireRow(environmentId);
+    database.prepare("UPDATE environments SET icon = ? WHERE id = ?").run(icon?.trim() || null, environmentId);
+    publishChange();
+    return environmentStore.get(environmentId);
   },
 
   /** Moves a project into an environment (null = none). */

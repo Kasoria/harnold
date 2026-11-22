@@ -22,6 +22,7 @@ export function SegmentedControl<OptionValue extends string>(props: SegmentedCon
       {props.options.map((option) => (
         <button
           key={option.value}
+          type="button"
           role="tab"
           aria-selected={option.value === props.value}
           onClick={() => props.onValueChange(option.value)}

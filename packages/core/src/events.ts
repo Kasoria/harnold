@@ -25,7 +25,9 @@ export type ServerEvent =
   | { type: "integrations_changed" }
   | { type: "design_systems_changed" }
   | { type: "claude_auth_changed" }
-  | { type: "environments_changed" };
+  | { type: "environments_changed" }
+  | { type: "projects_changed" }
+  | { type: "settings_changed" };
 
 type Listener = (serverEvent: ServerEvent) => void;
 const listeners = new Set<Listener>();

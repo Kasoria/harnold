@@ -252,6 +252,13 @@ export function App() {
           case "environments_changed":
             void refreshEnvironments();
             return;
+          case "projects_changed":
+            api.listProjects().then(setProjects).catch(() => undefined);
+            return;
+          case "settings_changed":
+            api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(() => undefined);
+            api.readVoiceSettings().then(setVoiceSettings).catch(() => undefined);
+            return;
           case "claude_auth_changed":
             api.readClaudeStatus().then(setClaudeStatus).catch(() => undefined);
             return;
@@ -344,7 +351,7 @@ export function App() {
   const createSession = async (projectId: string): Promise<Session | null> => {
     try {
       const session = await api.createSession(projectId);
-      setSessionsByProjectId((previous) => ({ ...previous, [projectId]: [session, ...(previous[projectId] ?? [])] }));
+      setSessionsByProjectId((previous) => ({ ...previous, [projectId]: [session, ...(previous[projectId] ?? []).filter((existing) => existing.id !== session.id)] }));
       setExpandedProjectIds((previous) => new Set(previous).add(projectId));
       setActiveProjectId(projectId);
       setActiveSessionId(session.id);
@@ -360,7 +367,7 @@ export function App() {
     try {
       const session = await api.createQuickChat();
       if (!projects.some((project) => project.id === session.projectId)) setProjects(await api.listProjects());
-      setSessionsByProjectId((previous) => ({ ...previous, [session.projectId]: [session, ...(previous[session.projectId] ?? [])] }));
+      setSessionsByProjectId((previous) => ({ ...previous, [session.projectId]: [session, ...(previous[session.projectId] ?? []).filter((existing) => existing.id !== session.id)] }));
       setExpandedProjectIds((previous) => new Set(previous).add(session.projectId));
       setActiveProjectId(session.projectId);
       setActiveSessionId(session.id);
@@ -712,7 +719,7 @@ export function App() {
       )}
       <ConfirmDialogHost />
       <ProjectIconDialog
-        project={iconDialogProject}
+        target={iconDialogProject}
         onOpenChange={(open) => !open && setIconDialogProject(null)}
         onSave={(icon) => iconDialogProject && void updateProjectIcon(iconDialogProject, icon)}
       />

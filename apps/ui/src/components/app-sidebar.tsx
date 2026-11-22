@@ -266,6 +266,7 @@ export function AppSidebar(props: AppSidebarProps) {
           onClick={() => props.onOpenScreen("settings")}
         >
           <Settings className="size-4" /> {t("Einstellungen")}
+          <AppVersionHint />
         </button>
         <label className="flex shrink-0 items-center gap-1.5 px-1 text-muted-foreground" title={t("Hell / Dunkel")}>
           <Sun className={cn("size-3.5 transition-opacity duration-200", props.darkMode && "opacity-40")} />
@@ -273,27 +274,20 @@ export function AppSidebar(props: AppSidebarProps) {
           <Moon className={cn("size-3.5 transition-opacity duration-200", !props.darkMode && "opacity-40")} />
         </label>
       </div>
-      <AppVersionLine onOpenSettings={() => props.onOpenScreen("settings")} />
     </aside>
   );
 }
 
-/** Installed version at the bottom; a newer one shows as a hint that leads to the settings. */
-function AppVersionLine(props: { onOpenSettings: () => void }) {
+/** Installed version next to "Settings"; a newer one shows as a dot with "Update". */
+function AppVersionHint() {
   const availableUpdate = useAvailableUpdate();
-  return (
-    <button
-      className="flex items-center justify-end gap-1.5 px-3 pb-2 text-[11px] text-muted-foreground/70 tabular-nums transition-colors hover:text-foreground"
-      title={availableUpdate ? t("Update auf {0} verfügbar", availableUpdate.version) : t("Version {0}", appVersion)}
-      onClick={props.onOpenSettings}
-    >
-      {availableUpdate && (
-        <span className="flex items-center gap-1 text-primary">
-          <span className="size-1.5 rounded-full bg-primary" />
-          {t("Update verfügbar")}
-        </span>
-      )}
-      <span>v{appVersion}</span>
-    </button>
-  );
+  if (availableUpdate) {
+    return (
+      <span className="ml-auto flex items-center gap-1 text-[11px] font-medium text-primary" title={t("Update auf {0} verfügbar", availableUpdate.version)}>
+        <span className="size-1.5 rounded-full bg-primary" />
+        {t("Update")}
+      </span>
+    );
+  }
+  return <span className="ml-auto text-[11px] font-normal text-muted-foreground/60 tabular-nums">v{appVersion}</span>;
 }

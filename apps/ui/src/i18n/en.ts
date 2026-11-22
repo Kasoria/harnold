@@ -553,4 +553,5 @@ export const englishTexts: Record<string, string> = {
   "Update auf {0} verfügbar": "Update to {0} available",
   "Version {0}": "Version {0}",
   "Update verfügbar": "Update available",
+  "Update": "Update",
 };

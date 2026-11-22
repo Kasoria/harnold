@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Cron } from "croner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,14 +12,15 @@ import { locale, t } from "@/lib/i18n";
  */
 type ScheduleConfig =
   | { kind: "daily"; time: string; weekdays: number[] }
-  | { kind: "interval"; everyHours: number; minute: number; fromHour: number; toHour: number; weekdays: number[] }
+  | { kind: "interval"; unit: "minutes" | "hours"; every: number; minute: number; fromHour: number; toHour: number; weekdays: number[] }
   | { kind: "monthly"; dayOfMonth: number | "last"; time: string }
   | { kind: "custom"; expression: string };
 
 const allWeekdays = [1, 2, 3, 4, 5, 6, 0]; // Monday first; cron counts Sunday as 0
 const workdays = [1, 2, 3, 4, 5];
+const intervalMinuteOptions = [1, 2, 5, 10, 15, 20, 30];
 const intervalHourOptions = [1, 2, 3, 4, 6, 8, 12];
-const minuteOptions = [0, 15, 30, 45];
+const minuteOptions = [0, 5, 10, 15, 20, 30, 45];
 
 const weekdayShortName = (weekday: number) => new Date(2024, 0, 7 + weekday).toLocaleDateString(locale(), { weekday: "short" }).replace(".", "");
 const weekdayLongName = (weekday: number) => new Date(2024, 0, 7 + weekday).toLocaleDateString(locale(), { weekday: "long" });
@@ -80,14 +81,31 @@ export function parseSchedule(expression: string): ScheduleConfig {
   const time = parseTime(minuteField, hourField);
   if (time) return { kind: "daily", time, weekdays };
 
-  // Interval: hour field "*", "*/n", "a-b" or "a-b/n"
+  // Minutes: minute field "*" or "*/n", hour field "*" or "a-b"
+  const minuteIntervalMatch = /^\*(?:\/(\d+))?$/.exec(minuteField);
+  const hourWindowMatch = /^(?:\*|(\d+)-(\d+))$/.exec(hourField);
+  if (minuteIntervalMatch && hourWindowMatch) {
+    const everyMinutes = Number(minuteIntervalMatch[1] ?? 1);
+    if (!intervalMinuteOptions.includes(everyMinutes)) return custom;
+    return {
+      kind: "interval",
+      unit: "minutes",
+      every: everyMinutes,
+      minute: 0,
+      fromHour: hourWindowMatch[1] === undefined ? 0 : Number(hourWindowMatch[1]),
+      toHour: hourWindowMatch[2] === undefined ? 23 : Number(hourWindowMatch[2]),
+      weekdays,
+    };
+  }
+  // Hours: hour field "*", "*/n", "a-b" or "a-b/n"
   const intervalMatch = /^(\*|(\d+)-(\d+))(?:\/(\d+))?$/.exec(hourField);
   if (!intervalMatch || !/^\d+$/.test(minuteField)) return custom;
   const everyHours = Number(intervalMatch[4] ?? 1);
   if (!intervalHourOptions.includes(everyHours)) return custom;
   return {
     kind: "interval",
-    everyHours,
+    unit: "hours",
+    every: everyHours,
     minute: Number(minuteField),
     fromHour: intervalMatch[2] === undefined ? 0 : Number(intervalMatch[2]),
     toHour: intervalMatch[3] === undefined ? 23 : Number(intervalMatch[3]),
@@ -107,7 +125,8 @@ export function buildSchedule(config: ScheduleConfig): string {
   }
   const wholeDay = config.fromHour === 0 && config.toHour === 23;
   const hourRange = wholeDay ? "*" : `${config.fromHour}-${config.toHour}`;
-  return `${config.minute} ${hourRange}${config.everyHours > 1 ? `/${config.everyHours}` : ""} * * ${weekdaysField(config.weekdays)}`;
+  if (config.unit === "minutes") return `${config.every > 1 ? `*/${config.every}` : "*"} ${hourRange} * * ${weekdaysField(config.weekdays)}`;
+  return `${config.minute} ${hourRange}${config.every > 1 ? `/${config.every}` : ""} * * ${weekdaysField(config.weekdays)}`;
 }
 
 function describeWeekdays(weekdays: number[]): string {
@@ -126,8 +145,9 @@ export function describeSchedule(expression: string): string {
   if (config.kind === "daily") return `${describeWeekdays(config.weekdays)} ${config.time}`;
   if (config.kind === "monthly") return config.dayOfMonth === "last" ? t("Monatlich am letzten Tag, {0}", config.time) : t("Monatlich am {0}., {1}", config.dayOfMonth, config.time);
   const window = config.fromHour === 0 && config.toHour === 23 ? "" : ` · ${twoDigits(config.fromHour)}–${twoDigits(config.toHour)} ${t("Uhr")}`;
-  const rhythm = config.everyHours === 1 ? t("Stündlich") : t("Alle {0} Std.", config.everyHours);
   const days = weekdaysField(config.weekdays) === "*" ? "" : ` · ${describeWeekdays(config.weekdays)}`;
+  if (config.unit === "minutes") return `${config.every === 1 ? t("Jede Minute") : t("Alle {0} Min.", config.every)}${window}${days}`;
+  const rhythm = config.every === 1 ? t("Stündlich") : t("Alle {0} Std.", config.every);
   return `${rhythm}${config.minute ? ` (:${twoDigits(config.minute)})` : ""}${window}${days}`;
 }
 
@@ -178,7 +198,7 @@ function WeekdayPicker(props: { weekdays: number[]; onChange: (weekdays: number[
           type="button"
           aria-pressed={props.weekdays.includes(weekday)}
           className={cn(
-            "h-8 min-w-10 rounded-md border px-2 text-[13px] transition-colors",
+            "h-9 min-w-11 rounded-md border px-2 text-[13px] transition-colors",
             props.weekdays.includes(weekday) ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-foreground/[0.04]",
           )}
           onClick={() => toggle(weekday)}
@@ -197,16 +217,16 @@ function WeekdayPicker(props: { weekdays: number[]; onChange: (weekdays: number[
   );
 }
 
-function HourSelect(props: { value: number; onChange: (hour: number) => void; label: string }) {
+function HourSelect(props: { value: number; onChange: (hour: number) => void; label: string; endOfHour?: boolean }) {
   return (
     <Select value={String(props.value)} onValueChange={(value) => props.onChange(Number(value))}>
-      <SelectTrigger size="sm" className="w-20" aria-label={props.label}>
+      <SelectTrigger className="w-28" aria-label={props.label}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         {Array.from({ length: 24 }, (_, hour) => (
           <SelectItem key={hour} value={String(hour)}>
-            {twoDigits(hour)}:00
+            {twoDigits(hour)}:{props.endOfHour ? "59" : "00"}
           </SelectItem>
         ))}
       </SelectContent>
@@ -214,8 +234,21 @@ function HourSelect(props: { value: number; onChange: (hour: number) => void; la
   );
 }
 
-const rowClassName = "flex flex-wrap items-center gap-2 text-[13px]";
-const rowLabelClassName = "w-24 shrink-0 text-muted-foreground";
+function intervalLabel(unit: "minutes" | "hours", every: number): string {
+  if (unit === "minutes") return every === 1 ? t("Jede Minute") : t("Alle {0} Minuten", every);
+  return every === 1 ? t("Jede Stunde") : t("Alle {0} Stunden", every);
+}
+
+function ScheduleRow(props: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <span className="pt-2 text-[13px] text-muted-foreground">{props.label}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[13px]">{props.children}</div>
+    </>
+  );
+}
+
+const rowsClassName = "grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-4";
 
 export function ScheduleEditor(props: { value: string; onChange: (expression: string) => void }) {
   const [config, setConfig] = useState<ScheduleConfig>(() => parseSchedule(props.value));
@@ -229,7 +262,7 @@ export function ScheduleEditor(props: { value: string; onChange: (expression: st
     const time = "time" in config ? config.time : "08:00";
     const weekdays = "weekdays" in config ? config.weekdays : workdays;
     if (kind === "daily") setConfig({ kind, time, weekdays });
-    else if (kind === "interval") setConfig({ kind, everyHours: 2, minute: 0, fromHour: 8, toHour: 18, weekdays });
+    else if (kind === "interval") setConfig({ kind, unit: "hours", every: 2, minute: 0, fromHour: 8, toHour: 18, weekdays });
     else if (kind === "monthly") setConfig({ kind, dayOfMonth: 1, time });
     else setConfig({ kind, expression: buildSchedule(config) });
   };
@@ -238,7 +271,7 @@ export function ScheduleEditor(props: { value: string; onChange: (expression: st
   const nextRuns = useMemo(() => nextRunsOf(expression, 3), [expression]);
 
   return (
-    <div className="grid gap-3 rounded-lg border p-3">
+    <div className="grid gap-5 rounded-xl border p-4">
       <SegmentedControl
         value={config.kind}
         onChange={switchKind}
@@ -251,75 +284,93 @@ export function ScheduleEditor(props: { value: string; onChange: (expression: st
       />
 
       {config.kind === "daily" && (
-        <>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("Um")}</span>
-            <Input type="time" className="h-8 w-28" value={config.time} onChange={(changeEvent) => changeEvent.target.value && setConfig({ ...config, time: changeEvent.target.value })} />
-          </div>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("An")}</span>
+        <div className={rowsClassName}>
+          <ScheduleRow label={t("Um")}>
+            <Input type="time" className="w-32" value={config.time} onChange={(changeEvent) => changeEvent.target.value && setConfig({ ...config, time: changeEvent.target.value })} />
+          </ScheduleRow>
+          <ScheduleRow label={t("An")}>
             <WeekdayPicker weekdays={config.weekdays} onChange={(weekdays) => setConfig({ ...config, weekdays })} />
-          </div>
-        </>
+          </ScheduleRow>
+        </div>
       )}
 
       {config.kind === "interval" && (
-        <>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("Alle")}</span>
-            <Select value={String(config.everyHours)} onValueChange={(value) => setConfig({ ...config, everyHours: Number(value) })}>
-              <SelectTrigger size="sm" className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {intervalHourOptions.map((hours) => (
-                  <SelectItem key={hours} value={String(hours)}>
-                    {hours === 1 ? t("1 Stunde") : t("{0} Stunden", hours)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-muted-foreground">{t("zur Minute")}</span>
-            <Select value={String(config.minute)} onValueChange={(value) => setConfig({ ...config, minute: Number(value) })}>
-              <SelectTrigger size="sm" className="w-20">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {minuteOptions.map((minute) => (
-                  <SelectItem key={minute} value={String(minute)}>
-                    :{twoDigits(minute)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("Zwischen")}</span>
-            <HourSelect label={t("Von")} value={config.fromHour} onChange={(fromHour) => setConfig({ ...config, fromHour, toHour: Math.max(fromHour, config.toHour) })} />
-            <span className="text-muted-foreground">{t("und")}</span>
-            <HourSelect label={t("Bis")} value={config.toHour} onChange={(toHour) => setConfig({ ...config, toHour, fromHour: Math.min(toHour, config.fromHour) })} />
-            <button
-              type="button"
-              className="text-[12px] text-muted-foreground hover:text-foreground"
-              onClick={() => setConfig({ ...config, fromHour: 0, toHour: 23 })}
+        <div className={rowsClassName}>
+          <ScheduleRow label={t("Rhythmus")}>
+            <Select
+              value={`${config.unit}:${config.every}`}
+              onValueChange={(value) => {
+                const [unit, every] = value.split(":") as ["minutes" | "hours", string];
+                setConfig({ ...config, unit, every: Number(every) });
+              }}
             >
-              {t("Ganzer Tag")}
-            </button>
-          </div>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("An")}</span>
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {intervalMinuteOptions.map((minutes) => (
+                  <SelectItem key={`minutes:${minutes}`} value={`minutes:${minutes}`}>
+                    {intervalLabel("minutes", minutes)}
+                  </SelectItem>
+                ))}
+                {intervalHourOptions.map((hours) => (
+                  <SelectItem key={`hours:${hours}`} value={`hours:${hours}`}>
+                    {intervalLabel("hours", hours)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {config.unit === "hours" && (
+              <>
+                <span className="text-muted-foreground">{t("zur Minute")}</span>
+                <Select value={String(config.minute)} onValueChange={(value) => setConfig({ ...config, minute: Number(value) })}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {minuteOptions.map((minute) => (
+                      <SelectItem key={minute} value={String(minute)}>
+                        :{twoDigits(minute)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+          </ScheduleRow>
+          <ScheduleRow label={t("Zeitraum")}>
+            <SegmentedControl
+              value={config.fromHour === 0 && config.toHour === 23 ? "allDay" : "window"}
+              onChange={(mode) => setConfig(mode === "allDay" ? { ...config, fromHour: 0, toHour: 23 } : { ...config, fromHour: 8, toHour: 18 })}
+              options={[
+                { value: "allDay", label: t("Ganzer Tag") },
+                { value: "window", label: t("Nur zwischen") },
+              ]}
+            />
+            {!(config.fromHour === 0 && config.toHour === 23) && (
+              <div className="flex items-center gap-2">
+                <HourSelect label={t("Von")} value={config.fromHour} onChange={(fromHour) => setConfig({ ...config, fromHour, toHour: Math.max(fromHour, config.toHour) })} />
+                <span className="text-muted-foreground">{t("bis")}</span>
+                <HourSelect
+                  label={t("Bis")}
+                  endOfHour={config.unit === "minutes"}
+                  value={config.toHour}
+                  onChange={(toHour) => setConfig({ ...config, toHour, fromHour: Math.min(toHour, config.fromHour) })}
+                />
+              </div>
+            )}
+          </ScheduleRow>
+          <ScheduleRow label={t("An")}>
             <WeekdayPicker weekdays={config.weekdays} onChange={(weekdays) => setConfig({ ...config, weekdays })} />
-          </div>
-        </>
+          </ScheduleRow>
+        </div>
       )}
 
       {config.kind === "monthly" && (
-        <>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("Am")}</span>
+        <div className={rowsClassName}>
+          <ScheduleRow label={t("Am")}>
             <Combobox
-              size="sm"
-              className="w-40"
+              className="w-44"
               value={String(config.dayOfMonth)}
               options={[
                 ...Array.from({ length: 31 }, (_, index) => ({ value: String(index + 1), label: t("{0}. des Monats", index + 1) })),
@@ -327,25 +378,24 @@ export function ScheduleEditor(props: { value: string; onChange: (expression: st
               ]}
               onValueChange={(value) => setConfig({ ...config, dayOfMonth: value === "last" ? "last" : Number(value) })}
             />
-          </div>
-          <div className={rowClassName}>
-            <span className={rowLabelClassName}>{t("Um")}</span>
-            <Input type="time" className="h-8 w-28" value={config.time} onChange={(changeEvent) => changeEvent.target.value && setConfig({ ...config, time: changeEvent.target.value })} />
-          </div>
-          {typeof config.dayOfMonth === "number" && config.dayOfMonth > 28 && (
-            <p className="text-[12px] text-muted-foreground">{t("Monate ohne diesen Tag werden übersprungen.")}</p>
-          )}
-        </>
+            {typeof config.dayOfMonth === "number" && config.dayOfMonth > 28 && (
+              <span className="text-[12px] text-muted-foreground">{t("Monate ohne diesen Tag werden übersprungen.")}</span>
+            )}
+          </ScheduleRow>
+          <ScheduleRow label={t("Um")}>
+            <Input type="time" className="w-32" value={config.time} onChange={(changeEvent) => changeEvent.target.value && setConfig({ ...config, time: changeEvent.target.value })} />
+          </ScheduleRow>
+        </div>
       )}
 
       {config.kind === "custom" && (
-        <div className="grid gap-1">
-          <Input className="h-8 font-mono text-[13px]" value={config.expression} onChange={(changeEvent) => setConfig({ kind: "custom", expression: changeEvent.target.value })} />
+        <div className="grid gap-1.5">
+          <Input className="font-mono text-[13px]" value={config.expression} onChange={(changeEvent) => setConfig({ kind: "custom", expression: changeEvent.target.value })} />
           <span className="text-[12px] text-muted-foreground">{t("Minute Stunde Tag Monat Wochentag")}</span>
         </div>
       )}
 
-      <div className="border-t pt-2.5 text-[12px] text-muted-foreground">
+      <div className="border-t pt-3 text-[12px] leading-relaxed text-muted-foreground">
         {nextRuns === null ? (
           <span className="text-destructive">{t("Ungültiger Zeitplan")}</span>
         ) : nextRuns.length === 0 ? (

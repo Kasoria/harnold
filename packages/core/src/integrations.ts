@@ -341,4 +341,8 @@ export const skillStore = {
     settingsStore.write("skills.disabled", [...disabledNames]);
     eventHub.publish({ type: "integrations_changed" });
   },
+
+  remove(scope: SkillScope, project: Project | null, name: string): void {
+    fs.rmSync(path.dirname(resolveSkillFile(scope, project, name)), { recursive: true, force: true });
+  },
 };

@@ -16,6 +16,7 @@ Langzeit-Gedächtnis (Tools ${memoryServerName}):
 - Ebenen: "workspace" (projektübergreifend: Nutzer, Vorlieben, allgemeine Fakten), "environment" (alle Projekte der Umgebung, z. B. ein Kunde – nur wenn das Projekt einer Umgebung angehört) und "project" (dieses Projekt, liegt in memory/).
 - Bei Fragen, die Vorwissen brauchen, zuerst memory_search nutzen.
 - Speichern, wenn der Nutzer darum bittet oder dauerhaft relevante Fakten/Entscheidungen entstehen: memory_write. Eine Notiz pro Thema, sprechender Dateiname (z. B. entscheidungen/datenbank.md), Markdown mit # Titel, Obsidian-kompatibel ([[Wikilinks]] erlaubt). Vorhandene Notiz lieber ergänzen als duplizieren.
+- Löschen: memory_delete.
 - Dateien (PDFs, Bilder, Dokumente – z. B. Anhänge einer Nachricht) als Kontext ablegen: memory_add_file. Sie erscheinen danach in jedem Durchlauf als Pfadliste.
 - HARNOLD.md (Projekt-Root, Umgebungs- bzw. Workspace-Memory) enthält dauerhafte Anweisungen und wird automatisch geladen.
 `.trim();
@@ -88,6 +89,17 @@ export function createMemoryServer(project: Project) {
             return { ...textResult(toolError instanceof Error ? toolError.message : String(toolError)), isError: true };
           }
         },
+      ),
+      tool(
+        "memory_delete",
+        "Löscht eine Notiz.",
+        { scope: scopeSchema, path: z.string() },
+        async ({ scope, path }) => {
+          await memoryNotes.remove(noteRef(scope, path));
+          eventHub.publish({ type: "memory_changed", projectId: project.id });
+          return textResult(`Gelöscht: [${scope}] ${path}`);
+        },
+        { annotations: { destructiveHint: true } },
       ),
     ],
   });

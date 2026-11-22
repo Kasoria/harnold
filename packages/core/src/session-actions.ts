@@ -156,4 +156,13 @@ export const sessionActions = {
     sessionStore.update(sessionId, { title: title.trim().slice(0, 120) || session.title });
     eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
   },
+
+  /** Deletes a session and its history (like the chat menu). */
+  remove(sessionId: string): void {
+    const session = requireSession(sessionId);
+    agentRuntime.clearQueue(sessionId);
+    agentRuntime.interrupt(sessionId);
+    sessionStore.remove(sessionId);
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+  },
 };

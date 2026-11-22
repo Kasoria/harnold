@@ -43,7 +43,8 @@ Harnold einrichten (Tools harnold): Der Nutzer kann Harnold komplett im Chat ein
 - Projekte: project_create, project_update (Name, Emoji-Icon), project_set_environment.
 - Kontext: memory_write für Notizen, memory_add_file für Dateien (z. B. Anhänge dieser Nachricht) – Ebene "project", "environment" (alle Projekte der Umgebung) oder "workspace" (alle Projekte). HARNOLD.md einer Ebene = dauerhafte Anweisungen.
 - Einstellungen: settings_overview zeigt den Stand, settings_update ändert Standardmodell, Quick-Chat-Aufräumen, Memory (Ordner, Embeddings), Bilder und Sprache – auch API-Keys, wenn der Nutzer sie nennt.
-- Integrationen: mcp_server_save/mcp_server_delete, skill_create, skill_set_enabled, plugin_list/plugin_set_enabled/plugin_add_folder. Channels: channel_save/channel_delete.
+- Integrationen: mcp_server_save/mcp_server_delete, skill_create/skill_delete, skill_set_enabled, plugin_list/plugin_set_enabled/plugin_add_folder/plugin_remove_folder. Channels: channel_save/channel_delete.
+- Löschen (immer über die Freigabe): project_delete, session_delete, team_delete, memory_delete, skill_delete, plugin_remove_folder.
 - API-Keys und Tokens nie in Antworten wiederholen, nur bestätigen, dass sie gesetzt sind.
 `.trim();
 
@@ -224,6 +225,16 @@ export function createSetupTools(project: Project, safely: Safely) {
       }),
     ),
     tool(
+      "skill_delete",
+      "Löscht einen Skill (name wie beim Anlegen, scope user/project).",
+      { scope: z.enum(["user", "project"]), name: z.string() },
+      safely(({ scope, name }) => {
+        skillStore.remove(scope, scope === "project" ? project : null, name);
+        eventHub.publish({ type: "integrations_changed" });
+        return textResult(`Skill „${name}“ gelöscht.`);
+      }),
+    ),
+    tool(
       "plugin_list",
       "Listet Plugins (aus Claude Code, Claude Desktop und eigenen Ordnern) mit Status.",
       {},
@@ -248,6 +259,16 @@ export function createSetupTools(project: Project, safely: Safely) {
         const addedPlugin = pluginStore.addFolder(folderPath);
         eventHub.publish({ type: "integrations_changed" });
         return textResult(`Plugin „${addedPlugin.name}“ eingebunden.`);
+      }),
+    ),
+    tool(
+      "plugin_remove_folder",
+      "Entfernt einen eingebundenen Plugin-Ordner (pluginId aus plugin_list).",
+      { pluginId: z.string() },
+      safely(({ pluginId }) => {
+        pluginStore.removeFolder(pluginId);
+        eventHub.publish({ type: "integrations_changed" });
+        return textResult("Plugin-Ordner entfernt.");
       }),
     ),
 

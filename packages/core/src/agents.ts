@@ -139,9 +139,9 @@ const textResult = (text: string, isError = false): TextResult => ({ content: [{
 /** team_list / team_ask for the agent running in `sessionId`. */
 export function createTeamTools(project: Project, sessionId: string, permissionMode: string) {
   return [
-    tool("team_list", "Listet die Agenten im Team dieses Projekts (Name, Rolle).", {}, async () => {
+    tool("team_list", "Listet die Agenten im Team dieses Projekts (Name, Rolle, id).", {}, async () => {
       const team = teamStore.forProject(project.id);
-      return textResult(team.map((agent) => `${agent.name}${agent.role ? ` – ${agent.role}` : ""}`).join("\n") || "Kein Team eingerichtet (Team-Screen).");
+      return textResult(team.map((agent) => `${agent.name} – id ${agent.id}${agent.role ? ` – ${agent.role}` : ""}`).join("\n") || "Kein Team eingerichtet (Team-Screen).");
     }, { annotations: { readOnlyHint: true } }),
     tool(
       "team_save",
@@ -162,6 +162,22 @@ export function createTeamTools(project: Project, sessionId: string, permissionM
           return textResult(saveError instanceof Error ? saveError.message : String(saveError), true);
         }
       },
+    ),
+    tool(
+      "team_delete",
+      "Entfernt ein Teammitglied (id aus team_list).",
+      { agentId: z.string() },
+      async ({ agentId }) => {
+        try {
+          const existing = teamStore.get(agentId);
+          if (!existing) return textResult("Teammitglied nicht gefunden.", true);
+          teamStore.remove(agentId);
+          return textResult(`Teammitglied „${existing.name}“ entfernt.`);
+        } catch (deleteError) {
+          return textResult(deleteError instanceof Error ? deleteError.message : String(deleteError), true);
+        }
+      },
+      { annotations: { destructiveHint: true } },
     ),
     tool(
       "team_ask",

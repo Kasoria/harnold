@@ -19,6 +19,8 @@ import { createSetupTools, setupInstructions, setupReadOnlyToolNames } from "./s
 import { createTeamTools, teamStore, teamToolNames } from "./agents.ts";
 import { createMailTools, mailToolNames } from "./mail/tools.ts";
 import { mailAutonomyLabels, mailInboxStore } from "./mail/inbox.ts";
+import { unwatchProject } from "./files.ts";
+import { folderStore } from "./folders.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -36,7 +38,7 @@ export const workspaceInstructions = `
 Harnold-Workspace (Tools ${workspaceServerName}): Du hast Zugriff auf alles in Harnold – Projekte, andere Sessions, Design Systems, Tasks, Channels, Integrationen, Umgebungen.
 - Wenn der Nutzer etwas aus Harnold anspricht ("erstelle ein Design System und nutze es", "plane einen Task", "was lief in der anderen Session"), erledige es direkt mit diesen Tools – der Nutzer muss nichts manuell in den Screens verknüpfen.
 - Umgebungen (Konten/Tokens je Kontext): environment_import_current übernimmt die auf dem Rechner angemeldeten Konten (gh, vercel, netlify, supabase, npm, git-Identität …) direkt im Core – Tokens laufen dabei nicht durch den Chat. environment_save legt an/ändert (auch Tokens, die der Nutzer nennt), environment_check prüft die Konten.
-- Sessions: session_move verschiebt eine Session in ein anderes Projekt/eine andere Umgebung (Projekte via project_list), session_rename benennt um. Will der Nutzer in einer Quick-Chat- oder Channel-Unterhaltung an einem bestimmten Projekt arbeiten, verschiebe die aktuelle Session mit session_move dorthin.
+- Sessions: session_move verschiebt eine Session in ein anderes Projekt/eine andere Umgebung (Projekte via project_list), session_rename benennt um, session_delete löscht eine andere Session. Will der Nutzer in einer Quick-Chat- oder Channel-Unterhaltung an einem bestimmten Projekt arbeiten, verschiebe die aktuelle Session mit session_move dorthin.
 - Überblick: overview. Design Systems: design_system_create (verknüpft standardmäßig mit diesem Projekt), design_system_link, design_system_write_tokens, design_system_write_file. Ein neu verknüpftes System gilt sofort; binde dessen tokens.css wie im Tool-Ergebnis beschrieben ein.
 ${setupInstructions}
 `.trim();
@@ -161,6 +163,28 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
         }),
       ),
       tool(
+        "project_delete",
+        "Löscht ein Projekt (nur Harnolds Datensatz – der Ordner auf der Festplatte bleibt). Entfernt auch dessen Sessions, Tasks und Ordner-Freigaben. Quick Chats und das aktuelle Projekt lassen sich hier nicht löschen.",
+        { projectId: z.string() },
+        safely(({ projectId }) => {
+          const targetProject = projectStore.get(projectId);
+          if (!targetProject) throw new Error(t("Projekt nicht gefunden"));
+          if (targetProject.kind === "quick") throw new Error(t("Quick Chats lassen sich nicht entfernen"));
+          if (targetProject.id === project.id) throw new Error(t("Das aktuelle Projekt lässt sich hier nicht löschen – zuerst die Session verschieben oder es im Projekt-Screen entfernen"));
+          unwatchProject(targetProject.id);
+          environmentStore.assignProject(targetProject.id, null);
+          for (const task of taskStore.list().filter((candidate) => candidate.projectId === targetProject.id)) {
+            unscheduleTask(task.id);
+            taskStore.remove(task.id);
+          }
+          eventHub.publish({ type: "tasks_changed" });
+          folderStore.removeOwner("project", targetProject.id);
+          projectStore.remove(targetProject.id);
+          return textResult(`Projekt „${targetProject.name}“ gelöscht.`);
+        }),
+        { annotations: { destructiveHint: true } },
+      ),
+      tool(
         "environment_import_current",
         "Übernimmt die aktuell auf diesem Rechner angemeldeten Konten (gh-Token, Vercel/Netlify/Supabase/Fly/Railway/npm/Sentry-Logins, passende Env-Variablen, git-Identität) in eine Umgebung – neu (name) oder bestehend (environmentId). Werte werden im Core gelesen und verschlüsselt gespeichert, nicht angezeigt.",
         {
@@ -274,6 +298,19 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           const environment = environmentStore.forProject(targetProject.id);
           return textResult(`${deferred ? "Wird nach diesem Durchlauf verschoben" : "Verschoben"} nach ${targetProject.name}${environment ? ` (Umgebung ${environment.name})` : ""}.`);
         }),
+      ),
+      tool(
+        "session_delete",
+        "Löscht eine Session samt Verlauf (die aktuelle Session lässt sich hier nicht löschen).",
+        { sessionId: z.string() },
+        safely(({ sessionId: targetSessionId }) => {
+          if (targetSessionId === sessionId) throw new Error(t("Die aktuelle Session lässt sich hier nicht löschen"));
+          const targetSession = sessionStore.get(targetSessionId);
+          if (!targetSession) throw new Error(t("Session nicht gefunden"));
+          sessionActions.remove(targetSessionId);
+          return textResult(`Session „${targetSession.title}“ gelöscht.`);
+        }),
+        { annotations: { destructiveHint: true } },
       ),
 
       // ------------------------------------------------------------ Design systems

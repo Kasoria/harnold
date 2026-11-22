@@ -47,6 +47,28 @@ function signingEnvironment(): Record<string, string> {
   return { TAURI_SIGNING_PRIVATE_KEY: fs.readFileSync(keyPath, "utf8"), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? "" };
 }
 
+/** Notarisierung: Tauri braucht APPLE_API_KEY (Key-ID), APPLE_API_ISSUER und APPLE_API_KEY_PATH (Pfad zur .p8).
+ *  Quelle: Env-Variablen oder ~/.tauri/harnold-notary.env (je Zeile KEY=VALUE). Tauri notarisiert und stapelt
+ *  die App dann selbst, bevor DMG und Updater-Archiv gebaut werden. */
+function notarizationEnvironment(): Record<string, string> {
+  const names = ["APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH"] as const;
+  const environment: Record<string, string> = {};
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) environment[name] = value;
+  }
+  const filePath = path.join(os.homedir(), ".tauri/harnold-notary.env");
+  if (names.some((name) => !environment[name]) && fs.existsSync(filePath)) {
+    for (const line of fs.readFileSync(filePath, "utf8").split("\n")) {
+      const match = line.match(/^\s*([A-Z_]+)\s*=\s*(.+?)\s*$/);
+      if (match && names.includes(match[1] as (typeof names)[number]) && !environment[match[1]]) {
+        environment[match[1]] = match[2];
+      }
+    }
+  }
+  return environment;
+}
+
 const architecture = process.arch === "arm64" ? "aarch64" : "x86_64";
 setVersions();
 // Updater artifacts only for releases, so a plain build:app works without the key.
@@ -55,10 +77,14 @@ run("npm", ["run", "prepare-bundle"]);
 const identity = signingIdentity();
 if (identity) console.log(`> Signatur: ${identity}`);
 else console.warn("! Keine Signatur-Identität gefunden – macOS fragt nach jedem Update erneut nach Ordner-Zugriffen.");
+const notarizationEnvironmentVariables = notarizationEnvironment();
+const notarized = ["APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH"].every((name) => notarizationEnvironmentVariables[name]);
+if (notarized) console.log("> Notarisierung: aktiv (App Store Connect API)");
+else console.warn("! Keine Notarisierungs-Zugangsdaten – App wird nur signiert, nicht notarisiert (Gatekeeper-Warnung für andere Nutzer).");
 run(
   "npx",
   ["tauri", "build", "--config", JSON.stringify({ bundle: { createUpdaterArtifacts: true, ...(identity ? { macOS: { signingIdentity: identity } } : {}) } })],
-  { CI: "true", ...signingEnvironment() },
+  { CI: "true", ...signingEnvironment(), ...notarizationEnvironmentVariables },
 );
 
 const updateArchive = path.join(bundleDirectory, "macos/Harnold.app.tar.gz");

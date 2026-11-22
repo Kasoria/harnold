@@ -32,7 +32,7 @@ Ergebnis: `apps/desktop/src-tauri/target/release/bundle/` (`.app`, `.dmg`). Vora
 - Fenster schließen = ausblenden, Core läuft weiter (Tasks, Channels). Beenden mit ⌘Q.
 - Agent-Programme (Claude Code …) sind nicht enthalten. Harnold nimmt das installierte (`PATH`, `~/.local/bin`) oder lädt es nur auf Klick nach `~/.harnold/runtimes/` (Einstellungen → Claude). Fester Pfad: `HARNOLD_CLAUDE_PATH`.
 - Log: `~/Library/Logs/com.harnold.desktop/core.log`
-- Noch unsigniert: beim ersten Start Rechtsklick → Öffnen.
+- Signiert und notarisiert: Releases signieren mit Developer ID und notarisieren die App (Zugangsdaten aus `~/.tauri/harnold-notary.env`), damit andere Macs ohne Gatekeeper-Warnung starten.
 - Auto-Update: Die App prüft 15 s nach dem Start und dann alle 6 h `releases/latest/download/latest.json` dieses Repos, fragt und startet nach der Installation neu. Updates sind mit dem Updater-Key signiert (`~/.tauri/harnold.key`, nicht im Repo, nicht verlieren).
 
 Release (baut, signiert, legt GitHub-Release mit `.dmg`, Update-Archiv und `latest.json` an):

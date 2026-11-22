@@ -16,6 +16,7 @@ PRD: `docs/PRD.md` · UI-Richtung: `docs/UI.md` (verbindlich für alle Screens)
 - Ablauf: pushen, dann `pnpm --filter @harnold/desktop release <x.y.z> "Was ist neu"` (Version erhöhen, Notes kurz auf Deutsch), danach Versions-Commit pushen.
 - Signatur-Key: `~/.tauri/harnold.key` – nie ins Repo.
 - macOS-Codesignatur: Das Release signiert mit fester Identität (Developer ID, sonst Apple Development aus dem Schlüsselbund; `HARNOLD_SIGNING_IDENTITY=none` schaltet ab). Ohne feste Signatur erkennt macOS nach jedem Update die Ordner-Freigaben (TCC) nicht wieder und fragt neu.
+- macOS-Notarisierung: Zugangsdaten aus `~/.tauri/harnold-notary.env` (`APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`); Tauri notarisiert und stapelt die App im Release dann selbst. Fehlen die Daten, wird nur signiert (Gatekeeper-Warnung für andere Nutzer).
 - Versionen nach SemVer (`MAJOR.MINOR.PATCH`):
   - PATCH: nur Fehlerbehebungen.
   - MINOR: neue Funktionen; PATCH beginnt wieder bei 0.

@@ -68,6 +68,31 @@ const mimeTypesByExtension: Record<string, string> = {
 // Messages in the language of the app that sent the request.
 app.use("*", (context, next) => runWithLanguage(parseLanguage(context.req.header("x-harnold-language")) ?? languageSettings.read(), next));
 
+// --- Origin guard (browser attacks: DNS rebinding, cross-origin fetch/WebSocket) ---
+// Browsers can be tricked into calling a localhost API from a remote page. Only browser requests
+// that are same-origin (localhost family) may pass; non-browser clients (curl, agent programs,
+// Node's fetch) send no Origin/Sec-Fetch-Site header and stay allowed – the access token remains
+// the gate for those. This middleware also covers the /ws WebSocket handshake.
+function isTrustedBrowserRequest(context: { req: { header: (name: string) => string | undefined } }): boolean {
+  const origin = context.req.header("origin");
+  if (origin) {
+    try {
+      const host = new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+      if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1" && host !== config.host.toLowerCase()) return false;
+    } catch {
+      return false;
+    }
+  }
+  const fetchSite = context.req.header("sec-fetch-site");
+  if (fetchSite === "cross-site") return false;
+  return true;
+}
+
+app.use("*", async (context, next) => {
+  if (!isTrustedBrowserRequest(context)) return context.json({ error: t("Nicht autorisiert") }, 403);
+  await next();
+});
+
 // --- Auth (only active when HARNOLD_TOKEN is set) ---
 app.use("*", async (context, next) => {
   // /mcp/<token>/… is called by agent programs on this machine; the one-turn token in the URL is its secret.

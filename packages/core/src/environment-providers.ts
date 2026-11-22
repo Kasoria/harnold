@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { assertAllowedHttpUrl } from "./network-guard.ts";
 
 /**
  * Account types an environment can hold. Each maps its fields onto the env vars the provider's CLI/SDK reads,
@@ -241,7 +242,10 @@ export type AccountCheck = { ok: boolean; detail: string };
 export async function checkProviderAccount(provider: EnvironmentProvider, values: Record<string, string>): Promise<AccountCheck | undefined> {
   if (!provider.check) return undefined;
   try {
-    const response = await fetch(provider.check.url(values), {
+    const checkUrl = provider.check.url(values);
+    // Some hosts are user-configurable (e.g. GITLAB_HOST) – never fetch private/loopback targets.
+    await assertAllowedHttpUrl(checkUrl);
+    const response = await fetch(checkUrl, {
       headers: { ...provider.check.headers(values), "user-agent": "harnold" },
       signal: AbortSignal.timeout(10_000),
     });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { settingsStore } from "./settings.ts";
 import { eventHub } from "./events.ts";
+import { assertAllowedHttpUrl } from "./network-guard.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -164,6 +165,7 @@ export function withModelAliases(environment: NodeJS.ProcessEnv, model: string):
 /** Asks an endpoint which models it offers (GET /models); the user can still type ids by hand. */
 export async function discoverProviderModels(input: { protocol: ProviderProtocol; baseUrl: string; apiKey: string }): Promise<string[]> {
   const baseUrl = input.baseUrl.replace(/\/+$/, "");
+  await assertAllowedHttpUrl(baseUrl);
   const url = input.protocol === "anthropic" ? `${baseUrl}/v1/models?limit=200` : `${baseUrl}/models`;
   const headers: Record<string, string> = { accept: "application/json" };
   if (input.protocol === "anthropic") {

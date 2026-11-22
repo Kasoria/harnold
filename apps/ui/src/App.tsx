@@ -35,6 +35,7 @@ import { TeamScreen } from "@/screens/team-screen";
 import { conversationMembers, latestVersionId } from "@/lib/session-versions";
 import { systemSpeechAvailable } from "@/lib/system-speech";
 import { t } from "@/lib/i18n";
+import { AppVersionBadge } from "@/components/app-version-badge";
 
 type Toast = { message: string; tone: "error" | "info"; action?: { label: string; run: () => void } };
 
@@ -780,7 +781,7 @@ export function App() {
               {/* Workspace stays mounted (canvas/editor state) and is hidden while a feature screen is open. */}
               <div className={cn("h-full", route.screen !== "workspace" && "invisible")} aria-hidden={route.screen !== "workspace"}>
                 <ResizablePanelGroup id="harnold-main" orientation="horizontal" defaultLayout={mainDefaultLayout} onLayoutChanged={onMainLayoutChanged}>
-          <ResizablePanel id="chat" defaultSize="42" minSize={360}>
+          <ResizablePanel id="chat" defaultSize="42" minSize={360} className="relative">
             <ChatPane
               teamAgents={teamForProject(activeProjectId)}
               onSetAgent={(agentId) => activeSessionId && api.setSessionAgent(activeSessionId, agentId).catch(reportError)}
@@ -822,6 +823,7 @@ export function App() {
               ttsReady={voiceSettings?.ttsReady ?? false}
               onError={reportError}
             />
+            <AppVersionBadge onOpenSettings={() => navigate(routePath("settings"))} />
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel
@@ -853,7 +855,12 @@ export function App() {
           </ResizablePanel>
                 </ResizablePanelGroup>
               </div>
-              {route.screen !== "workspace" && <div className="absolute inset-0 z-10">{renderFeatureScreen()}</div>}
+              {route.screen !== "workspace" && (
+                <div className="absolute inset-0 z-10">
+                  {renderFeatureScreen()}
+                  <AppVersionBadge onOpenSettings={() => navigate(routePath("settings"))} />
+                </div>
+              )}
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

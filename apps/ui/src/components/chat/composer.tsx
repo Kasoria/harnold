@@ -256,7 +256,7 @@ export function Composer(props: ComposerProps) {
   };
 
   return (
-    <div className="shrink-0 px-4 pt-2 pb-3">
+    <div className="shrink-0 px-4 pt-2 pb-6">
       <div
         className={cn(
           "relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40",

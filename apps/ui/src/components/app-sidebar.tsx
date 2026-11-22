@@ -12,7 +12,6 @@ import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { HarnoldLogo } from "@/components/harnold-logo";
 import { ActionContextMenu, ActionMenuButton, type MenuAction } from "@/components/action-menu";
 import { t } from "@/lib/i18n";
-import { appVersion, useAvailableUpdate } from "@/lib/app-updates";
 
 type AppSidebarProps = {
   projects: Project[];
@@ -266,7 +265,6 @@ export function AppSidebar(props: AppSidebarProps) {
           onClick={() => props.onOpenScreen("settings")}
         >
           <Settings className="size-4" /> {t("Einstellungen")}
-          <AppVersionHint />
         </button>
         <label className="flex shrink-0 items-center gap-1.5 px-1 text-muted-foreground" title={t("Hell / Dunkel")}>
           <Sun className={cn("size-3.5 transition-opacity duration-200", props.darkMode && "opacity-40")} />
@@ -276,18 +274,4 @@ export function AppSidebar(props: AppSidebarProps) {
       </div>
     </aside>
   );
-}
-
-/** Installed version next to "Settings"; a newer one shows as a dot with "Update". */
-function AppVersionHint() {
-  const availableUpdate = useAvailableUpdate();
-  if (availableUpdate) {
-    return (
-      <span className="ml-auto flex items-center gap-1 text-[11px] font-medium text-primary" title={t("Update auf {0} verfügbar", availableUpdate.version)}>
-        <span className="size-1.5 rounded-full bg-primary" />
-        {t("Update")}
-      </span>
-    );
-  }
-  return <span className="ml-auto text-[11px] font-normal text-muted-foreground/60 tabular-nums">v{appVersion}</span>;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card";
-import { ArrowRightLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
-import type { TeamAgent, Attachment, ChatItem, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
+import { ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
+import type { TeamAgent, Attachment, ChatItem, QueuedMessage, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,7 @@ import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
 import { ImageGallery, imagePathsIn } from "./attachment-views";
 import { ProjectQuickSelect } from "./project-quick-select";
+import { ContextIndicator } from "./context-indicator";
 import { messageVersions } from "@/lib/session-versions";
 import type { InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
@@ -69,6 +70,12 @@ type ChatPaneProps = {
   sttLanguage: string;
   ttsReady: boolean;
   onError: (unknownError: unknown) => void;
+  /** Messages sent during the running turn; they start one after another once it is done. */
+  queuedMessages: QueuedMessage[];
+  onSendQueuedNow: (queuedMessageId: string) => void;
+  onRemoveQueued: (queuedMessageId: string) => void;
+  /** Context size reported live during the running turn. */
+  liveContextTokens: number | null;
 };
 
 type RenderBlock =
@@ -137,6 +144,9 @@ export function ChatPane(props: ChatPaneProps) {
   };
 
   const lastUserItem = props.chatItems.findLast((chatItem) => chatItem.kind === "user_text");
+  const lastMeasuredTurn = props.chatItems.findLast((chatItem) => chatItem.kind === "turn_result" && chatItem.contextTokens !== undefined);
+  const lastTurnContext = lastMeasuredTurn?.kind === "turn_result" ? lastMeasuredTurn : null;
+  const contextTokens = running && props.liveContextTokens !== null ? props.liveContextTokens : (lastTurnContext?.contextTokens ?? null);
   const lastItem = props.chatItems.at(-1);
   const toolPending = lastItem?.kind === "tool_use";
   const showActivity = running && !props.streamingDraft && !props.streamingThinking && props.permissionRequests.length === 0;
@@ -461,6 +471,38 @@ export function ChatPane(props: ChatPaneProps) {
             </div>
             ),
           )}
+
+          {props.queuedMessages.map((queuedMessage, queueIndex) => (
+            <div key={queuedMessage.id} className="flex animate-in justify-end fade-in slide-in-from-bottom-1 duration-200">
+              <div className="grid max-w-[85%] gap-1.5 rounded-2xl border border-dashed bg-foreground/[0.02] px-3.5 py-2.5">
+                <div className="whitespace-pre-wrap break-words text-[14px] text-muted-foreground">{queuedMessage.text}</div>
+                {!!queuedMessage.attachments?.length && (
+                  <div className="flex items-center gap-1 text-[11.5px] text-muted-foreground">
+                    <Paperclip className="size-3" />
+                    {queuedMessage.attachments.map((attachment) => attachment.name).join(", ")}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 text-[11.5px] text-muted-foreground">
+                  <span className="mr-auto flex items-center gap-1">
+                    <Clock className="size-3" />
+                    {queueIndex === 0 ? (running ? t("Wartet auf den laufenden Durchlauf") : t("Wartet – Durchlauf wurde gestoppt")) : t("Wartet · Platz {0}", queueIndex + 1)}
+                  </span>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 font-medium text-foreground hover:underline"
+                    title={running ? t("Stoppt den laufenden Durchlauf und sendet diese Nachricht") : undefined}
+                    onClick={() => props.onSendQueuedNow(queuedMessage.id)}
+                  >
+                    <CornerDownLeft className="size-3" />
+                    {t("Sofort senden")}
+                  </button>
+                  <button type="button" className="hover:text-foreground" onClick={() => props.onRemoveQueued(queuedMessage.id)} aria-label={t("Entfernen")}>
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -486,6 +528,16 @@ export function ChatPane(props: ChatPaneProps) {
             teamAgents={props.teamAgents}
             onInterrupt={props.onInterrupt}
             onError={props.onError}
+            contextIndicator={(composerModel) => (
+              <ContextIndicator
+                sessionId={props.session?.id ?? null}
+                model={composerModel}
+                contextTokens={contextTokens}
+                contextWindow={lastTurnContext?.contextWindow ?? null}
+                running={running}
+                onCompact={() => props.onSend("/compact", "default", composerModel || undefined)}
+              />
+            )}
             footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}
           />
         </div>

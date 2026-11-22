@@ -92,6 +92,9 @@ export type ChatItemPayload =
       /** Agent session + last transcript entry of this turn: where an edited later message forks off. */
       agentSessionId?: string;
       lastChainUuid?: string;
+      /** Tokens in the context window after this turn, and the window size (for the context indicator). */
+      contextTokens?: number;
+      contextWindow?: number;
     };
 
 export type ChatItem = ChatItemPayload & { id: string; sessionId: string; createdAt: number };

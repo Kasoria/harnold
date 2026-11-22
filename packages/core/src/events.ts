@@ -1,4 +1,5 @@
 import type { ChatItem } from "./db.ts";
+import type { QueuedMessage } from "./agent.ts";
 
 /** Everything the core pushes to connected clients. */
 export type ServerEvent =
@@ -8,6 +9,9 @@ export type ServerEvent =
   | { type: "session_cleared"; sessionId: string }
   | { type: "session_moved"; sessionId: string; fromProjectId: string; toProjectId: string }
   | { type: "turn_state"; sessionId: string; running: boolean }
+  | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
+  /** Live context size during a turn (from each model request). */
+  | { type: "context_size"; sessionId: string; tokens: number }
   | {
       type: "permission_request";
       sessionId: string;

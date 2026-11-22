@@ -26,8 +26,20 @@ export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
   | { kind: "notice"; text: string }
   | { kind: "tool_use"; toolUseId: string; toolName: string; input: unknown }
   | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean }
-  | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string }
+  | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string; contextTokens?: number; contextWindow?: number }
 );
+
+/** Sent while a turn ran; starts once it is done. */
+export type QueuedMessage = { id: string; createdAt: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
+
+/** What fills the context window, by category (like /context). */
+export type ContextBreakdown = {
+  model: string;
+  totalTokens: number;
+  maxTokens: number;
+  percentage: number;
+  categories: { id?: string; name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" }[];
+};
 
 /** A file attached to a chat message; stored in the project under attachments/. */
 export type Attachment = { path: string; name: string; mimeType: string; size: number };
@@ -43,6 +55,8 @@ export type ServerEvent =
   | { type: "session_cleared"; sessionId: string }
   | { type: "session_moved"; sessionId: string; fromProjectId: string; toProjectId: string }
   | { type: "turn_state"; sessionId: string; running: boolean }
+  | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
+  | { type: "context_size"; sessionId: string; tokens: number }
   | ({ type: "permission_request" } & PermissionRequest)
   | { type: "permission_resolved"; sessionId: string; requestId: string }
   | { type: "files_changed"; projectId: string; paths: string[] }

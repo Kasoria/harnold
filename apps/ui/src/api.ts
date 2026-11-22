@@ -1,5 +1,5 @@
 import { currentLanguage } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, Task, TaskInput, TaskRun, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -86,6 +86,11 @@ export const api = {
     return responseBody as Attachment[];
   },
   interrupt: (sessionId: string) => request("POST", `/api/sessions/${sessionId}/interrupt`),
+  listQueue: (sessionId: string) => request<QueuedMessage[]>("GET", `/api/sessions/${sessionId}/queue`),
+  removeQueued: (sessionId: string, queuedMessageId: string) => request("DELETE", `/api/sessions/${sessionId}/queue/${queuedMessageId}`),
+  /** Stops the running turn and starts this queued message right away. */
+  sendQueuedNow: (sessionId: string, queuedMessageId: string) => request("POST", `/api/sessions/${sessionId}/queue/${queuedMessageId}/send-now`),
+  readContext: (sessionId: string, model?: string) => request<ContextBreakdown>("GET", `/api/sessions/${sessionId}/context${model ? `?model=${encodeURIComponent(model)}` : ""}`),
   answerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => request("POST", `/api/permissions/${requestId}`, { allow, answers }),
   readTree: (projectId: string) => request<FileNode[]>("GET", `/api/projects/${projectId}/tree`),
   readFile: (projectId: string, filePath: string) =>

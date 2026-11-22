@@ -221,6 +221,7 @@ app.get("/api/sessions/:sessionId/exclusive-files", (context) => context.json(ma
 app.delete("/api/sessions/:sessionId", (context) => {
   const session = sessionStore.get(context.req.param("sessionId"));
   if (session) {
+    agentRuntime.clearQueue(session.id);
     agentRuntime.interrupt(session.id);
     // Opt-in only: ?deleteFiles=1 also removes attachments/images no other session or design file uses.
     if (context.req.query("deleteFiles") === "1") managedFiles.remove(managedFiles.exclusiveToConversation(session.id).map((file) => file.id));
@@ -276,11 +277,28 @@ app.post("/api/sessions/:sessionId/messages", async (context) => {
     .refine((body) => body.text.trim() || body.attachments?.length, "Nachricht ist leer")
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
-  if (agentRuntime.isRunning(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
   const session = sessionStore.get(sessionId);
   if (!session) throw new Error(t("Session nicht gefunden"));
+  // While a turn runs, the message waits in the queue and starts afterwards.
+  if (agentRuntime.isRunning(sessionId)) return context.json({ ok: true, queued: agentRuntime.enqueue({ sessionId, ...body }) });
   await environmentStore.agentSetupFor(session.projectId); // friendly error when Claude access is missing
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
+  return context.json({ ok: true });
+});
+
+app.get("/api/sessions/:sessionId/context", async (context) =>
+  context.json(await agentRuntime.measureContext(context.req.param("sessionId"), context.req.query("model") || undefined)),
+);
+
+app.get("/api/sessions/:sessionId/queue", (context) => context.json(agentRuntime.queueFor(context.req.param("sessionId"))));
+
+app.delete("/api/sessions/:sessionId/queue/:queuedMessageId", (context) => {
+  agentRuntime.removeQueued(context.req.param("sessionId"), context.req.param("queuedMessageId"));
+  return context.json({ ok: true });
+});
+
+app.post("/api/sessions/:sessionId/queue/:queuedMessageId/send-now", (context) => {
+  agentRuntime.sendQueuedNow(context.req.param("sessionId"), context.req.param("queuedMessageId"));
   return context.json({ ok: true });
 });
 

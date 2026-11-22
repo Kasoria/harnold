@@ -57,6 +57,8 @@ type ComposerProps = {
   teamAgents?: TeamAgent[];
   /** Left side of the row under the input (e.g. project quick select). */
   footerStart?: React.ReactNode;
+  /** Context window indicator; gets the model picked here (window size depends on it). */
+  contextIndicator?: (model: string) => React.ReactNode;
 };
 
 /** A file in the composer: uploads right away, is sent with the next message. */
@@ -195,7 +197,7 @@ export function Composer(props: ComposerProps) {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 240)}px`;
   }, [composerText]);
 
-  const canSend = (composerText.trim().length > 0 || readyAttachments.length > 0) && !uploadingAttachments && !props.running && !voiceRecorder.recording && !transcribing;
+  const canSend = (composerText.trim().length > 0 || readyAttachments.length > 0) && !uploadingAttachments && !voiceRecorder.recording && !transcribing;
 
   /** Runs commands Harnold handles itself; true when handled. */
   const runLocalCommand = (text: string): boolean => {
@@ -477,10 +479,27 @@ export function Composer(props: ComposerProps) {
                 </TooltipTrigger>
                 <TooltipContent>{props.sttMode !== "off" ? t("Sprachnachricht") : t("Voice in den Einstellungen einrichten")}</TooltipContent>
               </Tooltip>
+              {props.running && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label={t("Stopp")}>
+                      <Square className="size-3 fill-current" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("Stopp")}</TooltipContent>
+                </Tooltip>
+              )}
               {props.running ? (
-                <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label={t("Stopp")}>
-                  <Square className="size-3 fill-current" />
-                </Button>
+                canSend && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={submit} aria-label={t("Einreihen")}>
+                        <ArrowUp className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("Einreihen – startet nach dem laufenden Durchlauf")}</TooltipContent>
+                  </Tooltip>
+                )
               ) : (
                 <Button
                   size="icon"
@@ -515,6 +534,7 @@ export function Composer(props: ComposerProps) {
             <TooltipContent>{t("Antworten automatisch vorlesen")}</TooltipContent>
           </Tooltip>
         )}
+        {props.contextIndicator?.(model)}
         <ModelSelect compact value={model} onChange={setModel} inherited={props.inheritedModel} />
         <Select value={permissionMode} onValueChange={(value) => setPermissionMode(value as PermissionMode)}>
           <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5">

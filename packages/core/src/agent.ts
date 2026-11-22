@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { query, type PermissionMode, type PermissionResult, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type PermissionMode, type ModelUsage, type Options, type PermissionResult, type Query, type SDKControlGetContextUsageResponse, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload } from "./db.ts";
 import { contentBlocksFor } from "./attachments.ts";
 import { eventHub } from "./events.ts";
@@ -20,6 +20,8 @@ import { t } from "./i18n.ts";
 
 export type TurnRequest = { sessionId: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 export type TurnOutcome = { success: boolean; finalText: string; errorText?: string };
+/** A message sent while a turn runs; it starts once the current turn is done. */
+export type QueuedMessage = Omit<TurnRequest, "sessionId"> & { id: string; createdAt: string };
 
 const harnoldSystemAppend = `
 Du läufst in Harnold, einem Workspace, in dem Chat, Code und Design im selben Projektordner liegen.
@@ -41,6 +43,71 @@ const runningTurns = new Map<string, AbortController>();
 const pendingPermissions = new Map<string, PendingPermission>();
 /** Actions that must wait until a session's turn is over (e.g. moving it to another project). */
 const afterTurnActions = new Map<string, (() => void)[]>();
+const queuedMessagesBySession = new Map<string, QueuedMessage[]>();
+/** Live query per running turn (asked for the context breakdown mid-turn). */
+const activeQueries = new Map<string, Query>();
+const contextMeasurementsInFlight = new Map<string, Promise<ContextBreakdown>>();
+
+/** What fills the context window, by category (like /context). */
+export type ContextBreakdown = {
+  model: string;
+  totalTokens: number;
+  maxTokens: number;
+  percentage: number;
+  categories: { id?: string; name: string; tokens: number; kind: "used" | "free" | "buffer" | "deferred" }[];
+};
+
+function toContextBreakdown(usage: SDKControlGetContextUsageResponse): ContextBreakdown {
+  return {
+    model: usage.model,
+    totalTokens: usage.totalTokens,
+    maxTokens: usage.maxTokens,
+    percentage: usage.percentage,
+    categories: usage.categories.map((category) => ({ id: category.id, name: category.name, tokens: category.tokens, kind: category.kind })),
+  };
+}
+
+/** Without a running turn: start the CLI on the session without a prompt, ask, close (no model call, ~1 s). */
+async function measureIdleContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
+  const session = sessionStore.get(sessionId);
+  if (!session) throw new Error(t("Session nicht gefunden"));
+  let releaseInput: () => void = () => undefined;
+  const inputDone = new Promise<void>((resolve) => (releaseInput = resolve));
+  const abortController = new AbortController();
+  const timeoutHandle = setTimeout(() => abortController.abort(), 60_000);
+  const idleQuery = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await inputDone;
+    })(),
+    options: { ...(await sharedAgentOptions(sessionId, "default", model)), resume: session.agentSessionId ?? undefined, persistSession: Boolean(session.agentSessionId), abortController },
+  });
+  try {
+    return toContextBreakdown(await idleQuery.getContextUsage({ detail: "full" }));
+  } finally {
+    clearTimeout(timeoutHandle);
+    releaseInput();
+    void (async () => {
+      for await (const _idleMessage of idleQuery);
+    })().catch(() => undefined);
+  }
+}
+/** Stopped by the user: the queue waits instead of starting the next message. */
+const queuePausedSessionIds = new Set<string>();
+
+function publishQueue(sessionId: string) {
+  eventHub.publish({ type: "queue_changed", sessionId, queue: queuedMessagesBySession.get(sessionId) ?? [] });
+}
+
+function startNextQueuedMessage(sessionId: string) {
+  if (runningTurns.has(sessionId) || queuePausedSessionIds.has(sessionId)) return;
+  const queue = queuedMessagesBySession.get(sessionId) ?? [];
+  const nextMessage = queue.shift();
+  if (!nextMessage) return;
+  if (!queue.length) queuedMessagesBySession.delete(sessionId);
+  publishQueue(sessionId);
+  const { id: _queueId, createdAt: _createdAt, ...turnRequest } = nextMessage;
+  void agentRuntime.runTurn({ sessionId, ...turnRequest }).catch((turnError) => console.error("[agent] queue", turnError));
+}
 
 function persistAndPublish(sessionId: string, payload: ChatItemPayload) {
   const chatItem = chatItemStore.append(sessionId, payload);
@@ -49,7 +116,7 @@ function persistAndPublish(sessionId: string, payload: ChatItemPayload) {
 }
 
 /** Per-turn bookkeeping: the last main-thread transcript entry is the fork point for edits of later messages. */
-type TurnTracking = { lastChainUuid?: string };
+type TurnTracking = { lastChainUuid?: string; contextTokens?: number; model?: string };
 
 function stringifyToolResultContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -59,6 +126,13 @@ function stringifyToolResultContent(content: unknown): string {
       .join("\n");
   }
   return JSON.stringify(content);
+}
+
+/** Window size of the main model (the one that answered last); other entries are subagents/helpers. */
+function contextWindowOf(modelUsage: Record<string, ModelUsage> | undefined, model: string | undefined): number | undefined {
+  const usageEntries = Object.entries(modelUsage ?? {});
+  const mainEntry = usageEntries.find(([modelName]) => model && (modelName === model || modelName.startsWith(model) || model.startsWith(modelName)));
+  return mainEntry?.[1].contextWindow ?? (usageEntries.length ? Math.max(...usageEntries.map(([, usage]) => usage.contextWindow)) : undefined);
 }
 
 /** Maps one SDK message onto Harnold chat items / live events. */
@@ -73,12 +147,21 @@ function handleAgentMessage(sessionId: string, projectId: string, agentMessage: 
         const { pre_tokens: tokensBefore, post_tokens: tokensAfter } = agentMessage.compact_metadata;
         const tokenText = (tokenCount: number) => `${Math.round(tokenCount / 1000)}k`;
         persistAndPublish(sessionId, { kind: "notice", text: `Kontext komprimiert${tokensAfter ? ` · ${tokenText(tokensBefore)} → ${tokenText(tokensAfter)} Tokens` : ` · vorher ${tokenText(tokensBefore)} Tokens`}` });
+        if (tokensAfter) {
+          turnTracking.contextTokens = tokensAfter;
+          eventHub.publish({ type: "context_size", sessionId, tokens: tokensAfter });
+        }
       } else if (agentMessage.subtype === "commands_changed") agentCommands.remember(projectId, agentMessage.commands);
       return;
     case "stream_event": {
       if (agentMessage.parent_tool_use_id) return;
       const streamEvent = agentMessage.event;
-      if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "text_delta") {
+      if (streamEvent.type === "message_start") {
+        const requestUsage = streamEvent.message.usage;
+        turnTracking.contextTokens = requestUsage.input_tokens + (requestUsage.cache_creation_input_tokens ?? 0) + (requestUsage.cache_read_input_tokens ?? 0);
+        turnTracking.model = streamEvent.message.model;
+        eventHub.publish({ type: "context_size", sessionId, tokens: turnTracking.contextTokens });
+      } else if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "text_delta") {
         eventHub.publish({ type: "text_delta", sessionId, text: streamEvent.delta.text });
       } else if (streamEvent.type === "content_block_delta" && streamEvent.delta.type === "thinking_delta") {
         eventHub.publish({ type: "thinking_delta", sessionId, text: streamEvent.delta.thinking });
@@ -128,11 +211,51 @@ function handleAgentMessage(sessionId: string, projectId: string, agentMessage: 
         errorText: agentMessage.subtype === "success" ? undefined : agentMessage.errors.join("\n"),
         agentSessionId: sessionStore.get(sessionId)?.agentSessionId ?? undefined,
         lastChainUuid: turnTracking.lastChainUuid,
+        contextTokens: turnTracking.contextTokens,
+        contextWindow: contextWindowOf(agentMessage.modelUsage, turnTracking.model),
       });
       return;
     default:
       return;
   }
+}
+
+/** Options a turn and a context check of this session share (same tools, prompt and model, so the numbers match). */
+async function sharedAgentOptions(sessionId: string, permissionMode: PermissionMode, model?: string): Promise<Options> {
+  const session = sessionStore.get(sessionId);
+  if (!session) throw new Error(t("Session nicht gefunden"));
+  const project = projectStore.get(session.projectId);
+  if (!project) throw new Error(t("Projekt nicht gefunden"));
+  const claudeExecutablePath = await claudeExecutable();
+  const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
+  const agentSetup = await environmentStore.agentSetupFor(project.id);
+  const integrationOptions = agentIntegrationOptions(project);
+  const pluginOptions = agentPluginOptions();
+  const projectEnvironment = environmentStore.forProject(project.id);
+  return {
+    pathToClaudeCodeExecutable: claudeExecutablePath,
+    cwd: project.path,
+    // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
+    env: agentSetup.env,
+    // All design systems are open to the agent (it may create/link one mid-turn).
+    // Plus workspace and environment memory, so the agent can read files stored there.
+    additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : [])],
+    model: teamAgent?.model || model || agentSetup.model || agentModelSettings.read(),
+    thinking: { type: "adaptive", display: "summarized" },
+    permissionMode,
+    allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
+    settingSources: ["user", "project", "local"],
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: [harnoldSystemAppend, teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)].filter(Boolean).join("\n\n"),
+    },
+    mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId, permissionMode) },
+    allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
+    skills: integrationOptions.skills,
+    settings: pluginOptions.settings,
+    plugins: pluginOptions.plugins,
+  };
 }
 
 /** Plain text, or – with attachments – one user message with image/document/text blocks (streaming input). */
@@ -159,9 +282,9 @@ export const agentRuntime = {
     const project = projectStore.get(session.projectId);
     if (!project) throw new Error(t("Projekt nicht gefunden"));
     if (runningTurns.has(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
-    const claudeExecutablePath = await claudeExecutable();
-    const teamAgent = session.agentId ? teamStore.get(session.agentId) : undefined;
-    const agentSetup = await environmentStore.agentSetupFor(project.id);
+    // Fail early (before the message is stored) when Claude is missing.
+    await claudeExecutable();
+    await environmentStore.agentSetupFor(project.id);
 
     if (!session.agentSessionId && session.title === "Neue Session") {
       sessionStore.update(sessionId, { title: (text.trim() || attachments.map((attachment) => attachment.name).join(", ")).slice(0, 60) });
@@ -176,37 +299,18 @@ export const agentRuntime = {
     const abortController = new AbortController();
     const outcome: TurnOutcome = { success: false, finalText: "" };
     runningTurns.set(sessionId, abortController);
+    queuePausedSessionIds.delete(sessionId);
     eventHub.publish({ type: "turn_state", sessionId, running: true });
 
     try {
-      const integrationOptions = agentIntegrationOptions(project);
-      const pluginOptions = agentPluginOptions();
-      const projectEnvironment = environmentStore.forProject(project.id);
       const agentStream = query({
         prompt: promptFor(project, `${pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text}${mentionHintFor(project.id, text, session.agentId)}`, attachments),
         options: {
-          pathToClaudeCodeExecutable: claudeExecutablePath,
-          cwd: project.path,
-          // The project's environment (accounts, git identity, variables) on top of the Claude credentials.
-          env: agentSetup.env,
-          // All design systems are open to the agent (it may create/link one mid-turn).
-          // Plus workspace and environment memory, so the agent can read files stored there.
-          additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : [])],
+          ...(await sharedAgentOptions(sessionId, permissionMode, model)),
           ...(pendingFork?.mode === "resume"
             ? { resume: pendingFork.agentSessionId, resumeSessionAt: pendingFork.resumeAt, forkSession: true }
             : { resume: session.agentSessionId ?? undefined }),
-          model: teamAgent?.model || model || agentSetup.model || agentModelSettings.read(),
-          thinking: { type: "adaptive", display: "summarized" },
-          permissionMode,
-          allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           includePartialMessages: true,
-          settingSources: ["user", "project", "local"],
-          systemPrompt: { type: "preset", preset: "claude_code", append: [harnoldSystemAppend, teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)].filter(Boolean).join("\n\n") },
-          mcpServers: { ...integrationOptions.mcpServers, [memoryServerName]: createMemoryServer(project), [mediaServerName]: createMediaServer(project), [workspaceServerName]: createWorkspaceServer(project, sessionId, permissionMode) },
-          allowedTools: [...workspaceToolNames, ...memoryToolNames, ...integrationOptions.allowedTools],
-          skills: integrationOptions.skills,
-          settings: pluginOptions.settings,
-          plugins: pluginOptions.plugins,
           abortController,
           canUseTool: (toolName, input, { signal }) =>
             new Promise<PermissionResult>((resolve) => {
@@ -220,6 +324,7 @@ export const agentRuntime = {
             }),
         },
       });
+      activeQueries.set(sessionId, agentStream);
       for await (const agentMessage of agentStream) {
         handleAgentMessage(sessionId, project.id, agentMessage, turnTracking);
         if (agentMessage.type === "system" && agentMessage.subtype === "init") {
@@ -253,6 +358,7 @@ export const agentRuntime = {
       }
     } finally {
       runningTurns.delete(sessionId);
+      activeQueries.delete(sessionId);
       for (const [requestId, pendingPermission] of pendingPermissions) {
         if (pendingPermission.sessionId === sessionId) {
           pendingPermissions.delete(requestId);
@@ -270,6 +376,7 @@ export const agentRuntime = {
           console.error("[agent] after turn", deferredError);
         }
       }
+      setTimeout(() => startNextQueuedMessage(sessionId), 0);
     }
     return outcome;
   },
@@ -289,8 +396,71 @@ export const agentRuntime = {
     afterTurnActions.set(sessionId, [...(afterTurnActions.get(sessionId) ?? []), action]);
   },
 
+  /** Stops the turn; queued messages wait until sent individually or the next turn ends. */
   interrupt(sessionId: string): void {
-    runningTurns.get(sessionId)?.abort();
+    const abortController = runningTurns.get(sessionId);
+    if (!abortController) return;
+    if (queuedMessagesBySession.has(sessionId)) queuePausedSessionIds.add(sessionId);
+    abortController.abort();
+  },
+
+  /** Context window by category; model = the one the composer has picked (window size depends on it). */
+  measureContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
+    const inFlight = contextMeasurementsInFlight.get(sessionId);
+    if (inFlight) return inFlight;
+    const activeQuery = activeQueries.get(sessionId);
+    const measurement = (activeQuery ? activeQuery.getContextUsage({ detail: "full" }).then(toContextBreakdown) : measureIdleContext(sessionId, model)).finally(() =>
+      contextMeasurementsInFlight.delete(sessionId),
+    );
+    contextMeasurementsInFlight.set(sessionId, measurement);
+    return measurement;
+  },
+
+  queueFor(sessionId: string): QueuedMessage[] {
+    return queuedMessagesBySession.get(sessionId) ?? [];
+  },
+
+  /** Queues the message behind the running turn (or starts it right away when nothing runs). */
+  enqueue(turnRequest: TurnRequest): QueuedMessage {
+    const { sessionId, ...messageFields } = turnRequest;
+    const queuedMessage: QueuedMessage = { ...messageFields, id: randomUUID(), createdAt: new Date().toISOString() };
+    queuedMessagesBySession.set(sessionId, [...(queuedMessagesBySession.get(sessionId) ?? []), queuedMessage]);
+    publishQueue(sessionId);
+    if (!runningTurns.has(sessionId)) {
+      queuePausedSessionIds.delete(sessionId);
+      startNextQueuedMessage(sessionId);
+    }
+    return queuedMessage;
+  },
+
+  removeQueued(sessionId: string, queuedMessageId: string): boolean {
+    const queue = queuedMessagesBySession.get(sessionId) ?? [];
+    const remaining = queue.filter((queuedMessage) => queuedMessage.id !== queuedMessageId);
+    if (remaining.length === queue.length) return false;
+    if (remaining.length) queuedMessagesBySession.set(sessionId, remaining);
+    else queuedMessagesBySession.delete(sessionId);
+    publishQueue(sessionId);
+    return true;
+  },
+
+  /** "Sofort senden": moves the message to the front and stops the running turn so it starts now. */
+  sendQueuedNow(sessionId: string, queuedMessageId: string): boolean {
+    const queue = queuedMessagesBySession.get(sessionId) ?? [];
+    const queuedMessage = queue.find((candidate) => candidate.id === queuedMessageId);
+    if (!queuedMessage) return false;
+    queuedMessagesBySession.set(sessionId, [queuedMessage, ...queue.filter((candidate) => candidate !== queuedMessage)]);
+    queuePausedSessionIds.delete(sessionId);
+    const abortController = runningTurns.get(sessionId);
+    if (abortController) abortController.abort();
+    else startNextQueuedMessage(sessionId);
+    return true;
+  },
+
+  /** Drops the queue (session cleared or deleted). */
+  clearQueue(sessionId: string): void {
+    if (!queuedMessagesBySession.delete(sessionId)) return;
+    queuePausedSessionIds.delete(sessionId);
+    publishQueue(sessionId);
   },
 
   /** answers: for AskUserQuestion (question text → chosen label(s), comma-separated). */

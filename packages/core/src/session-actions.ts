@@ -142,6 +142,7 @@ export const sessionActions = {
   clear(sessionId: string): void {
     const session = requireSession(sessionId);
     if (agentRuntime.isRunning(sessionId)) throw new Error(t("Erst den laufenden Durchlauf stoppen"));
+    agentRuntime.clearQueue(sessionId);
     chatItemStore.clear(sessionId);
     sessionStore.update(sessionId, { agentSessionId: null });
     eventHub.publish({ type: "session_cleared", sessionId });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { TeamAgent, Attachment, SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { TeamAgent, Attachment, SessionReference, Channel, ChatItem, ClaudeAuthStatus, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -55,6 +55,8 @@ export function App() {
   const [streamingThinking, setStreamingThinking] = useState("");
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(new Set());
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const [liveContextTokens, setLiveContextTokens] = useState<number | null>(null);
   const [fileChangeCounter, setFileChangeCounter] = useState(0);
   const [lastChangedPaths, setLastChangedPaths] = useState<string[]>([]);
   const [composerInsertion, setComposerInsertion] = useState<{ text: string; nonce: number } | null>(null);
@@ -182,7 +184,10 @@ export function App() {
     setChatItems([]);
     setStreamingDraft("");
     setStreamingThinking("");
+    setQueuedMessages([]);
+    setLiveContextTokens(null);
     if (activeSessionId) api.listChatItems(activeSessionId).then(setChatItems).catch(reportError);
+    if (activeSessionId) api.listQueue(activeSessionId).then(setQueuedMessages).catch(() => undefined);
   }, [activeSessionId, reportError]);
 
   useEffect(
@@ -227,10 +232,17 @@ export function App() {
               return next;
             });
             if (!serverEvent.running && serverEvent.sessionId === currentSessionId) {
+              setLiveContextTokens(null);
               setStreamingDraft("");
               setStreamingThinking("");
             }
             if (!serverEvent.running) setTodayReloadCounter((previous) => previous + 1);
+            return;
+          case "queue_changed":
+            if (serverEvent.sessionId === currentSessionId) setQueuedMessages(serverEvent.queue);
+            return;
+          case "context_size":
+            if (serverEvent.sessionId === currentSessionId) setLiveContextTokens(serverEvent.tokens);
             return;
           case "permission_request":
             setPermissionRequests((previous) => [...previous, serverEvent]);
@@ -827,6 +839,10 @@ export function App() {
               sttLanguage={voiceSettings?.language ?? "de"}
               ttsReady={voiceSettings?.ttsReady ?? false}
               onError={reportError}
+              queuedMessages={queuedMessages}
+              onSendQueuedNow={(queuedMessageId) => activeSessionId && api.sendQueuedNow(activeSessionId, queuedMessageId).catch(reportError)}
+              onRemoveQueued={(queuedMessageId) => activeSessionId && api.removeQueued(activeSessionId, queuedMessageId).catch(reportError)}
+              liveContextTokens={liveContextTokens}
             />
             <AppVersionBadge onOpenSettings={() => navigate(routePath("settings"))} />
           </ResizablePanel>

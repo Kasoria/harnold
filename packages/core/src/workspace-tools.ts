@@ -22,6 +22,7 @@ import { normalizeBackendId } from "./agent-backend-settings.ts";
 import { mailAutonomyLabels, mailInboxStore } from "./mail/inbox.ts";
 import { unwatchProject } from "./files.ts";
 import { folderStore } from "./folders.ts";
+import { secretInput } from "./secret-input.ts";
 import { t } from "./i18n.ts";
 
 /**
@@ -32,7 +33,7 @@ export const workspaceServerName = "harnold";
 
 const readOnlyToolNames = ["overview", "project_list", "session_list", "session_read", "design_system_list", "design_system_get", "task_list", "channel_list", "integration_list", "environment_list", "environment_check"];
 /** Low-risk, Harnold-internal edits: no prompt (like memory_write). Everything else goes through the permission flow. */
-const autoAllowedWriteToolNames = ["session_rename", "design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
+const autoAllowedWriteToolNames = ["secret_request", "session_rename", "design_system_create", "design_system_link", "design_system_write_tokens", "design_system_write_file"];
 export const workspaceToolNames = [...readOnlyToolNames, ...setupReadOnlyToolNames, ...autoAllowedWriteToolNames, ...teamToolNames, ...mailToolNames].map((toolName) => `mcp__${workspaceServerName}__${toolName}`);
 
 export const workspaceInstructions = `
@@ -233,6 +234,15 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           if (unknownProviders.length) throw new Error(t("Unbekannte Anbieter: {0} – dafür variables nutzen", unknownProviders.join(", ")));
           const environment = environmentStore.save(environmentId, { ...patch, addProjectIds: [...(addProjectIds ?? []), ...(assignCurrentProject ? [project.id] : [])] });
           return textResult(`Umgebung „${environment.name}“ (id ${environment.id}) gespeichert. Konten: ${environment.accounts.map((account) => account.label).join(", ") || "keine"}. Gilt ab dem nächsten Durchlauf.`);
+        }),
+      ),
+      tool(
+        "secret_request",
+        "Fragt den Nutzer im Chat nach einem Secret (z. B. API-Key) und speichert es als geheime Variable der Umgebung dieses Projekts. Der Wert geht NICHT an dich: du erfährst nur, ob gespeichert wurde. Nutze das statt den Nutzer Keys in den Chat schreiben zu lassen, z. B. nach dem Bau einer API: „bitte gib den Key ein“. Die Variable steht ab dem nächsten Durchlauf in der Shell.",
+        { key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).describe("Variablenname, z. B. STRIPE_SECRET_KEY"), description: z.string().describe("Kurz für den Nutzer: wofür und wo er den Wert findet"), secret: z.boolean().optional().describe("Standard true; false für unkritische Werte") },
+        safely(async ({ key, description, secret }) => {
+          const outcome = await secretInput.request({ sessionId, projectId: project.id, key, description, secret: secret ?? true });
+          return textResult(outcome === "saved" ? `${key} wurde gespeichert (Umgebungsvariable, ab dem nächsten Durchlauf verfügbar).` : `Der Nutzer hat ${key} nicht eingegeben.`);
         }),
       ),
       tool(

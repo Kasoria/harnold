@@ -95,6 +95,8 @@ export function App() {
   const { defaultLayout: mainDefaultLayout, onLayoutChanged: onMainLayoutChanged } = useDefaultLayout({ id: "harnold-main", storage: safeStorage });
   const { route, navigate } = useHashRoute();
 
+  const workspaceOpenRef = useRef(true);
+  const openWorkspaceRef = useRef<() => void>(() => undefined);
   const activeIdsRef = useRef({ activeProjectId, activeSessionId });
   activeIdsRef.current = { activeProjectId, activeSessionId };
   const environmentsRef = useRef(environments);
@@ -261,6 +263,8 @@ export function App() {
           case "files_changed":
             if (serverEvent.projectId !== currentProjectId) return;
             setLastChangedPaths(serverEvent.paths);
+            // The agent built something visible (design draft, generated image): open the canvas so it shows up.
+            if (!workspaceOpenRef.current && serverEvent.paths.some((changedPath) => /(^|\/)(design\/.+\.html?|assets\/generated\/.+)$/i.test(changedPath))) openWorkspaceRef.current();
             setFileChangeCounter((previous) => previous + 1);
             return;
           case "sessions_changed":
@@ -383,6 +387,8 @@ export function App() {
     animatePanels();
     requestAnimationFrame(() => (visible ? workspacePanelRef.current?.expand() : workspacePanelRef.current?.collapse()));
   };
+  workspaceOpenRef.current = workspaceOpen;
+  openWorkspaceRef.current = () => setWorkspaceVisibility(true);
 
   const createProject = async (name: string, projectPath?: string) => {
     try {
@@ -450,7 +456,7 @@ export function App() {
     if (!activeSessionId || !activeProjectId) return;
     try {
       const permissionMode = (safeStorage.getItem("harnold.permissionMode") as PermissionMode | null) ?? "default";
-      const versionSession = await api.editMessage(activeSessionId, itemId, text, permissionMode, safeStorage.getItem("harnold.model") ?? undefined);
+      const versionSession = await api.editMessage(activeSessionId, itemId, text, permissionMode, activeSession?.model || undefined);
       setSessionsByProjectId((previous) => ({ ...previous, [versionSession.projectId]: [versionSession, ...(previous[versionSession.projectId] ?? [])] }));
       setActiveSessionId(versionSession.id);
     } catch (editError) {
@@ -602,6 +608,8 @@ export function App() {
     if (!activeProjectId) return;
     try {
       const targetSessionId = activeSessionId ?? (await createSession(activeProjectId))?.id;
+      // A session created by this very send remembers the model it was started with.
+      if (targetSessionId && !activeSessionId && model) await api.updateSession(targetSessionId, { model });
       if (targetSessionId) await api.sendMessage(targetSessionId, text, permissionMode, model, attachments);
     } catch (sendError) {
       reportError(sendError);
@@ -905,6 +913,8 @@ export function App() {
               workspaceOpen={workspaceOpen}
               onOpenWorkspace={() => setWorkspaceVisibility(true)}
               onSend={sendToAgent}
+              onSubmitSecret={(requestId, value) => api.submitSecretInput(requestId, value).catch(reportError)}
+              onSessionModelChange={(model) => activeSessionId && api.updateSession(activeSessionId, { model: model || null }).catch(reportError)}
               inheritedModel={inheritedModelFor(activeProjectId)}
               onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
               onAnswerPermission={(requestId, allow, answers) => api.answerPermission(requestId, allow, answers).catch(reportError)}

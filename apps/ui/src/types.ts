@@ -22,6 +22,8 @@ export type Session = {
   mailInboxId: string | null;
   /** Extra local folders the agent may use in this chat (absolute paths). */
   directories?: string[];
+  /** Model picked in the composer for this conversation (null/absent = inherited). */
+  model?: string | null;
 };
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
 

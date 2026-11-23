@@ -3,7 +3,7 @@ import { useAgentBackends } from "@/lib/agent-backends";
 import { modelsForBackendNow } from "@/lib/model-sources";
 import { FormField } from "@/components/form-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { InheritedModel } from "@/components/model-select";
+import { modelLabel, type InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
 
 const inheritValue = "__inherit__";
@@ -25,8 +25,10 @@ export function AgentModelPicker(props: {
   const ownBackend = props.backendId ? (backendsView?.backends.find((backend) => backend.id === props.backendId) ?? null) : null;
   const effectiveBackendId = props.backendId ?? activeBackend?.id ?? null;
   const models = modelsForBackendNow(effectiveBackendId);
-  const inheritedModelLabel = `${props.inheritedModel.model} (${props.inheritedModel.source})`;
-  const modelLabel = props.model ? (models.find((model) => model.value === props.model)?.label ?? props.model) : "";
+  // The inherited value may be a raw "providerId::model": show its readable name, never the id.
+  const inheritedName = models.find((model) => model.value === props.inheritedModel.model)?.label ?? modelLabel(props.inheritedModel.model);
+  const inheritedModelLabel = `${inheritedName} (${props.inheritedModel.source})`;
+  const selectedModelLabel = props.model ? (models.find((model) => model.value === props.model)?.label ?? modelLabel(props.model)) : "";
 
   return (
     <div className={props.className ?? "grid grid-cols-2 gap-3"}>
@@ -66,7 +68,7 @@ export function AgentModelPicker(props: {
           <SelectTrigger className="w-full">
             <SelectValue>
               {props.model
-                ? modelLabel
+                ? selectedModelLabel
                 : props.backendId
                   ? t("Standard von {0}", ownBackend?.name ?? props.backendId)
                   : inheritedModelLabel}

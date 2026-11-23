@@ -10,6 +10,7 @@ import { config } from "./config.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { agentRuntime } from "./agent.ts";
+import { secretInput } from "./secret-input.ts";
 import { sessionActions } from "./session-actions.ts";
 import { agentCommands } from "./slash-commands.ts";
 import { agentExtensions } from "./agent-extensions.ts";
@@ -311,7 +312,7 @@ app.delete("/api/sessions/:sessionId", (context) => {
 
 app.patch("/api/sessions/:sessionId", async (context) => {
   const body = z
-    .object({ title: z.string().min(1).optional(), projectId: z.string().optional(), agentId: z.string().nullable().optional(), directories: z.array(z.string().trim().min(1)).max(20).optional() })
+    .object({ title: z.string().min(1).optional(), projectId: z.string().optional(), agentId: z.string().nullable().optional(), directories: z.array(z.string().trim().min(1)).max(20).optional(), model: z.string().nullable().optional() })
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   if (body.title) sessionActions.rename(sessionId, body.title);
@@ -319,6 +320,12 @@ app.patch("/api/sessions/:sessionId", async (context) => {
     const session = sessionStore.get(sessionId);
     if (!session) throw new Error(t("Session nicht gefunden"));
     sessionStore.update(sessionId, { directories: chatDirectories(body.directories) });
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+  }
+  if (body.model !== undefined) {
+    const session = sessionStore.get(sessionId);
+    if (!session) throw new Error(t("Session nicht gefunden"));
+    sessionStore.update(sessionId, { model: body.model || null });
     eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
   }
   if (body.agentId !== undefined) {
@@ -492,6 +499,14 @@ app.get("/api/today", (context) => {
       .map((taskRun) => ({ ...taskRun, taskName: taskStore.get(taskRun.taskId)?.name ?? "Task", session: sessionInfo(taskRun.sessionId) })),
     recentSessions,
   });
+});
+
+// The value only lives in this request: it is stored in the environment and never echoed back.
+app.post("/api/secret-input/:requestId", async (context) => {
+  const body = z.object({ value: z.string().optional() }).parse(await context.req.json());
+  const requestId = context.req.param("requestId");
+  const done = body.value?.trim() ? secretInput.submit(requestId, body.value.trim()) : secretInput.cancel(requestId);
+  return context.json({ ok: done });
 });
 
 app.post("/api/permissions/:requestId", async (context) => {

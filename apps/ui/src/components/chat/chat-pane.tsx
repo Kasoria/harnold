@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card";
+import { SecretInputCard, isSecretInputRequest } from "@/components/chat/secret-input-card";
 import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
 import type { TeamAgent, Attachment, ChatItem, QueuedMessage, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
@@ -61,6 +62,10 @@ type ChatPaneProps = {
   workspaceOpen: boolean;
   onOpenWorkspace: () => void;
   onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
+  /** Saves the model picked in the composer on the open session (no-op while there is none). */
+  /** Saves a requested secret ("" = skipped); the value goes to the core only. */
+  onSubmitSecret: (requestId: string, value: string) => void;
+  onSessionModelChange: (model: string) => void;
   inheritedModel: InheritedModel;
   onInterrupt: () => void;
   onAnswerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => void;
@@ -508,7 +513,14 @@ export function ChatPane(props: ChatPaneProps) {
           {showActivity && <ActivityIndicator label={toolPending ? t("Führt aus") : t("Arbeitet")} startedAt={lastUserItem?.createdAt ?? Date.now()} />}
 
           {props.permissionRequests.map((permissionRequest) =>
-            isQuestionRequest(permissionRequest.toolName) ? (
+            isSecretInputRequest(permissionRequest.toolName) ? (
+              <SecretInputCard
+                key={permissionRequest.requestId}
+                input={permissionRequest.input}
+                onSubmit={(value) => props.onSubmitSecret(permissionRequest.requestId, value)}
+                onCancel={() => props.onSubmitSecret(permissionRequest.requestId, "")}
+              />
+            ) : isQuestionRequest(permissionRequest.toolName) ? (
               <QuestionCard
                 key={permissionRequest.requestId}
                 input={permissionRequest.input}
@@ -606,6 +618,9 @@ export function ChatPane(props: ChatPaneProps) {
             placeholder={t("Nachricht an {0} …", props.project.name)}
             running={running}
             inheritedModel={props.inheritedModel}
+            draftKey={props.session?.id ?? `project:${props.project.id}`}
+            sessionModel={props.session?.model ?? ""}
+            onModelChange={(nextModel) => props.onSessionModelChange(nextModel)}
             insertion={props.composerInsertion}
             droppedFiles={droppedFiles}
             sttMode={props.sttMode}

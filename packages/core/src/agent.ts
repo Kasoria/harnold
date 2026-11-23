@@ -14,6 +14,7 @@ import { agentBackends } from "./backends/index.ts";
 import type { AgentBackend, PermissionDecision, PermissionMode, TurnContext, TurnEvent } from "./backends/types.ts";
 import { defaultAgentBackendId, normalizeBackendId, type AgentBackendId } from "./agent-backend-settings.ts";
 import { agentRoleSettings, defaultAgentRole, type AgentRole } from "./agent-roles.ts";
+import { secretInput } from "./secret-input.ts";
 import { t } from "./i18n.ts";
 
 /** Chat folders plus the project's folder context (memory levels) – every agent program gets access to them. */
@@ -249,6 +250,7 @@ export const agentRuntime = {
       }
     } finally {
       runningTurns.delete(sessionId);
+      secretInput.cancelSession(sessionId);
       for (const [requestId, pendingPermission] of pendingPermissions) {
         if (pendingPermission.sessionId === sessionId) {
           pendingPermissions.delete(requestId);
@@ -273,7 +275,10 @@ export const agentRuntime = {
 
   /** Open permission requests (so a freshly opened app still shows what is waiting). */
   listPendingPermissions(): { requestId: string; sessionId: string; toolName: string; input: unknown }[] {
-    return [...pendingPermissions].map(([requestId, pendingPermission]) => ({ requestId, sessionId: pendingPermission.sessionId, toolName: pendingPermission.toolName, input: pendingPermission.input }));
+    return [
+      ...[...pendingPermissions].map(([requestId, pendingPermission]) => ({ requestId, sessionId: pendingPermission.sessionId, toolName: pendingPermission.toolName, input: pendingPermission.input })),
+      ...secretInput.listPending(),
+    ];
   },
 
   /** Ids of sessions with a running turn. */

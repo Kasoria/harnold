@@ -32,7 +32,7 @@ const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
   new URLSearchParams({ scope: noteRef.scope, projectId: noteRef.projectId ?? "", path: noteRef.path }).toString();
 
 export const api = {
-  updateSession: (sessionId: string, changes: { title?: string; projectId?: string; directories?: string[] }) => request<{ ok: true; deferred: boolean }>("PATCH", `/api/sessions/${sessionId}`, changes),
+  updateSession: (sessionId: string, changes: { title?: string; projectId?: string; directories?: string[]; model?: string | null }) => request<{ ok: true; deferred: boolean }>("PATCH", `/api/sessions/${sessionId}`, changes),
   clearSession: (sessionId: string) => request<{ ok: true }>("POST", `/api/sessions/${sessionId}/clear`),
   listAgentCommands: (projectId: string) => request<AgentCommand[]>("GET", `/api/projects/${projectId}/commands`),
   readToday: () => request<TodayOverview>("GET", "/api/today"),
@@ -91,6 +91,8 @@ export const api = {
   /** Stops the running turn and starts this queued message right away. */
   sendQueuedNow: (sessionId: string, queuedMessageId: string) => request("POST", `/api/sessions/${sessionId}/queue/${queuedMessageId}/send-now`),
   readContext: (sessionId: string, model?: string) => request<ContextBreakdown>("GET", `/api/sessions/${sessionId}/context${model ? `?model=${encodeURIComponent(model)}` : ""}`),
+  /** Value ("" = skip) goes to the core only and ends up in the environment variables. */
+  submitSecretInput: (requestId: string, value: string) => request("POST", `/api/secret-input/${requestId}`, { value }),
   answerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => request("POST", `/api/permissions/${requestId}`, { allow, answers }),
   readTree: (projectId: string) => request<FileNode[]>("GET", `/api/projects/${projectId}/tree`),
   readFile: (projectId: string, filePath: string) =>

@@ -52,7 +52,10 @@ export const useAgentModels = () =>
     getAgentModels,
   );
 
-export const modelLabel = (model: string) => [...activeModels, ...claudeModels, codexDefaultOption].find((agentModel) => agentModel.value === model)?.label ?? model;
+/** Harnold-Agent models are stored as "providerId::modelId"; an unknown provider id must never reach the screen. */
+const withoutProviderId = (model: string) => (model.includes("::") ? model.slice(model.indexOf("::") + 2) : model);
+
+export const modelLabel = (model: string) => [...activeModels, ...claudeModels, codexDefaultOption].find((agentModel) => agentModel.value === model)?.label ?? withoutProviderId(model);
 
 /** The model that applies when nothing is chosen here, and where it comes from ("Einstellungen", "Umgebung X"). */
 export type InheritedModel = { model: string; source: string };

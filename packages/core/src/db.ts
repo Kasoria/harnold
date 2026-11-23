@@ -44,6 +44,7 @@ addColumnIfMissing("sessions", "task_id", "TEXT");
 addColumnIfMissing("sessions", "mail_inbox_id", "TEXT");
 addColumnIfMissing("sessions", "backend_id", "TEXT");
 addColumnIfMissing("sessions", "directories", "TEXT");
+addColumnIfMissing("sessions", "model", "TEXT");
 // Conversation history of Harnold's own agent (other agent programs keep theirs themselves).
 database.exec(`
   CREATE TABLE IF NOT EXISTS agent_messages (
@@ -85,6 +86,8 @@ export type Session = {
   mailInboxId: string | null;
   /** Extra local folders the agent may work in for this chat (absolute paths), besides the project folder. */
   directories: string[];
+  /** Model last picked in the composer for this conversation; null = inherited. */
+  model: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -142,6 +145,7 @@ const mapSession = (row: Row): Session => ({
   taskId: row.task_id ? String(row.task_id) : null,
   mailInboxId: row.mail_inbox_id ? String(row.mail_inbox_id) : null,
   directories: row.directories ? (JSON.parse(String(row.directories)) as string[]) : [],
+  model: row.model ? String(row.model) : null,
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -209,12 +213,13 @@ export const sessionStore = {
       taskId: null,
       mailInboxId: null,
       directories,
+      model: fork ? (sessionStore.get(fork.originSessionId)?.model ?? null) : null,
       createdAt: now,
       updatedAt: now,
     };
     database
       .prepare(
-        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, directories, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, directories, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         session.id,
@@ -225,6 +230,7 @@ export const sessionStore = {
         session.pendingFork ? JSON.stringify(session.pendingFork) : null,
         agentId,
         directories.length ? JSON.stringify(directories) : null,
+        session.model,
         now,
         now,
       );
@@ -233,13 +239,13 @@ export const sessionStore = {
   /** `agentSessionId: null` starts a fresh agent context on the next turn. */
   update(
     sessionId: string,
-    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null; directories?: string[] },
+    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null; directories?: string[]; model?: string | null },
   ): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
     const pendingFork = changes.pendingFork === undefined ? current.pendingFork : changes.pendingFork;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, directories = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, directories = ?, model = ?, updated_at = ? WHERE id = ?")
       .run(
         changes.title ?? current.title,
         changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
@@ -249,6 +255,7 @@ export const sessionStore = {
         changes.agentId === undefined ? current.agentId : changes.agentId,
         changes.backendId === undefined ? current.backendId : changes.backendId,
         (changes.directories ?? current.directories).length ? JSON.stringify(changes.directories ?? current.directories) : null,
+        changes.model === undefined ? current.model : changes.model,
         Date.now(),
         sessionId,
       );

@@ -38,6 +38,12 @@ function parseCommand(text: string): { name: string; commandArguments: string } 
 type ComposerProps = {
   /** Model used when none is picked here (environment or settings). */
   inheritedModel: InheritedModel;
+  /** Identifies the conversation (session id, or the project while none exists yet): draft and model belong to it, not to the composer. */
+  draftKey: string;
+  /** Model saved for this conversation ("" = inherited). */
+  sessionModel: string;
+  /** The user picked another model for this conversation. */
+  onModelChange: (model: string) => void;
   placeholder: string;
   projectId: string;
   /** Session-level commands (/clear, /new, /rename, /move); returns false when it is not one. */
@@ -87,16 +93,20 @@ function joinSpokenText(baseText: string, transcript: string) {
   return /\s$/.test(baseText) ? baseText + spokenText : `${baseText} ${spokenText}`;
 }
 
+/** Unsent texts per conversation, so a draft never shows up in another session. */
+const drafts = new Map<string, string>();
+
 export function Composer(props: ComposerProps) {
-  const [composerText, setComposerText] = useState("");
+  const [composerText, setComposerText] = useState(() => drafts.get(props.draftKey) ?? "");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     (safeStorage.getItem("harnold.permissionMode") as PermissionMode | null) ?? "default",
   );
-  // "" = inherited model (older builds stored "default").
-  const [pickedModel, setModel] = useState(() => {
-    const storedModel = safeStorage.getItem("harnold.model") ?? "";
-    return storedModel === "default" ? "" : storedModel;
-  });
+  // "" = inherited model.
+  const [pickedModel, setPickedModel] = useState(props.sessionModel);
+  const setModel = (nextModel: string) => {
+    setPickedModel(nextModel);
+    props.onModelChange(nextModel);
+  };
   // A model of another provider (switched in the meantime) falls back to the inherited one.
   const availableModels = useAgentModels();
   const model = availableModels.some((availableModel) => availableModel.value === pickedModel) ? pickedModel : "";
@@ -129,6 +139,17 @@ export function Composer(props: ComposerProps) {
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
   const [commandMenuDismissed, setCommandMenuDismissed] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  // Another conversation: park this one's draft, load the other's draft and model.
+  const [shownDraftKey, setShownDraftKey] = useState(props.draftKey);
+  if (shownDraftKey !== props.draftKey) {
+    if (composerText) drafts.set(shownDraftKey, composerText);
+    else drafts.delete(shownDraftKey);
+    for (const pending of pendingAttachments) if (pending.previewUrl) URL.revokeObjectURL(pending.previewUrl);
+    setShownDraftKey(props.draftKey);
+    setComposerText(drafts.get(props.draftKey) ?? "");
+    setPendingAttachments([]);
+    setPickedModel(props.sessionModel);
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [caretPosition, setCaretPosition] = useState(0);
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
@@ -216,7 +237,6 @@ export function Composer(props: ComposerProps) {
   };
 
   useEffect(() => safeStorage.setItem("harnold.permissionMode", permissionMode), [permissionMode]);
-  useEffect(() => safeStorage.setItem("harnold.model", model), [model]);
 
   const insertText = (text: string) => {
     setComposerText((previous) => (previous && !/\s$/.test(previous) ? previous + " " : previous) + text);

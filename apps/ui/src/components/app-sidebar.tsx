@@ -1,4 +1,4 @@
-import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, Mail, MessageSquarePlus, MessagesSquare, Moon, Palette, Play, Plus, Settings, Sun, Users } from "lucide-react";
+import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, Mail, MessageSquarePlus, MessagesSquare, Moon, Palette, Play, Plus, Search, Settings, Sun, Users } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session, Task } from "@/types";
@@ -12,6 +12,7 @@ import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { HarnoldLogo } from "@/components/harnold-logo";
 import { ActionContextMenu, ActionMenuButton, type MenuAction } from "@/components/action-menu";
 import { t } from "@/lib/i18n";
+import { formatCombo, useShortcutBindings } from "@/lib/shortcuts";
 
 type AppSidebarProps = {
   projects: Project[];
@@ -32,6 +33,7 @@ type AppSidebarProps = {
   onRunTask: (taskId: string) => void;
   onNewProject: () => void;
   onNewQuickChat: () => void;
+  onOpenSearch: () => void;
   activeScreen: ScreenName;
   onOpenScreen: (screen: ScreenName) => void;
   darkMode: boolean;
@@ -45,7 +47,7 @@ type AppSidebarProps = {
   onActiveEnvironmentChange: (environmentId: string | null) => void;
 };
 
-const featureScreens: { screen: ScreenName; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+export const featureScreens: { screen: ScreenName; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { screen: "today", label: t("Heute"), icon: Inbox },
   { screen: "tasks", label: t("Tasks"), icon: CalendarClock },
   { screen: "channels", label: t("Channels"), icon: MessagesSquare },
@@ -239,6 +241,7 @@ function SectionHeader(props: { label: string; actionLabel: string; onAction: ()
 }
 
 export function AppSidebar(props: AppSidebarProps) {
+  const shortcutBindings = useShortcutBindings();
   const activeEnvironment = props.environments.find((environment) => environment.id === props.activeEnvironmentId) ?? null;
   const quickChatProject = props.projects.find((project) => project.kind === "quick") ?? null;
   const regularProjects = props.projects.filter((project) => project.kind !== "quick");
@@ -257,6 +260,11 @@ export function AppSidebar(props: AppSidebarProps) {
         >
           <MessageSquarePlus className="size-4" />
           {t("Quick Chat")}
+        </button>
+        <button className={cn(rowClassName, "mb-1 text-muted-foreground")} onClick={props.onOpenSearch}>
+          <Search className="size-4" />
+          {t("Suchen")}
+          <kbd className="ml-auto font-sans text-[11.5px]">{formatCombo(shortcutBindings.search)}</kbd>
         </button>
         {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
           <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>

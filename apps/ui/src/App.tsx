@@ -7,12 +7,13 @@ import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar, featureScreens } from "@/components/app-sidebar";
+import { CommandPalette, type PaletteCommand } from "@/components/command-palette";
 import { ChatPane } from "@/components/chat/chat-pane";
 import { WorkspacePane } from "@/components/workspace/workspace-pane";
 import { NewProjectDialog } from "@/components/new-project-dialog";
 import type { SessionStatus } from "@/components/status-dot";
-import { routePath, useHashRoute } from "@/hooks/use-hash-route";
+import { routePath, useHashRoute, type ScreenName } from "@/hooks/use-hash-route";
 import { SettingsScreen, settingsSectionNames, type SettingsSection } from "@/screens/settings-screen";
 import { DesignSystemsScreen } from "@/screens/design-systems-screen";
 import { EnvironmentsScreen } from "@/screens/environments-screen";
@@ -35,14 +36,16 @@ import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { TextPromptDialogHost, askForText } from "@/components/text-prompt-dialog";
 import type { MenuAction } from "@/components/action-menu";
-import { Copy, FolderOpen, FolderInput, Layers, MessageSquarePlus, Pencil, Smile, Trash2, Users } from "lucide-react";
+import { Copy, FolderOpen, FolderInput, FolderPlus, Layers, MessageSquarePlus, Keyboard, Moon, PanelRight, Pencil, Settings, Smile, Sun, Trash2, Users, Zap } from "lucide-react";
 import { TeamScreen } from "@/screens/team-screen";
-import { conversationMembers, latestVersionId } from "@/lib/session-versions";
+import { conversationMembers, conversationRootId, latestVersionId } from "@/lib/session-versions";
 import { systemSpeechAvailable } from "@/lib/system-speech";
 import { t } from "@/lib/i18n";
 import { AppVersionBadge } from "@/components/app-version-badge";
 import { Toaster } from "@/components/toaster";
 import { toast } from "@/lib/toast";
+import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
+import { formatCombo, useShortcutBindings, type ShortcutId } from "@/lib/shortcuts";
 
 const panelAnimationMs = 260;
 const activeEnvironmentStorageKey = "harnold.activeEnvironment";
@@ -89,6 +92,7 @@ export function App() {
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsView | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const [panelsAnimating, setPanelsAnimating] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const workspacePanelRef = usePanelRef();
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "harnold-shell-v2", storage: safeStorage });
@@ -640,6 +644,68 @@ export function App() {
     navigate("/");
   };
 
+  const shortcutBindings = useShortcutBindings();
+  const shortcutHint = (shortcutId: ShortcutId) => formatCombo(shortcutBindings[shortcutId]) || undefined;
+
+  const startSessionInActiveProject = () => {
+    if (!activeProject || activeProject.kind === "quick") return void createQuickChat();
+    navigate("/");
+    void createSession(activeProject.id);
+  };
+  const toggleTheme = () => setThemePreference(resolvedTheme === "dark" ? "light" : "dark");
+  const toggleWorkspace = () => {
+    if (route.screen !== "workspace") return navigate("/");
+    setWorkspaceVisibility(!workspaceOpenRef.current);
+  };
+  /** Jumps to the previous/next conversation of the active project (sidebar order). */
+  const stepSession = (step: 1 | -1) => {
+    if (!activeProjectId) return;
+    const projectSessions = sessionsByProjectId[activeProjectId] ?? [];
+    const conversations = projectSessions.filter((session) => !session.forkOriginSessionId);
+    if (conversations.length === 0) return;
+    const currentRootId = activeSessionId ? conversationRootId(activeSessionId, projectSessions) : null;
+    const currentIndex = conversations.findIndex((session) => session.id === currentRootId);
+    const nextIndex = currentIndex === -1 ? (step === 1 ? 0 : conversations.length - 1) : (currentIndex + step + conversations.length) % conversations.length;
+    navigate("/");
+    setActiveSessionId(latestVersionId(conversations[nextIndex].id, projectSessions));
+  };
+
+  const screenShortcutIds: Partial<Record<ShortcutId, ScreenName>> = {
+    goToday: "today", goTasks: "tasks", goChannels: "channels", goMail: "mail", goMemory: "memory", goFiles: "files", goIntegrations: "integrations", goDesign: "design", goEnvironments: "environments", goTeam: "team",
+  };
+
+  useGlobalShortcuts({
+    search: () => setCommandPaletteOpen((previous) => !previous),
+    newSession: startSessionInActiveProject,
+    newQuickChat: () => void createQuickChat(),
+    newProject: () => setNewProjectDialogOpen(true),
+    toggleWorkspace,
+    toggleTheme,
+    interrupt: () => activeSessionId && runningSessionIds.has(activeSessionId) && void api.interrupt(activeSessionId).catch(reportError),
+    previousSession: () => stepSession(-1),
+    nextSession: () => stepSession(1),
+    openSettings: () => navigate(routePath("settings")),
+    openShortcuts: () => navigate(routePath("settings", "shortcuts")),
+    goChat: () => navigate("/"),
+    ...Object.fromEntries(Object.entries(screenShortcutIds).map(([shortcutId, screen]) => [shortcutId, () => navigate(routePath(screen))])),
+  });
+
+  const paletteCommands: PaletteCommand[] = [
+    { id: "action:quick-chat", group: t("Aktionen"), label: t("Neuer Quick Chat"), icon: Zap, keywords: "chat neu new", shortcut: shortcutHint("newQuickChat"), run: () => void createQuickChat() },
+    ...(activeProject && activeProject.kind !== "quick"
+      ? [{ id: "action:new-session", group: t("Aktionen"), label: t("Neue Session in {0}", activeProject.name), icon: MessageSquarePlus, keywords: "chat neu new", shortcut: shortcutHint("newSession"), run: startSessionInActiveProject }]
+      : []),
+    { id: "action:new-project", group: t("Aktionen"), label: t("Neues Projekt"), icon: FolderPlus, keywords: "new project anlegen", shortcut: shortcutHint("newProject"), run: () => setNewProjectDialogOpen(true) },
+    { id: "action:theme", group: t("Aktionen"), label: resolvedTheme === "dark" ? t("Helles Design") : t("Dunkles Design"), icon: resolvedTheme === "dark" ? Sun : Moon, keywords: "theme dark light hell dunkel", shortcut: shortcutHint("toggleTheme"), run: toggleTheme },
+    { id: "action:workspace", group: t("Aktionen"), label: t("Workspace ein-/ausblenden"), icon: PanelRight, keywords: "canvas workspace panel", shortcut: shortcutHint("toggleWorkspace"), run: toggleWorkspace },
+    { id: "action:shortcuts", group: t("Aktionen"), label: t("Tastenkürzel anzeigen"), icon: Keyboard, keywords: "shortcuts keyboard hilfe help", shortcut: shortcutHint("openShortcuts"), run: () => navigate(routePath("settings", "shortcuts")) },
+    { id: "action:settings", group: t("Aktionen"), label: t("Einstellungen"), icon: Settings, keywords: "settings", shortcut: shortcutHint("openSettings"), run: () => navigate(routePath("settings")) },
+    ...featureScreens.map((feature) => {
+      const shortcutId = (Object.keys(screenShortcutIds) as ShortcutId[]).find((candidate) => screenShortcutIds[candidate] === feature.screen);
+      return { id: `screen:${feature.screen}`, group: t("Navigation"), label: feature.label, icon: feature.icon, shortcut: shortcutId && shortcutHint(shortcutId), run: () => navigate(routePath(feature.screen)) };
+    }),
+  ];
+
   const renderFeatureScreen = () => {
     switch (route.screen) {
       case "today":
@@ -857,6 +923,7 @@ export function App() {
               onRunTask={(taskId) => void api.runTask(taskId).catch(reportError)}
               onNewProject={() => setNewProjectDialogOpen(true)}
               onNewQuickChat={() => void createQuickChat()}
+              onOpenSearch={() => setCommandPaletteOpen(true)}
               activeScreen={route.screen}
               onOpenScreen={(screen) => navigate(screen === "workspace" ? "/" : routePath(screen))}
               darkMode={resolvedTheme === "dark"}
@@ -988,6 +1055,40 @@ export function App() {
           onDismiss={() => setOnboardingVisible(false)}
         />
       )}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        commands={paletteCommands}
+        projects={projects}
+        sessionsByProjectId={sessionsByProjectId}
+        tasks={tasks}
+        channels={channels}
+        inboxes={inboxes}
+        teamAgents={teamAgents}
+        environments={environments}
+        activeProjectId={activeProjectId}
+        onOpenProject={(projectId) => {
+          setActiveProjectId(projectId);
+          setActiveSessionId(null);
+          setExpandedProjectIds((previous) => new Set(previous).add(projectId));
+          navigate("/");
+        }}
+        onOpenSession={(projectId, sessionId) => {
+          setActiveProjectId(projectId);
+          setActiveSessionId(latestVersionId(sessionId, sessionsByProjectId[projectId] ?? []));
+          setExpandedProjectIds((previous) => new Set(previous).add(projectId));
+          navigate("/");
+        }}
+        onOpenTask={(taskId) => navigate(routePath("tasks", taskId))}
+        onOpenChannel={(channelId) => navigate(routePath("channels", channelId))}
+        onOpenInbox={(inboxId) => navigate(routePath("mail", inboxId))}
+        onOpenTeamAgent={(agentId) => navigate(routePath("team", agentId))}
+        onOpenEnvironment={(environmentId) => navigate(routePath("environments", environmentId))}
+        onOpenMemoryNote={(hit) => {
+          if (hit.projectId) setMemoryProjectId(hit.projectId);
+          navigate(`${routePath("memory", hit.scope)}/${hit.path.split("/").map(encodeURIComponent).join("/")}`);
+        }}
+      />
       <ConfirmDialogHost />
       <TextPromptDialogHost />
       <ProjectIconDialog

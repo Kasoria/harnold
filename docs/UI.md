@@ -29,6 +29,10 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - Feature-Navigation: Heute, Tasks, Channels, Memory, Dateien, Integrationen, Design Systems, Umgebungen; unten Einstellungen. Über den Projekten der Umgebungs-Umschalter (nur wenn Umgebungen existieren). Aktiver Screen hervorgehoben.
 - Leicht abgesetzter Hintergrund (Mac: transluzent).
 
+- **Command Center (⌘K / Strg+K):** globale Suche und Befehle in einem Dialog. Leer: Aktionen + Navigation; beim Tippen zusätzlich Projekte, Sessions, Tasks, Channels, Postfächer, Team, Umgebungen und Memory (Volltext über den Core). ↑/↓ wählt, ↵ öffnet, Esc schließt.
+
+- **Tastenkürzel:** zentrale Registry (`lib/shortcuts.ts`), Standardwerte + eigene Überschreibungen (localStorage). Einstellungen › Tastenkürzel listet alle, Klick auf ein Kürzel → neue Tasten drücken (Esc bricht ab, ⌫ entfernt, Doppelbelegung wird abgelehnt, Zurücksetzen je Zeile/alle). ⌘ = Strg außerhalb macOS. Kürzel stehen auch im Command Center. Ohne ⌘/Strg/Alt feuert kein Kürzel beim Tippen in Feldern.
+
 ### Feature-Screens
 - Jede Oberkategorie (Tasks, Channels, Memory, Integrationen, Design Systems, Umgebungen, Einstellungen) ist eine **eigene Seite** im Hauptbereich (Hash-Route, z. B. `#/memory/…`), keine Sheet/Modal.
 - Aufbau: Kopf (Titel, Aktionen, ggf. Tabs) + Master-Detail (Liste links, Detail/Editor rechts) bzw. Abschnitts-Navigation bei Einstellungen.

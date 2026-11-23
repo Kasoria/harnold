@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { AgentBackendsView, AgentRoleSettings, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api } from "@/api";
-import { Brain, Image as ImageIcon, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Brain, Image as ImageIcon, Keyboard, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { AgentConnection } from "@/components/agent-connection";
 import { cn } from "@/lib/utils";
 import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
 import { QuickChatAutoDeleteSetting } from "./settings/quick-chat-settings";
+import { ShortcutsSection } from "./settings/shortcuts-section";
 import { AgentRolesSection } from "./settings/agent-roles-section";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,8 +19,8 @@ import { AppVersionSetting } from "@/screens/settings/app-version-setting";
 import { currentLanguage, languages, setLanguage, t, type Language } from "@/lib/i18n";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
 
-export type SettingsSection = "claude" | "general" | "voice" | "images" | "memory";
-export const settingsSectionNames: SettingsSection[] = ["claude", "general", "voice", "images", "memory"];
+export type SettingsSection = "claude" | "general" | "voice" | "images" | "memory" | "shortcuts";
+export const settingsSectionNames: SettingsSection[] = ["claude", "general", "shortcuts", "voice", "images", "memory"];
 
 type SettingsScreenProps = {
   section: SettingsSection;
@@ -45,6 +46,7 @@ type SettingsScreenProps = {
 const settingsSections: { value: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { value: "claude", label: t("Agent"), icon: Sparkles },
   { value: "general", label: t("Allgemein"), icon: SlidersHorizontal },
+  { value: "shortcuts", label: t("Tastenkürzel"), icon: Keyboard },
   { value: "voice", label: t("Voice"), icon: Mic },
   { value: "images", label: t("Bilder"), icon: ImageIcon },
   { value: "memory", label: t("Memory"), icon: Brain },
@@ -279,6 +281,8 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <Button size="sm" onClick={saveWorkspaceConnection}>{t("Verbinden")}</Button>
             </div>
           </div>
+            ) : activeSection.value === "shortcuts" ? (
+              <ShortcutsSection />
             ) : activeSection.value === "images" ? (
           <div key="images" className="grid animate-in gap-4 fade-in duration-200">
             <FormField label={t("Anbieter")}>

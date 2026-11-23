@@ -9,5 +9,8 @@
   <true/>
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
+  <!-- Mit Hardened Runtime (signierte App) liefert macOS dem WebView das Mikrofon nur mit diesem Recht – auch wenn der Nutzer die Freigabe erteilt hat (sonst "not-allowed"). -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>

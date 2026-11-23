@@ -3,7 +3,7 @@ import { currentLanguage, t } from "@/lib/i18n";
 
 export function FormField(props: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1.5">
+    <div className="grid min-w-0 gap-1.5">
       <Label htmlFor={props.htmlFor} className="text-[12px] font-medium">
         {props.label}
       </Label>

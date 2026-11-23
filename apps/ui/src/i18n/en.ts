@@ -817,4 +817,6 @@ export const englishTexts: Record<string, string> = {
   "Nie von": "Never from",
   "Wird übersprungen, ohne den Agenten zu starten.": "Skipped without starting the agent.",
   "Leer = INBOX.": "Empty = INBOX.",
+  "wird benötigt": "is needed",
+  "Wird in der Umgebung „{0}“ gespeichert – weder im Chatverlauf noch bei der KI.": "Saved in the environment “{0}” – neither in the chat history nor shared with the AI.",
 };

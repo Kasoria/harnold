@@ -126,4 +126,5 @@ export const englishTexts: Record<string, string> = {
   "Nicht erlaubt: dieses Postfach ist auf „{0}“ gestellt (nötig: {1}).": "Not allowed: this mailbox is set to “{0}” (needs {1}).",
   "Entwurf nicht gefunden oder nicht mehr offen": "Draft not found or no longer open",
   "Entwurf unvollständig": "Draft incomplete",
+  "Projekt gehört zu keiner Umgebung – zuerst eine Umgebung zuweisen (project_set_environment) oder anlegen.": "Project doesn't belong to an environment – assign or create one first (project_set_environment).",
 };

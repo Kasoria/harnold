@@ -8,6 +8,7 @@ PRD: `docs/PRD.md` · UI-Richtung: `docs/UI.md` (verbindlich für alle Screens)
 
 - **Kürze:** Antworten und Docs (PRD, Specs etc.) so kurz wie möglich. Zusatzinfos/Kontext nur, wenn für das Verständnis nötig. So viel wie nötig, so wenig wie möglich.
 - Sprache: Deutsch.
+- **Alle Sprachen mitdenken:** Jeder neue/geänderte Nutzertext in `t("…")` bekommt sofort die englische Übersetzung (UI: `apps/ui/src/i18n/en.ts`, Core: `packages/core/src/i18n-en.ts`). Bei weiteren Sprachen ebenso.
 
 ## Releases (Desktop-App, Auto-Update)
 

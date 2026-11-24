@@ -165,10 +165,23 @@ export function SettingsScreen(props: SettingsScreenProps) {
     setSecretDrafts({});
   }, [props.voiceSettings]);
 
-  const saveWorkspaceConnection = () => {
-    if (coreUrl.trim()) safeStorage.setItem("harnold.coreUrl", coreUrl.trim().replace(/\/+$/, ""));
-    else safeStorage.removeItem("harnold.coreUrl");
-    if (accessToken.trim()) safeStorage.setItem("harnold.token", accessToken.trim());
+  const saveWorkspaceConnection = async () => {
+    const trimmedToken = accessToken.trim();
+    let address = coreUrl.trim().replace(/\/+$/, "");
+    // A bare host name would otherwise be treated as a path on this Core.
+    if (address && !/^https?:\/\//i.test(address)) address = `https://${address}`;
+    if (address) {
+      // Check first, so a wrong address or token shows a clear message instead of a broken app after the reload.
+      try {
+        const response = await fetch(`${address}/api/auth/check`, { headers: trimmedToken ? { authorization: `Bearer ${trimmedToken}` } : {} });
+        if (response.status === 401) return props.onError(new Error(t("Das Zugriffstoken stimmt nicht.")));
+        if (!response.ok) return props.onError(new Error(t("Der Server antwortet mit Fehler {0}. Läuft dort Harnold in der aktuellen Version?", response.status)));
+      } catch {
+        return props.onError(new Error(t("Keine Verbindung zu {0}. Adresse, Zertifikat und Netzwerk prüfen; der Server braucht die aktuelle Harnold-Version.", address)));
+      }
+      safeStorage.setItem("harnold.coreUrl", address);
+    } else safeStorage.removeItem("harnold.coreUrl");
+    if (trimmedToken) safeStorage.setItem("harnold.token", trimmedToken);
     else safeStorage.removeItem("harnold.token");
     window.location.reload();
   };
@@ -278,7 +291,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <Input type="password" placeholder={t("Zugriffstoken")} value={accessToken} onChange={(event) => setAccessToken(event.target.value)} />
             </div>
             <div>
-              <Button size="sm" onClick={saveWorkspaceConnection}>{t("Verbinden")}</Button>
+              <Button size="sm" onClick={() => void saveWorkspaceConnection()}>{t("Verbinden")}</Button>
             </div>
           </div>
             ) : activeSection.value === "shortcuts" ? (

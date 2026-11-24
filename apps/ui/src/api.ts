@@ -1,4 +1,4 @@
-import { currentLanguage } from "@/lib/i18n";
+import { currentLanguage, t } from "@/lib/i18n";
 import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
@@ -14,15 +14,21 @@ function localStorageSafeGet(key: string): string | null {
 }
 
 async function request<ResponseBody>(method: string, path: string, body?: unknown): Promise<ResponseBody> {
-  const response = await fetch(coreBaseUrl + path, {
-    method,
-    headers: {
-      ...(body ? { "content-type": "application/json" } : {}),
-      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-      "x-harnold-language": currentLanguage,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(coreBaseUrl + path, {
+      method,
+      headers: {
+        ...(body ? { "content-type": "application/json" } : {}),
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+        "x-harnold-language": currentLanguage,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (networkError) {
+    // The browser only says "Load failed" / "Failed to fetch"; name the server instead.
+    throw new Error(coreBaseUrl ? t("Keine Verbindung zu {0}", coreBaseUrl) : String(networkError instanceof Error ? networkError.message : networkError));
+  }
   const responseBody = await response.json();
   if (!response.ok) throw new Error(responseBody.error ?? response.statusText);
   return responseBody as ResponseBody;

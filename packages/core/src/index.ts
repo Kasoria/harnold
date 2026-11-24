@@ -3,6 +3,7 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { z } from "zod";
@@ -85,12 +86,39 @@ app.use("*", (context, next) => runWithLanguage(parseLanguage(context.req.header
 const isLoopbackHostname = (hostname: string) => hostname === "::1" || hostname === "localhost" || /^127\./.test(hostname);
 const boundToLoopbackOnly = isLoopbackHostname(config.host.toLowerCase());
 
+const originHostname = (origin: string): string | null => {
+  try {
+    return new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Server mode (HARNOLD_TOKEN set): the desktop app loads its UI from its own local Core (a loopback origin) and talks to this
+ * remote Core, so those requests are cross-origin by design. Safe because every request needs the token explicitly
+ * (Authorization header / ?token=, never cookies), and only loopback origins are let through. Without a token the strict
+ * guard below applies.
+ */
+const isDesktopAppOrigin = (origin: string): boolean => {
+  if (!config.accessToken) return false;
+  const hostname = originHostname(origin);
+  return hostname !== null && isLoopbackHostname(hostname);
+};
+
+app.use("*", cors({
+  origin: (origin) => (isDesktopAppOrigin(origin) ? origin : null),
+  allowHeaders: ["authorization", "content-type", "x-harnold-language"],
+  allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  maxAge: 600,
+}));
+
 function isTrustedBrowserRequest(context: { req: { header: (name: string) => string | undefined } }): boolean {
+  const origin = context.req.header("origin");
   const fetchSite = context.req.header("sec-fetch-site");
-  if (fetchSite === "cross-site") return false;
+  if (fetchSite === "cross-site") return Boolean(config.accessToken) && (!origin || isDesktopAppOrigin(origin));
   const hostHeader = (context.req.header("host") ?? "").toLowerCase().replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
   if (boundToLoopbackOnly && hostHeader && !isLoopbackHostname(hostHeader)) return false;
-  const origin = context.req.header("origin");
   if (!origin) return true; // not sent by browsers for same-origin GETs and by non-browser clients
   let originUrl: URL;
   try {

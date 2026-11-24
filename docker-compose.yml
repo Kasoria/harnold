@@ -1,6 +1,11 @@
 # Harnold im Server-Betrieb. Start: cp .env.example .env, Token setzen, dann `docker compose up -d --build`.
 services:
   harnold:
+    # Fertiges Image aus der GitHub Container Registry. Mit `--build` wird stattdessen lokal gebaut (z. B. für HARNOLD_APT_PACKAGES).
+    image: ghcr.io/kasoria/harnold:${HARNOLD_VERSION:-latest}
+    pull_policy: missing
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     build:
       context: .
       args:
@@ -17,6 +22,19 @@ services:
     # Nur lokal gebunden; öffentlich erreichbar über Caddy (Profil "proxy") oder Tailscale/Tunnel.
     ports:
       - "127.0.0.1:${HARNOLD_PORT:-4317}:4317"
+
+  # Optional: `docker compose --profile autoupdate up -d` zieht neue Versionen automatisch (nachts) und startet Harnold neu.
+  # Laufende Agent-Sitzungen werden dabei unterbrochen. Dieser Container bekommt den Docker-Zugriff, nicht Harnold.
+  watchtower:
+    profiles: ["autoupdate"]
+    image: ghcr.io/nicholas-fedor/watchtower:latest
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: ${HARNOLD_UPDATE_SCHEDULE:-0 0 4 * * *}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   caddy:
     profiles: ["proxy"]

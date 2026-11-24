@@ -7,6 +7,7 @@ import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { z } from "zod";
 import { config } from "./config.ts";
+import { latestRelease } from "./update-check.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { agentRuntime } from "./agent.ts";
@@ -122,6 +123,9 @@ app.use("*", async (context, next) => {
 
 /** Token check for the login screen: passes the auth middleware above only with a valid token (or none required). */
 app.get("/api/auth/check", (context) => context.json({ ok: true, tokenRequired: Boolean(config.accessToken) }));
+
+/** Server mode: tells the UI whether a newer release exists (the update itself runs on the server: docker compose pull). */
+app.get("/api/update-check", async (context) => context.json({ deployment: process.env.HARNOLD_DEPLOYMENT ?? "local", latest: await latestRelease() }));
 
 // Errors: the full error goes to the log; the client gets the message with filesystem paths
 // removed (a stack trace or an absolute path helps an attacker, not the user).

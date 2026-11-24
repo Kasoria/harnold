@@ -15,6 +15,7 @@ COPY apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/tauri.conf.js
 RUN pnpm --filter @harnold/ui build
 
 FROM node:26-bookworm-slim
+LABEL org.opencontainers.image.source="https://github.com/Kasoria/harnold"
 # Zusätzliche Systempakete (.env: HARNOLD_APT_PACKAGES), werden beim Build ins Image installiert.
 ARG HARNOLD_APT_PACKAGES=""
 # Werkzeugkasten wie auf einem normalen Linux-Server: Compiler, Python, sudo für apt zur Laufzeit.
@@ -47,6 +48,7 @@ ENV HARNOLD_HOST=0.0.0.0 \
     HARNOLD_DATA_DIR=/data \
     HARNOLD_UI_DIR=/app/apps/ui/dist \
     NODE_ENV=production \
+    HARNOLD_DEPLOYMENT=docker \
     NPM_CONFIG_PREFIX=/home/harnold/.npm-global \
     PLAYWRIGHT_BROWSERS_PATH=/home/harnold/.cache/ms-playwright \
     PATH=/home/harnold/.npm-global/bin:/home/harnold/.local/bin:$PATH

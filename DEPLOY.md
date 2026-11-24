@@ -18,6 +18,10 @@ DNS: A-Record `harnold.deinedomain.de` → Server-IP. In der `.env` `HARNOLD_DOM
 `COMPOSE_PROFILES=proxy` in die `.env` und `docker compose up -d` (Ports 80/443 freigeben). Caddy holt das Zertifikat selbst. Der Installer erledigt das, wenn du eine Domain angibst.
 Ohne öffentliche Adresse: Tailscale oder Cloudflare Tunnel davorsetzen.
 
+## Lokalen Workspace umziehen
+
+In der Desktop-App: Einstellungen → Allgemein → „Auf Server umziehen“. Server-Adresse und Token eintragen, „Zum Server übertragen“ klicken. Übertragen werden Projekte (auch Ordner außerhalb von `~/.harnold`, ohne `node_modules`), Chats, Memory, Einstellungen, Konten und Schlüssel. Der Server startet neu und ersetzt seine Daten (Backup unter `.import/backup-…` im Daten-Volume). Claude-/Codex-Anmeldungen und Agent-Sitzungsverläufe der Agent-Programme selbst werden nicht mitgenommen; dort neu anmelden. Hinter eigenem Reverse Proxy darf das Upload-Limit nicht klein sein (nginx: `client_max_body_size 0;`).
+
 ## Updates
 - Eine neue Version erscheint in der UI unten und unter Einstellungen als „Update auf x“. Ein Klick auf **Auf x aktualisieren** holt das neue Image und startet Harnold neu (laufende Sitzungen werden unterbrochen). Die Seite lädt danach von selbst neu.
 - Das übernimmt der mitlaufende Dienst `watchtower` (ein Container, kein Cronjob). Nur er hat Docker-Zugriff, Harnold nicht.

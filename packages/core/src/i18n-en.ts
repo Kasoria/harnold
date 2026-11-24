@@ -1,5 +1,12 @@
 /** English texts of the Core, keyed by the German source text. */
 export const englishTexts: Record<string, string> = {
+  "Server-Adresse fehlt": "Server address missing",
+  "Kein Archiv übertragen": "No archive received",
+  "Ungültiges Archiv": "Invalid archive",
+  "Nur auf einem Docker-Server möglich": "Only possible on a Docker server",
+  "Keine Verbindung zu {0}": "Cannot connect to {0}",
+  "Das Zugriffstoken stimmt nicht.": "The access token is wrong.",
+  "Der Server antwortet mit Fehler {0}. Läuft dort Harnold in der aktuellen Version?": "The server responded with error {0}. Is Harnold running there in the current version?",
   "{0} kann nicht von Harnold geladen werden": "{0} can't be downloaded by Harnold",
   "Codex ist nicht installiert – Einstellungen → Agent": "Codex is not installed – Settings → Agent",
   "Keine Anmelde-URL von Codex erhalten": "No sign-in URL received from Codex",

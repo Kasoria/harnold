@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentBackendsView, AgentRoleSettings, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
-import { api } from "@/api";
+import { api, coreBaseUrl } from "@/api";
 import { Brain, Image as ImageIcon, Keyboard, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { AgentConnection } from "@/components/agent-connection";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
 import { QuickChatAutoDeleteSetting } from "./settings/quick-chat-settings";
 import { ShortcutsSection } from "./settings/shortcuts-section";
+import { MigrateToServerSetting } from "./settings/migrate-to-server-setting";
 import { AgentRolesSection } from "./settings/agent-roles-section";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -293,6 +294,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
             <div>
               <Button size="sm" onClick={() => void saveWorkspaceConnection()}>{t("Verbinden")}</Button>
             </div>
+            {!coreBaseUrl && <MigrateToServerSetting onError={props.onError} />}
           </div>
             ) : activeSection.value === "shortcuts" ? (
               <ShortcutsSection />

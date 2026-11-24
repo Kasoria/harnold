@@ -8,6 +8,7 @@ import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { z } from "zod";
 import { config } from "./config.ts";
+import { pushWorkspaceToServer, receiveWorkspaceArchive } from "./migration.ts";
 import { imagePublished, latestRelease, requestUpdateInstall } from "./update-check.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
@@ -168,6 +169,21 @@ app.post("/api/update-install", async (context) => {
   } catch (installError) {
     return context.json({ error: installError instanceof Error ? installError.message : String(installError) }, 502);
   }
+});
+
+/** Local core: sends this whole workspace (projects, chats, memory, settings, secrets) to a server core. */
+app.post("/api/migration/push", async (context) => {
+  const { serverUrl, token } = z.object({ serverUrl: z.string().min(1), token: z.string().default("") }).parse(await context.req.json());
+  return context.json({ ok: true, ...(await pushWorkspaceToServer(serverUrl, token)) });
+});
+
+/** Server core: takes a workspace archive and restarts to swap it in (the old data is kept as a backup). */
+app.post("/api/migration/import", async (context) => {
+  // Only where a supervisor restarts the core (Docker server); the desktop app's core would just end.
+  if (process.env.HARNOLD_DEPLOYMENT !== "docker") return context.json({ error: t("Nur auf einem Docker-Server möglich") }, 400);
+  await receiveWorkspaceArchive(context.req.raw.body);
+  setTimeout(() => process.exit(0), 500); // Docker (restart: unless-stopped) starts the core again; it applies the import first
+  return context.json({ ok: true });
 });
 
 // Errors: the full error goes to the log; the client gets the message with filesystem paths

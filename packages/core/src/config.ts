@@ -1,12 +1,15 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import { applyPendingImport } from "./import-apply.ts";
 
 const dataDirectory = process.env.HARNOLD_DATA_DIR ?? path.join(os.homedir(), ".harnold");
 const projectsDirectory = process.env.HARNOLD_PROJECTS_DIR ?? path.join(dataDirectory, "projects");
 
 fs.mkdirSync(dataDirectory, { recursive: true });
 fs.mkdirSync(projectsDirectory, { recursive: true });
+// A workspace uploaded earlier replaces the data now, before the database is opened.
+applyPendingImport(dataDirectory, projectsDirectory);
 
 export const config = {
   dataDirectory,

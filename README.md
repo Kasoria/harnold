@@ -19,6 +19,21 @@ pnpm dev:ui     # UI auf :5317
 
 Server-Modus: `pnpm --filter @harnold/ui build`, dann `pnpm --filter @harnold/core start` (liefert UI mit aus).
 
+## Installation auf einem Server (Docker)
+
+Harnold läuft rund um die Uhr auf einem eigenen Server. Voraussetzung: Docker mit Compose-Plugin. Ein Befehl richtet alles ein:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Kasoria/harnold/main/install.sh | sh
+```
+
+Das Skript legt `~/harnold` mit `docker-compose.yml` und `.env` (zufälliges Token) an, fragt optional nach einer Domain (HTTPS über Caddy), startet Harnold samt Update-Dienst und zeigt Adresse und Token. Danach unter Einstellungen → Agent bei Claude (oder Codex) anmelden. Erneut ausführen ist gefahrlos.
+
+- **Updates:** Neue Versionen erscheinen in Harnold als Knopf („Auf x aktualisieren“). Das Image kommt aus `ghcr.io/kasoria/harnold` und wird bei jedem Release automatisch gebaut. Vollautomatisch (nachts): `HARNOLD_AUTO_UPDATE=true` in der `.env`. Der Knopf funktioniert nur mit der Compose-Datei des Installers, weil der Update-Dienst (`watchtower`) darin steht.
+- **Desktop-App verbinden:** Einstellungen → Workspace: Adresse des Servers und Token eintragen.
+- **Eigene Pakete:** Der Agent hat im Container `sudo`; Installationen im Home (pip, npm -g, Playwright) bleiben bei Updates erhalten. Systempakete über `HARNOLD_APT_PACKAGES` (siehe `DEPLOY.md`).
+- Weitere Details (Domain, nginx statt Caddy, Backups): `DEPLOY.md`.
+
 ## Desktop-App (macOS)
 
 ```bash

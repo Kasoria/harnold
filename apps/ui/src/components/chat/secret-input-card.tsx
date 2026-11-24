@@ -6,7 +6,7 @@ import { t } from "@/lib/i18n";
 
 export const isSecretInputRequest = (toolName: string) => toolName === "SecretInput";
 
-type SecretInputRequest = { key?: string; description?: string; secret?: boolean; environmentName?: string };
+type SecretInputRequest = { key?: string; description?: string; secret?: boolean; scope?: "project" | "environment"; file?: string; environmentName?: string };
 
 /**
  * The agent asks for a secret (API key etc.). The value goes straight to Harnold's core and into the
@@ -36,7 +36,9 @@ export function SecretInputCard(props: { input: unknown; onSubmit: (value: strin
         onKeyDown={(keyEvent) => keyEvent.key === "Enter" && submit()}
       />
       <p className="mt-1.5 text-[12px] text-muted-foreground">
-        {t("Wird in der Umgebung „{0}“ gespeichert – weder im Chatverlauf noch bei der KI.", request.environmentName ?? "")}
+        {request.scope === "environment"
+          ? t("Wird in der Umgebung „{0}“ gespeichert – weder im Chatverlauf noch bei der KI.", request.environmentName ?? "")
+          : t("Wird in „{0}“ im Projektordner gespeichert – nicht im Chatverlauf.", request.file ?? ".env")}
       </p>
       <div className="mt-2 flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={props.onCancel}>

@@ -839,6 +839,7 @@ export const englishTexts: Record<string, string> = {
   "Wird übersprungen, ohne den Agenten zu starten.": "Skipped without starting the agent.",
   "Leer = INBOX.": "Empty = INBOX.",
   "wird benötigt": "is needed",
+  "Wird in „{0}“ im Projektordner gespeichert – nicht im Chatverlauf.": "Saved in “{0}” in the project folder – not in the chat history.",
   "Wird in der Umgebung „{0}“ gespeichert – weder im Chatverlauf noch bei der KI.": "Saved in the environment “{0}” – neither in the chat history nor shared with the AI.",
   "Suchen & Befehle": "Search & commands",
   "Suchen oder Befehl ausführen …": "Search or run a command …",

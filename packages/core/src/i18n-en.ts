@@ -82,6 +82,8 @@ export const englishTexts: Record<string, string> = {
   "Projekt fehlt": "Project missing",
   "Projekt gehört zu keiner Umgebung": "Project belongs to no environment",
   "Projekt nicht gefunden": "Project not found",
+  "Datei muss im Projektordner liegen": "File must be inside the project folder",
+  "Ungültiger Dateiname": "Invalid file name",
   "Projekt {0} nicht gefunden": "Project {0} not found",
   "Projekte:\n{0}\n\nWechseln: /projekt <Name oder Nr.> · Zurück: /allgemein": "Projects:\n{0}\n\nSwitch: /projekt <name or no.> · Back: /allgemein",
   "Prüfsumme stimmt nicht – Download verworfen": "Checksum mismatch – download discarded",

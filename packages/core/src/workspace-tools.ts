@@ -238,11 +238,20 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
       ),
       tool(
         "secret_request",
-        "Fragt den Nutzer im Chat nach einem Secret (z. B. API-Key) und speichert es als geheime Variable der Umgebung dieses Projekts. Der Wert geht NICHT an dich: du erfährst nur, ob gespeichert wurde. Nutze das statt den Nutzer Keys in den Chat schreiben zu lassen, z. B. nach dem Bau einer API: „bitte gib den Key ein“. Die Variable steht ab dem nächsten Durchlauf in der Shell.",
-        { key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).describe("Variablenname, z. B. STRIPE_SECRET_KEY"), description: z.string().describe("Kurz für den Nutzer: wofür und wo er den Wert findet"), secret: z.boolean().optional().describe("Standard true; false für unkritische Werte") },
-        safely(async ({ key, description, secret }) => {
-          const outcome = await secretInput.request({ sessionId, projectId: project.id, key, description, secret: secret ?? true });
-          return textResult(outcome === "saved" ? `${key} wurde gespeichert (Umgebungsvariable, ab dem nächsten Durchlauf verfügbar).` : `Der Nutzer hat ${key} nicht eingegeben.`);
+        "Fragt den Nutzer im Chat nach einem Secret (z. B. API-Key). Der Wert geht NICHT an dich: du erfährst nur, ob gespeichert wurde. Nutze das statt den Nutzer Keys in den Chat schreiben zu lassen. scope \"project\" (Standard): schreibt KEY=Wert sofort in eine Datei im Projektordner (file, Standard .env; wird in .gitignore eingetragen) – ideal, wenn du die .env zum Starten/Testen brauchst; nur für dieses Projekt. scope \"environment\": geheime Variable der Umgebung, gilt für alle Projekte der Umgebung und steht erst ab dem nächsten Durchlauf in der Shell.",
+        {
+          key: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).describe("Variablenname, z. B. STRIPE_SECRET_KEY"),
+          description: z.string().describe("Kurz für den Nutzer: wofür und wo er den Wert findet"),
+          secret: z.boolean().optional().describe("Standard true; false für unkritische Werte"),
+          scope: z.enum(["project", "environment"]).optional().describe("Standard project"),
+          file: z.string().optional().describe("Nur scope project: Datei relativ zum Projektordner, Standard .env"),
+        },
+        safely(async ({ key, description, secret, scope, file }) => {
+          const target = scope ?? "project";
+          const envFile = file?.trim() || ".env";
+          const outcome = await secretInput.request({ sessionId, projectId: project.id, key, description, secret: secret ?? true, scope: target, file: envFile });
+          if (outcome !== "saved") return textResult(`Der Nutzer hat ${key} nicht eingegeben.`);
+          return textResult(target === "project" ? `${key} wurde in ${envFile} (Projektordner) gespeichert und ist sofort lesbar.` : `${key} wurde gespeichert (Umgebungsvariable, ab dem nächsten Durchlauf verfügbar).`);
         }),
       ),
       tool(

@@ -156,7 +156,7 @@ app.get("/api/auth/check", (context) => context.json({ ok: true, tokenRequired: 
 /** Server mode: tells the UI whether a newer release exists (and, for Docker, whether its image is already published). */
 app.get("/api/update-check", async (context) => {
   const deployment = process.env.HARNOLD_DEPLOYMENT ?? "local";
-  let latest = await latestRelease();
+  let latest = await latestRelease(context.req.query("fresh") === "1");
   if (latest && deployment === "docker" && !(await imagePublished(latest.version))) latest = null;
   return context.json({ deployment, latest, canInstall: Boolean(process.env.HARNOLD_UPDATER_URL) });
 });

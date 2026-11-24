@@ -1,13 +1,13 @@
 /** Newest published Harnold release (GitHub), cached; the UI compares it with its own version. */
 const releasesUrl = "https://api.github.com/repos/Kasoria/harnold/releases/latest";
-const cacheDurationMs = 6 * 60 * 60 * 1000;
+const cacheDurationMs = 60 * 60 * 1000;
 
 export type LatestRelease = { version: string; notes: string | null; url: string };
 
 let cachedRelease: { fetchedAt: number; release: LatestRelease | null } | null = null;
 
-export async function latestRelease(): Promise<LatestRelease | null> {
-  if (cachedRelease && Date.now() - cachedRelease.fetchedAt < cacheDurationMs) return cachedRelease.release;
+export async function latestRelease(forceRefresh = false): Promise<LatestRelease | null> {
+  if (!forceRefresh && cachedRelease && Date.now() - cachedRelease.fetchedAt < cacheDurationMs) return cachedRelease.release;
   try {
     const response = await fetch(releasesUrl, {
       headers: { accept: "application/vnd.github+json", "user-agent": "harnold-update-check" },

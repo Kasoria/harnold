@@ -17,7 +17,7 @@ export const updatesSupported = () => Boolean(tauriInternals());
 let serverInfoRequest: Promise<ServerUpdateInfo | null> | null = null;
 function loadServerInfo(forceRefresh = false): Promise<ServerUpdateInfo | null> {
   if (forceRefresh || !serverInfoRequest) {
-    serverInfoRequest = fetch(`${coreBaseUrl}/api/update-check`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} })
+    serverInfoRequest = fetch(`${coreBaseUrl}/api/update-check${forceRefresh ? "?fresh=1" : ""}`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} })
       .then((response) => (response.ok ? (response.json() as Promise<ServerUpdateInfo>) : null))
       .catch(() => null);
   }

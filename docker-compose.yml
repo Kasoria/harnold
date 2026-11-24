@@ -1,15 +1,12 @@
-# Harnold im Server-Betrieb. Start: cp .env.example .env, Token setzen, dann `docker compose up -d --build`.
+# Harnold im Server-Betrieb. Einfachster Weg: install.sh (siehe DEPLOY.md). Von Hand: cp .env.example .env, Token setzen, `docker compose up -d`.
+# Lokal aus dem Quellcode bauen: docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 services:
   harnold:
-    # Fertiges Image aus der GitHub Container Registry. Mit `--build` wird stattdessen lokal gebaut (z. B. für HARNOLD_APT_PACKAGES).
+    # Fertiges Image aus der GitHub Container Registry (Selbst bauen: docker-compose.build.yml).
     image: ghcr.io/kasoria/harnold:${HARNOLD_VERSION:-latest}
     pull_policy: missing
     labels:
       com.centurylinklabs.watchtower.enable: "true"
-    build:
-      context: .
-      args:
-        HARNOLD_APT_PACKAGES: ${HARNOLD_APT_PACKAGES:-}
     shm_size: 1gb # Chromium/Playwright
     restart: unless-stopped
     environment:

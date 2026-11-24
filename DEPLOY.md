@@ -2,15 +2,20 @@
 
 Voraussetzung: Server mit Docker und Docker Compose.
 
-## Einrichten
-1. `git clone https://github.com/Kasoria/harnold && cd harnold`
-2. `cp .env.example .env` und `HARNOLD_TOKEN` setzen (`openssl rand -hex 32`).
-3. `docker compose up -d`
-4. `http://<server>:4317` öffnen (nur lokal gebunden, siehe unten), Token eingeben, unter Einstellungen → Agent bei Claude (und Codex) einloggen. Alternativ `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in die `.env`.
+## Einrichten (einfachster Weg)
+```
+curl -fsSL https://raw.githubusercontent.com/Kasoria/harnold/main/install.sh | sh
+```
+Das Skript prüft Docker, legt `~/harnold` mit `docker-compose.yml` und `.env` (zufälliges Token) an, fragt optional nach einer Domain,
+startet Harnold samt Update-Dienst und zeigt Adresse und Token. Danach in der UI unter Einstellungen → Agent bei Claude (und Codex)
+einloggen, oder `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in die `.env` eintragen. Erneut ausführen ist gefahrlos (Token bleibt).
+
+Von Hand: Repo klonen, `cp .env.example .env`, `HARNOLD_TOKEN` setzen (`openssl rand -hex 32`), `docker compose up -d`.
+Updates per Knopf funktionieren nur mit dieser Compose-Datei, weil der Update-Dienst (watchtower) darin steht.
 
 ## Domain mit HTTPS
 DNS: A-Record `harnold.deinedomain.de` → Server-IP. In der `.env` `HARNOLD_DOMAIN=harnold.deinedomain.de` setzen, dann
-`docker compose --profile proxy up -d` (Ports 80/443 freigeben). Caddy holt das Zertifikat selbst.
+`COMPOSE_PROFILES=proxy` in die `.env` und `docker compose up -d` (Ports 80/443 freigeben). Caddy holt das Zertifikat selbst. Der Installer erledigt das, wenn du eine Domain angibst.
 Ohne öffentliche Adresse: Tailscale oder Cloudflare Tunnel davorsetzen.
 
 ## Updates
@@ -24,7 +29,7 @@ Ohne öffentliche Adresse: Tailscale oder Cloudflare Tunnel davorsetzen.
 ## Eigene Pakete
 Im Container hat der Agent `sudo`. Nutzer-Installationen (pip --user, npm -g, Playwright-Browser) liegen im Volume
 `harnold-home` und bleiben bei Updates erhalten. Systempakete (apt) gehören in `HARNOLD_APT_PACKAGES` in der `.env`;
-sie werden beim lokalen Bauen ins Image installiert: `docker compose up -d --build`.
+sie werden beim lokalen Bauen ins Image installiert: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
 Hinweis: Das fertige Image aus der Registry enthält diese Extras nicht, nach `--build` also nicht mehr `pull` nutzen.
 
 ## Sichern

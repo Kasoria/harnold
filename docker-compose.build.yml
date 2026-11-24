@@ -1,0 +1,8 @@
+# Zusatz zu docker-compose.yml: Image lokal aus dem Quellcode bauen (z. B. für HARNOLD_APT_PACKAGES).
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  harnold:
+    build:
+      context: .
+      args:
+        HARNOLD_APT_PACKAGES: ${HARNOLD_APT_PACKAGES:-}

@@ -594,7 +594,7 @@ export const englishTexts: Record<string, string> = {
   "Nach Updates suchen": "Check for updates",
   "Lädt das neue Image und startet den Server neu. Laufende Sitzungen werden unterbrochen.": "Pulls the new image and restarts the server. Running sessions are interrupted.",
   "Version {0} ist verfügbar. Auf dem Server ausführen:": "Version {0} is available. Run on the server:",
-  "Oder automatisch: docker compose --profile autoupdate up -d": "Or automatically: docker compose --profile autoupdate up -d",
+  "Update per Knopf gibt es, wenn Harnold mit der Compose-Datei aus dem Installer läuft (enthält den Update-Dienst).": "One-click updates need Harnold to run with the compose file from the installer (it includes the update service).",
   "Harnold ist aktuell.": "Harnold is up to date.",
   "Lädt das Update, installiert es und startet Harnold neu.": "Downloads the update, installs it and restarts Harnold.",
   "Harnold startet gleich neu.": "Harnold is about to restart.",

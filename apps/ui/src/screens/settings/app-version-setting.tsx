@@ -58,7 +58,7 @@ export function AppVersionSetting() {
         <div className="grid gap-1 text-right text-[12px] text-muted-foreground">
           <span>{t("Version {0} ist verfügbar. Auf dem Server ausführen:", shownState.update.version)}</span>
           <code className="ml-auto rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground select-all">docker compose pull && docker compose up -d</code>
-          <span>{t("Oder automatisch: docker compose --profile autoupdate up -d")}</span>
+          <span>{t("Update per Knopf gibt es, wenn Harnold mit der Compose-Datei aus dem Installer läuft (enthält den Update-Dienst).")}</span>
         </div>
       )}
       {shownState.phase === "installing" && <p className="text-right text-[12px] text-muted-foreground">{t("Harnold startet gleich neu.")}</p>}

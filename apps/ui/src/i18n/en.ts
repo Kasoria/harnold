@@ -592,6 +592,7 @@ export const englishTexts: Record<string, string> = {
   "Auf {0} aktualisieren": "Update to {0}",
   "Installiert …": "Installing …",
   "Nach Updates suchen": "Check for updates",
+  "Lädt das neue Image und startet den Server neu. Laufende Sitzungen werden unterbrochen.": "Pulls the new image and restarts the server. Running sessions are interrupted.",
   "Version {0} ist verfügbar. Auf dem Server ausführen:": "Version {0} is available. Run on the server:",
   "Oder automatisch: docker compose --profile autoupdate up -d": "Or automatically: docker compose --profile autoupdate up -d",
   "Harnold ist aktuell.": "Harnold is up to date.",

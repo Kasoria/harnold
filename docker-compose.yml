@@ -16,6 +16,9 @@ services:
       HARNOLD_TOKEN: ${HARNOLD_TOKEN:?HARNOLD_TOKEN in .env setzen}
       # Optional: API-Key statt Claude-Abo-Login
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Update-Knopf in der UI: spricht den Watchtower-Dienst (nur im Compose-Netz erreichbar).
+      HARNOLD_UPDATER_URL: http://watchtower:8080
+      HARNOLD_UPDATER_TOKEN: ${HARNOLD_TOKEN}
     volumes:
       - harnold-data:/data
       - harnold-home:/home/harnold
@@ -23,16 +26,20 @@ services:
     ports:
       - "127.0.0.1:${HARNOLD_PORT:-4317}:4317"
 
-  # Optional: `docker compose --profile autoupdate up -d` zieht neue Versionen automatisch (nachts) und startet Harnold neu.
-  # Laufende Agent-Sitzungen werden dabei unterbrochen. Dieser Container bekommt den Docker-Zugriff, nicht Harnold.
+  # Update-Dienst: holt auf Knopfdruck in der UI (oder nachts, mit HARNOLD_AUTO_UPDATE=true) das neue Image und startet Harnold neu.
+  # Nur er hat Docker-Zugriff, nicht Harnold. Er fasst nur Container mit dem Label oben an.
+  # Laufende Agent-Sitzungen werden beim Neustart unterbrochen.
   watchtower:
-    profiles: ["autoupdate"]
     image: ghcr.io/nicholas-fedor/watchtower:latest
     restart: unless-stopped
     environment:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_SCHEDULE: ${HARNOLD_UPDATE_SCHEDULE:-0 0 4 * * *}
+      WATCHTOWER_HTTP_API_ENDPOINTS: update
+      WATCHTOWER_HTTP_API_TOKEN: ${HARNOLD_TOKEN}
+      WATCHTOWER_HTTP_API_PERIODIC_POLLS: ${HARNOLD_AUTO_UPDATE:-false}
+      WATCHTOWER_SCHEDULE: ${HARNOLD_UPDATE_SCHEDULE:-0 17 3 * * *}
+      TZ: ${TZ:-Europe/Berlin}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 

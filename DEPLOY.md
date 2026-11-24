@@ -14,11 +14,12 @@ DNS: A-Record `harnold.deinedomain.de` → Server-IP. In der `.env` `HARNOLD_DOM
 Ohne öffentliche Adresse: Tailscale oder Cloudflare Tunnel davorsetzen.
 
 ## Updates
-- In der UI erscheint unter Einstellungen „Version {x} ist verfügbar“.
-- Von Hand: `docker compose pull && docker compose up -d`
-- Automatisch (nachts 04:00, Zeit per `HARNOLD_UPDATE_SCHEDULE`): `docker compose --profile autoupdate up -d`.
-  Laufende Agent-Sitzungen werden beim Neustart unterbrochen.
+- Eine neue Version erscheint in der UI unten und unter Einstellungen als „Update auf x“. Ein Klick auf **Auf x aktualisieren** holt das neue Image und startet Harnold neu (laufende Sitzungen werden unterbrochen). Die Seite lädt danach von selbst neu.
+- Das übernimmt der mitlaufende Dienst `watchtower` (ein Container, kein Cronjob). Nur er hat Docker-Zugriff, Harnold nicht.
+- Vollautomatisch (nachts 03:17, Zeit per `HARNOLD_UPDATE_SCHEDULE`): `HARNOLD_AUTO_UPDATE=true` in der `.env`, dann `docker compose up -d`.
+- Von Hand geht es weiterhin: `docker compose pull && docker compose up -d`.
 - Version festnageln: `HARNOLD_VERSION=0.11.0` in der `.env`.
+- Eine Version wird erst angeboten, wenn ihr Image veröffentlicht ist (der Bau dauert nach dem Release etwa 10 Minuten).
 
 ## Eigene Pakete
 Im Container hat der Agent `sudo`. Nutzer-Installationen (pip --user, npm -g, Playwright-Browser) liegen im Volume

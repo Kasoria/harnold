@@ -10,7 +10,7 @@ const tauriInternals = () => (window as unknown as { __TAURI_INTERNALS__?: Tauri
 export const appVersion = __HARNOLD_VERSION__;
 /** Desktop app: updates install themselves. Docker server: the UI only reports; the update runs on the server. */
 export type UpdateMode = "desktop" | "docker";
-type ServerUpdateInfo = { deployment: string; latest: { version: string; notes: string | null; url: string } | null };
+type ServerUpdateInfo = { deployment: string; latest: { version: string; notes: string | null; url: string } | null; canInstall?: boolean };
 
 export const updatesSupported = () => Boolean(tauriInternals());
 
@@ -43,10 +43,40 @@ export async function checkForUpdate(): Promise<AvailableUpdate | null> {
   return { version: info.latest.version, notes: info.latest.notes };
 }
 
-/** Downloads, installs and restarts the app; resolves only on error (rejects). */
+/** Docker server with an update service: the "Update" button works there, otherwise the UI shows the command. */
+export const useCanInstallOnServer = (): boolean => {
+  const [canInstall, setCanInstall] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void loadServerInfo().then((info) => active && setCanInstall(Boolean(info?.canInstall)));
+    return () => {
+      active = false;
+    };
+  }, []);
+  return canInstall;
+};
+
+const serverIsReachable = (): Promise<boolean> =>
+  fetch(`${coreBaseUrl}/api/auth/check`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} })
+    .then((response) => response.ok)
+    .catch(() => false);
+
+/** Desktop: downloads, installs and restarts the app. Docker server: asks the update service, waits for the restart and reloads. Resolves only on error (rejects). */
 export async function installUpdate(): Promise<void> {
   const internals = tauriInternals();
-  if (internals) await internals.invoke("install_update");
+  if (internals) return void (await internals.invoke("install_update"));
+  const response = await fetch(`${coreBaseUrl}/api/update-install`, { method: "POST", headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} });
+  if (!response.ok) throw new Error(((await response.json().catch(() => null)) as { error?: string } | null)?.error ?? `HTTP ${response.status}`);
+  // The container goes down while the update service swaps the image, then comes back with the new version.
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let wentDown = false;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const reachable = await serverIsReachable();
+    if (!reachable) wentDown = true;
+    else if (wentDown) return void location.reload();
+  }
+  throw new Error("Das Update dauert ungewöhnlich lange. Prüfe den Server.");
 }
 
 /** How updates work here: null in plain local/dev setups (nothing to check). */

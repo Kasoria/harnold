@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { appVersion, checkForUpdate, installUpdate, useAvailableUpdate, useUpdateMode, type AvailableUpdate } from "@/lib/app-updates";
+import { appVersion, checkForUpdate, installUpdate, useAvailableUpdate, useCanInstallOnServer, useUpdateMode, type AvailableUpdate } from "@/lib/app-updates";
 import { t } from "@/lib/i18n";
 
 type UpdateState = { phase: "idle" | "checking" | "current" | "installing" } | { phase: "available"; update: AvailableUpdate } | { phase: "error"; message: string };
@@ -10,6 +10,8 @@ type UpdateState = { phase: "idle" | "checking" | "current" | "installing" } | {
 export function AppVersionSetting() {
   const backgroundUpdate = useAvailableUpdate();
   const updateMode = useUpdateMode();
+  const canInstallOnServer = useCanInstallOnServer();
+  const installsItself = updateMode === "desktop" || (updateMode === "docker" && canInstallOnServer);
   const [updateState, setUpdateState] = useState<UpdateState>({ phase: "idle" });
   const shownState: UpdateState = updateState.phase === "idle" && backgroundUpdate ? { phase: "available", update: backgroundUpdate } : updateState;
 
@@ -38,7 +40,7 @@ export function AppVersionSetting() {
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground tabular-nums">{appVersion}</span>
           {updateMode &&
-            (shownState.phase === "available" && updateMode === "desktop" ? (
+            (shownState.phase === "available" && installsItself ? (
               <Button size="sm" onClick={() => void install()}>
                 {t("Auf {0} aktualisieren", shownState.update.version)}
               </Button>
@@ -51,8 +53,8 @@ export function AppVersionSetting() {
         </div>
       </div>
       {shownState.phase === "current" && <p className="text-right text-[12px] text-muted-foreground">{t("Harnold ist aktuell.")}</p>}
-      {shownState.phase === "available" && updateMode === "desktop" && <p className="text-right text-[12px] text-muted-foreground">{t("Lädt das Update, installiert es und startet Harnold neu.")}</p>}
-      {shownState.phase === "available" && updateMode === "docker" && (
+      {shownState.phase === "available" && installsItself && <p className="text-right text-[12px] text-muted-foreground">{updateMode === "docker" ? t("Lädt das neue Image und startet den Server neu. Laufende Sitzungen werden unterbrochen.") : t("Lädt das Update, installiert es und startet Harnold neu.")}</p>}
+      {shownState.phase === "available" && updateMode === "docker" && !canInstallOnServer && (
         <div className="grid gap-1 text-right text-[12px] text-muted-foreground">
           <span>{t("Version {0} ist verfügbar. Auf dem Server ausführen:", shownState.update.version)}</span>
           <code className="ml-auto rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground select-all">docker compose pull && docker compose up -d</code>

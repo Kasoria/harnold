@@ -7,7 +7,7 @@ import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { z } from "zod";
 import { config } from "./config.ts";
-import { latestRelease } from "./update-check.ts";
+import { imagePublished, latestRelease, requestUpdateInstall } from "./update-check.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { agentRuntime } from "./agent.ts";
@@ -124,8 +124,23 @@ app.use("*", async (context, next) => {
 /** Token check for the login screen: passes the auth middleware above only with a valid token (or none required). */
 app.get("/api/auth/check", (context) => context.json({ ok: true, tokenRequired: Boolean(config.accessToken) }));
 
-/** Server mode: tells the UI whether a newer release exists (the update itself runs on the server: docker compose pull). */
-app.get("/api/update-check", async (context) => context.json({ deployment: process.env.HARNOLD_DEPLOYMENT ?? "local", latest: await latestRelease() }));
+/** Server mode: tells the UI whether a newer release exists (and, for Docker, whether its image is already published). */
+app.get("/api/update-check", async (context) => {
+  const deployment = process.env.HARNOLD_DEPLOYMENT ?? "local";
+  let latest = await latestRelease();
+  if (latest && deployment === "docker" && !(await imagePublished(latest.version))) latest = null;
+  return context.json({ deployment, latest, canInstall: Boolean(process.env.HARNOLD_UPDATER_URL) });
+});
+
+/** Docker server: the update sidecar pulls the new image and restarts this container. */
+app.post("/api/update-install", async (context) => {
+  try {
+    await requestUpdateInstall();
+    return context.json({ ok: true });
+  } catch (installError) {
+    return context.json({ error: installError instanceof Error ? installError.message : String(installError) }, 502);
+  }
+});
 
 // Errors: the full error goes to the log; the client gets the message with filesystem paths
 // removed (a stack trace or an absolute path helps an attacker, not the user).

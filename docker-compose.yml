@@ -1,0 +1,38 @@
+# Harnold im Server-Betrieb. Start: cp .env.example .env, Token setzen, dann `docker compose up -d --build`.
+services:
+  harnold:
+    build:
+      context: .
+      args:
+        HARNOLD_APT_PACKAGES: ${HARNOLD_APT_PACKAGES:-}
+    shm_size: 1gb # Chromium/Playwright
+    restart: unless-stopped
+    environment:
+      HARNOLD_TOKEN: ${HARNOLD_TOKEN:?HARNOLD_TOKEN in .env setzen}
+      # Optional: API-Key statt Claude-Abo-Login
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - harnold-data:/data
+      - harnold-home:/home/harnold
+    # Nur lokal gebunden; öffentlich erreichbar über Caddy (Profil "proxy") oder Tailscale/Tunnel.
+    ports:
+      - "127.0.0.1:${HARNOLD_PORT:-4317}:4317"
+
+  caddy:
+    profiles: ["proxy"]
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [harnold]
+    environment:
+      HARNOLD_DOMAIN: ${HARNOLD_DOMAIN:-localhost}
+    command: caddy reverse-proxy --from ${HARNOLD_DOMAIN:-localhost} --to harnold:4317
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  harnold-data:
+  harnold-home:
+  caddy-data:

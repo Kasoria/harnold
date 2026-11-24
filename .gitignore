@@ -5,6 +5,7 @@ dist
 .DS_Store
 *.log
 .env.*
+!.env.example
 *.tsbuildinfo
 
 # Nur Harnold-Code ins Repo: Test-Projekte und Nutzerdaten (Anhänge, Memory, Canvas) bleiben lokal

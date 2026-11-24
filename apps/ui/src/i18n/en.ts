@@ -1,5 +1,9 @@
 /** English UI texts, keyed by the German source text. Missing keys fall back to German. */
 export const englishTexts: Record<string, string> = {
+  "Dieser Server ist geschützt. Gib das Zugriffs-Token ein.": "This server is protected. Enter the access token.",
+  "Zugriffs-Token": "Access token",
+  "Token ungültig.": "Invalid token.",
+  "Anmelden": "Sign in",
   "ChatGPT-Konto": "ChatGPT account",
   "Mit ChatGPT anmelden": "Sign in with ChatGPT",
   "Nach der Anmeldung im Browser kommt Harnold von selbst weiter.": "After signing in in the browser, Harnold continues on its own.",

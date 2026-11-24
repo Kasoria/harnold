@@ -111,11 +111,17 @@ app.use("*", async (context, next) => {
 app.use("*", async (context, next) => {
   // /mcp/<token>/… is called by agent programs on this machine; the one-turn token in the URL is its secret.
   if (!config.accessToken || context.req.path.startsWith("/mcp/")) return next();
+  // The UI shell (HTML/JS/CSS) is public code without data: it must load so the UI can ask for the token.
+  const isDataPath = /^\/(api|ws|preview|design-systems)(\/|$)/.test(context.req.path);
+  if (context.req.method === "GET" && !isDataPath) return next();
   const bearerToken = context.req.header("authorization")?.replace(/^Bearer /, "");
   const queryToken = context.req.query("token");
   if (bearerToken === config.accessToken || queryToken === config.accessToken) return next();
   return context.json({ error: t("Nicht autorisiert") }, 401);
 });
+
+/** Token check for the login screen: passes the auth middleware above only with a valid token (or none required). */
+app.get("/api/auth/check", (context) => context.json({ ok: true, tokenRequired: Boolean(config.accessToken) }));
 
 // Errors: the full error goes to the log; the client gets the message with filesystem paths
 // removed (a stack trace or an absolute path helps an attacker, not the user).

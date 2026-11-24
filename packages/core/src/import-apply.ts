@@ -75,6 +75,10 @@ function rewritePaths(databasePath: string, sourceDataDirectory: string, dataDir
       const mapped = (JSON.parse(String(row.directories)) as string[]).map(mapPath);
       database.prepare("UPDATE sessions SET directories = ? WHERE id = ?").run(JSON.stringify(mapped), String(row.id));
     }
+    for (const row of database.prepare("SELECT id, directories FROM tasks WHERE directories IS NOT NULL").all()) {
+      const mapped = (JSON.parse(String(row.directories)) as string[]).map(mapPath);
+      database.prepare("UPDATE tasks SET directories = ? WHERE id = ?").run(JSON.stringify(mapped), String(row.id));
+    }
     // A memory folder outside the data directory (e.g. an Obsidian vault) travelled along as an external folder.
     const memoryRow = database.prepare("SELECT value FROM workspace_settings WHERE key = 'memory'").get();
     if (memoryRow) {

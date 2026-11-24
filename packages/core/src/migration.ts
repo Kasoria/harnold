@@ -39,14 +39,25 @@ async function createExportArchive(): Promise<string> {
       copyFiltered(path.join(config.dataDirectory, entry), path.join(stagingDirectory, entry));
     }
     // Folders outside the data directory (projects anywhere on the disk, an external memory folder).
-    const externalSources = new Set<string>();
-    for (const row of database.prepare("SELECT path FROM projects").all()) externalSources.add(String(row.path));
-    const memoryDirectory = memoryConfig.workspaceDirectory();
-    externalSources.add(memoryDirectory);
+    const candidates = new Set<string>();
+    for (const row of database.prepare("SELECT path FROM projects").all()) candidates.add(String(row.path));
+    // Extra folders: added to a project/environment/workspace, to a chat or to a task.
+    for (const row of database.prepare("SELECT path FROM context_folders").all()) candidates.add(String(row.path));
+    for (const table of ["sessions", "tasks"]) {
+      for (const row of database.prepare(`SELECT directories FROM ${table} WHERE directories IS NOT NULL`).all()) {
+        for (const directory of JSON.parse(String(row.directories)) as string[]) candidates.add(directory);
+      }
+    }
+    candidates.add(memoryConfig.workspaceDirectory());
+    // Only top-level folders are copied; a folder inside another one travels with it (and is mapped by prefix).
+    // A folder that contains the data directory would pull in the whole workspace, so it is left out.
+    const externalSources = [...candidates].filter(
+      (candidate) => !isInside(config.dataDirectory, candidate) && !isInside(candidate, config.dataDirectory) && ![...candidates].some((other) => other !== candidate && isInside(other, candidate) && !isInside(config.dataDirectory, other) && !isInside(other, config.dataDirectory)),
+    );
     const manifest: ImportManifest = { sourceDataDirectory: config.dataDirectory, external: [] };
     const usedFolders = new Set<string>();
     for (const sourcePath of externalSources) {
-      if (isInside(config.dataDirectory, sourcePath) || !fs.existsSync(sourcePath)) continue;
+      if (!fs.existsSync(sourcePath)) continue;
       let folder = path.basename(sourcePath) || "projekt";
       for (let suffix = 2; usedFolders.has(folder); suffix += 1) folder = `${path.basename(sourcePath)}-${suffix}`;
       usedFolders.add(folder);

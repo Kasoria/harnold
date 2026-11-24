@@ -6,6 +6,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, wenn ein Release nachgebaut wird (z. B. 0.11.0)"
+        required: false
 
 permissions:
   contents: read
@@ -31,11 +35,14 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=raw,value=latest
       - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            HARNOLD_VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

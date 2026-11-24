@@ -12,7 +12,8 @@ RUN pnpm install --frozen-lockfile --filter "@harnold/core..." --filter "@harnol
 COPY apps/ui apps/ui
 # Die UI liest ihre Version aus der Desktop-Konfiguration.
 COPY apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/tauri.conf.json
-RUN pnpm --filter @harnold/ui build
+ARG HARNOLD_VERSION=""
+RUN HARNOLD_VERSION="$HARNOLD_VERSION" pnpm --filter @harnold/ui build
 
 FROM node:26-bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/Kasoria/harnold"

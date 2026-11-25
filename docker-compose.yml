@@ -8,6 +8,8 @@ services:
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     shm_size: 1gb # Chromium/Playwright
+    # Init-Prozess (tini) als PID 1: räumt beendete Kindprozesse ab (Claude-Prozesse je Chat, Hintergrund-Befehle).
+    init: true
     restart: unless-stopped
     environment:
       HARNOLD_TOKEN: ${HARNOLD_TOKEN:?HARNOLD_TOKEN in .env setzen}

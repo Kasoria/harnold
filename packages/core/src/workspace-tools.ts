@@ -68,7 +68,7 @@ function describeDesignSystem(designSystem: DesignSystemDetail): string {
     .join("\n");
 }
 
-export function createWorkspaceServer(project: Project, sessionId: string, permissionMode = "default") {
+export function createWorkspaceServer(project: Project, sessionId: string, permissionMode: string | (() => string) = "default") {
   /** Resolves "session"/"project" shortcuts or explicit ids to a link target. */
   const resolveTarget = (target: "session" | "project", explicitId?: string): DesignSystemLinkTarget => {
     if (target === "session") {

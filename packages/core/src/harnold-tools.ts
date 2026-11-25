@@ -7,7 +7,8 @@ import { createMemoryServer, memoryServerName, memoryToolNames } from "./memory-
  * Harnold's own tools for the agent (memory, media, workspace/team/setup), as MCP servers.
  * Claude Code runs them in-process; other agent programs reach them over HTTP (mcp-http.ts).
  */
-export function createHarnoldToolServers(project: Project, sessionId: string, permissionMode: string) {
+/** permissionMode may be a getter: a long-running agent process can switch modes between turns. */
+export function createHarnoldToolServers(project: Project, sessionId: string, permissionMode: string | (() => string)) {
   return {
     [memoryServerName]: createMemoryServer(project),
     [mediaServerName]: createMediaServer(project),

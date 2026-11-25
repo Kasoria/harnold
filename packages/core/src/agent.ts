@@ -11,7 +11,7 @@ import { mediaInstructions } from "./media-tools.ts";
 import { folderStore } from "./folders.ts";
 import { mentionHintFor, teamContextFor, teamStore } from "./agents.ts";
 import { agentBackends } from "./backends/index.ts";
-import type { AgentBackend, PermissionDecision, PermissionMode, TurnContext, TurnEvent } from "./backends/types.ts";
+import type { AgentBackend, BackgroundTask, EffortLevel, PermissionDecision, RewindResult, PermissionMode, PermissionSuggestion, TurnContext, TurnEvent } from "./backends/types.ts";
 import { defaultAgentBackendId, normalizeBackendId, type AgentBackendId } from "./agent-backend-settings.ts";
 import { agentRoleSettings, defaultAgentRole, type AgentRole } from "./agent-roles.ts";
 import { secretInput } from "./secret-input.ts";
@@ -35,6 +35,7 @@ export type TurnRequest = {
   permissionMode: PermissionMode;
   /** Model of the unit that starts the turn (task, channel, mailbox); empty = inherit. */
   model?: string;
+  effort?: EffortLevel;
   /** Agent program of the unit that starts the turn; empty = the role's/environment's/workspace default. */
   backendId?: string | null;
   /** Role of the turn when neither the unit nor the team member names a program: conversation or background run. */
@@ -60,13 +61,48 @@ ${memoryInstructions}
 ${mediaInstructions}
 `.trim();
 
-type PendingPermission = { sessionId: string; toolName: string; input: unknown; resolve: (decision: PermissionDecision) => void };
+type PendingPermission = {
+  sessionId: string;
+  toolName: string;
+  input: unknown;
+  suggestions: PermissionSuggestion[];
+  alwaysAllowLabel?: string;
+  resolve: (decision: PermissionDecision) => void;
+};
+
+/** How the user answers a permission card. */
+export type PermissionAnswer = {
+  allow: boolean;
+  /** AskUserQuestion: question text → chosen label(s), comma-separated. */
+  answers?: Record<string, string>;
+  /** Remember the agent's suggested rule ("always allow"). */
+  always?: boolean;
+  /** ExitPlanMode: mode to continue in after the plan is approved. */
+  permissionMode?: PermissionMode;
+  /** Denied with a reason (e.g. what to change in the plan) – the agent reads it. */
+  message?: string;
+};
+
+/** Readable form of a rule like Bash(npm test:*) – for the "always allow" button. */
+function describeSuggestions(suggestions: PermissionSuggestion[]): string | undefined {
+  const parts = suggestions.flatMap((suggestion): string[] => {
+    if (suggestion.type === "addRules" && Array.isArray(suggestion.rules)) {
+      return (suggestion.rules as { toolName: string; ruleContent?: string }[]).map((rule) => (rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName));
+    }
+    if (suggestion.type === "setMode" && suggestion.mode === "acceptEdits") return [t("Edits automatisch erlauben")];
+    if (suggestion.type === "addDirectories" && Array.isArray(suggestion.directories)) return [t("Ordner {0}", (suggestion.directories as string[]).join(", "))];
+    return [];
+  });
+  return parts.length ? parts.join(", ") : undefined;
+}
 
 const runningTurns = new Map<string, AbortController>();
 const pendingPermissions = new Map<string, PendingPermission>();
 /** Actions that must wait until a session's turn is over (e.g. moving it to another project). */
 const afterTurnActions = new Map<string, (() => void)[]>();
 const queuedMessagesBySession = new Map<string, QueuedMessage[]>();
+/** Running background tasks per session (Bash in the background, background subagents). */
+const backgroundTasksBySession = new Map<string, BackgroundTask[]>();
 /** Stopped by the user: the queue waits instead of starting the next message. */
 const queuePausedSessionIds = new Set<string>();
 
@@ -179,6 +215,14 @@ function applyTurnEvent(sessionId: string, turnEvent: TurnEvent, outcome: TurnOu
         turnEvent.payload.kind === "turn_result" ? { ...turnEvent.payload, agentSessionId: sessionStore.get(sessionId)?.agentSessionId ?? undefined } : turnEvent.payload,
       );
       return;
+    case "status":
+      eventHub.publish({ type: "agent_status", sessionId, text: turnEvent.text });
+      return;
+    case "background_tasks":
+      if (turnEvent.tasks.length) backgroundTasksBySession.set(sessionId, turnEvent.tasks);
+      else backgroundTasksBySession.delete(sessionId);
+      eventHub.publish({ type: "background_tasks", sessionId, tasks: turnEvent.tasks });
+      return;
     case "outcome":
       outcome.success = turnEvent.success;
       outcome.finalText = turnEvent.finalText;
@@ -187,12 +231,117 @@ function applyTurnEvent(sessionId: string, turnEvent: TurnEvent, outcome: TurnOu
   }
 }
 
+/** Replaces the provisional title with the one the agent generated – unless the user renamed the session meanwhile. */
+async function adoptGeneratedTitle(sessionId: string, provisionalTitle: string, backend: AgentBackend): Promise<void> {
+  try {
+    const session = sessionStore.get(sessionId);
+    if (!session?.agentSessionId || session.title !== provisionalTitle) return;
+    const { context } = await turnContextFor(sessionId, "default");
+    const generatedTitle = (await backend.generatedTitle?.(context))?.trim().slice(0, 80);
+    if (!generatedTitle || sessionStore.get(sessionId)?.title !== provisionalTitle) return;
+    sessionStore.update(sessionId, { title: generatedTitle });
+    eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
+  } catch (titleError) {
+    console.error("[agent] title", titleError);
+  }
+}
+
+/** Asks the user (app or channel) and waits for the answer. */
+function requestPermission(sessionId: string, toolName: string, toolInput: unknown, signal: AbortSignal, suggestions: PermissionSuggestion[] = []): Promise<PermissionDecision> {
+  return new Promise<PermissionDecision>((resolve) => {
+    const requestId = randomUUID();
+    const alwaysAllowLabel = describeSuggestions(suggestions);
+    pendingPermissions.set(requestId, { sessionId, toolName, input: toolInput, suggestions, alwaysAllowLabel, resolve });
+    signal.addEventListener("abort", () => {
+      if (!pendingPermissions.delete(requestId)) return;
+      resolve({ behavior: "deny", message: "Abgebrochen" });
+      eventHub.publish({ type: "permission_resolved", sessionId, requestId });
+    });
+    eventHub.publish({ type: "permission_request", sessionId, requestId, toolName, input: toolInput, alwaysAllowLabel });
+  });
+}
+
+/** Runs one turn of a session (started by the user or by the agent itself): state, storage, cleanup, queue. */
+async function driveTurn(sessionId: string, abortController: AbortController, startTurn: () => AsyncGenerator<TurnEvent>): Promise<TurnOutcome> {
+  const outcome: TurnOutcome = { success: false, finalText: "" };
+  runningTurns.set(sessionId, abortController);
+  queuePausedSessionIds.delete(sessionId);
+  eventHub.publish({ type: "turn_state", sessionId, running: true });
+
+  try {
+    for await (const turnEvent of startTurn()) applyTurnEvent(sessionId, turnEvent, outcome);
+  } catch (turnError) {
+    outcome.errorText = abortController.signal.aborted ? "Abgebrochen" : turnError instanceof Error ? turnError.message : String(turnError);
+    if (!abortController.signal.aborted) {
+      persistAndPublish(sessionId, {
+        kind: "turn_result",
+        success: false,
+        costUsd: 0,
+        durationMs: 0,
+        errorText: turnError instanceof Error ? turnError.message : String(turnError),
+      });
+    }
+  } finally {
+    runningTurns.delete(sessionId);
+    eventHub.publish({ type: "agent_status", sessionId, text: null });
+    secretInput.cancelSession(sessionId);
+    for (const [requestId, pendingPermission] of pendingPermissions) {
+      if (pendingPermission.sessionId === sessionId) {
+        pendingPermissions.delete(requestId);
+        eventHub.publish({ type: "permission_resolved", sessionId, requestId });
+      }
+    }
+    sessionStore.update(sessionId, {});
+    eventHub.publish({ type: "turn_state", sessionId, running: false });
+    const deferredActions = afterTurnActions.get(sessionId) ?? [];
+    afterTurnActions.delete(sessionId);
+    for (const deferredAction of deferredActions) {
+      try {
+        deferredAction();
+      } catch (deferredError) {
+        console.error("[agent] after turn", deferredError);
+      }
+    }
+    setTimeout(() => startNextQueuedMessage(sessionId), 0);
+  }
+  return outcome;
+}
+
+/**
+ * Turns the agent starts itself (e.g. after a background task finished) are stored like normal turns.
+ * Registered on first use, not at load time: the backends import modules that import this one.
+ */
+let backgroundTurnsRegistered = false;
+function registerBackgroundTurns(): void {
+  if (backgroundTurnsRegistered) return;
+  backgroundTurnsRegistered = true;
+  for (const backend of agentBackends.list()) registerBackgroundTurnsOf(backend);
+}
+
+function registerBackgroundTurnsOf(backend: AgentBackend): void {
+  backend.onSessionEvent?.((sessionId, turnEvent) => {
+    if (sessionStore.get(sessionId)) applyTurnEvent(sessionId, turnEvent, { success: false, finalText: "" });
+  });
+  backend.onBackgroundTurn?.((sessionId, turnEvents, stop) => {
+    if (!sessionStore.get(sessionId) || runningTurns.has(sessionId)) {
+      stop();
+      void (async () => {
+        for await (const _ignoredEvent of turnEvents);
+      })();
+      return;
+    }
+    const abortController = new AbortController();
+    abortController.signal.addEventListener("abort", stop, { once: true });
+    void driveTurn(sessionId, abortController, () => turnEvents).catch((turnError) => console.error("[agent] background turn", turnError));
+  });
+}
+
 export const agentRuntime = {
   isRunning(sessionId: string): boolean {
     return runningTurns.has(sessionId);
   },
 
-  async runTurn({ sessionId, text, permissionMode, model, backendId, role = defaultAgentRole, attachments = [] }: TurnRequest): Promise<TurnOutcome> {
+  async runTurn({ sessionId, text, permissionMode, model, effort, backendId, role = defaultAgentRole, attachments = [] }: TurnRequest): Promise<TurnOutcome> {
     const session = sessionStore.get(sessionId);
     if (!session) throw new Error(t("Session nicht gefunden"));
     const project = projectStore.get(session.projectId);
@@ -201,8 +350,10 @@ export const agentRuntime = {
     // Fail early (before the message is stored) when the agent program is missing or not signed in.
     const { backend, context } = await turnContextFor(sessionId, permissionMode, model, backendId, role);
 
-    if (!session.agentSessionId && session.title === "Neue Session") {
-      sessionStore.update(sessionId, { title: (text.trim() || attachments.map((attachment) => attachment.name).join(", ")).slice(0, 60) });
+    // First message: a provisional title from the text; the agent's generated title replaces it after the turn.
+    const provisionalTitle = !session.agentSessionId && session.title === "Neue Session" ? (text.trim() || attachments.map((attachment) => attachment.name).join(", ")).slice(0, 60) : null;
+    if (provisionalTitle) {
+      sessionStore.update(sessionId, { title: provisionalTitle });
       eventHub.publish({ type: "sessions_changed", projectId: project.id });
     }
     const userChatItem = persistAndPublish(sessionId, { kind: "user_text", text, ...(attachments.length ? { attachments } : {}) });
@@ -211,72 +362,36 @@ export const agentRuntime = {
     const pendingFork = session.agentSessionId ? null : session.pendingFork;
     if (session.backendId !== backend.id) sessionStore.update(sessionId, { backendId: backend.id });
 
+    registerBackgroundTurns();
     const abortController = new AbortController();
-    const outcome: TurnOutcome = { success: false, finalText: "" };
-    runningTurns.set(sessionId, abortController);
-    queuePausedSessionIds.delete(sessionId);
-    eventHub.publish({ type: "turn_state", sessionId, running: true });
-
-    try {
-      const turnEvents = backend.runTurn({
+    const turnOutcome = driveTurn(sessionId, abortController, () =>
+      backend.runTurn({
         ...context,
+        effort: backend.capabilities.effort ? effort : undefined,
         promptText: `${pendingFork?.mode === "transcript" ? `${pendingFork.transcript}\n\n${text}` : text}${mentionHintFor(project.id, text, session.agentId)}`,
         attachments,
+        userMessageId: userChatItem.id,
         resumeSessionId: session.agentSessionId,
         pendingFork,
         signal: abortController.signal,
-        requestPermission: (toolName, toolInput, signal) =>
-          new Promise<PermissionDecision>((resolve) => {
-            const requestId = randomUUID();
-            pendingPermissions.set(requestId, { sessionId, toolName, input: toolInput, resolve });
-            signal.addEventListener("abort", () => {
-              pendingPermissions.delete(requestId);
-              resolve({ behavior: "deny", message: "Abgebrochen" });
-            });
-            eventHub.publish({ type: "permission_request", sessionId, requestId, toolName, input: toolInput });
-          }),
-      });
-      for await (const turnEvent of turnEvents) applyTurnEvent(sessionId, turnEvent, outcome);
-    } catch (turnError) {
-      outcome.errorText = abortController.signal.aborted ? "Abgebrochen" : turnError instanceof Error ? turnError.message : String(turnError);
-      if (!abortController.signal.aborted) {
-        persistAndPublish(sessionId, {
-          kind: "turn_result",
-          success: false,
-          costUsd: 0,
-          durationMs: 0,
-          errorText: turnError instanceof Error ? turnError.message : String(turnError),
-        });
-      }
-    } finally {
-      runningTurns.delete(sessionId);
-      secretInput.cancelSession(sessionId);
-      for (const [requestId, pendingPermission] of pendingPermissions) {
-        if (pendingPermission.sessionId === sessionId) {
-          pendingPermissions.delete(requestId);
-          eventHub.publish({ type: "permission_resolved", sessionId, requestId });
-        }
-      }
-      sessionStore.update(sessionId, {});
-      eventHub.publish({ type: "turn_state", sessionId, running: false });
-      const deferredActions = afterTurnActions.get(sessionId) ?? [];
-      afterTurnActions.delete(sessionId);
-      for (const deferredAction of deferredActions) {
-        try {
-          deferredAction();
-        } catch (deferredError) {
-          console.error("[agent] after turn", deferredError);
-        }
-      }
-      setTimeout(() => startNextQueuedMessage(sessionId), 0);
-    }
-    return outcome;
+        keepAlive: role === "chat",
+        requestPermission: (toolName, toolInput, signal, suggestions) => requestPermission(sessionId, toolName, toolInput, signal, suggestions),
+      }),
+    );
+    if (provisionalTitle && backend.generatedTitle) void turnOutcome.then(() => adoptGeneratedTitle(sessionId, provisionalTitle, backend));
+    return turnOutcome;
   },
 
   /** Open permission requests (so a freshly opened app still shows what is waiting). */
-  listPendingPermissions(): { requestId: string; sessionId: string; toolName: string; input: unknown }[] {
+  listPendingPermissions(): { requestId: string; sessionId: string; toolName: string; input: unknown; alwaysAllowLabel?: string }[] {
     return [
-      ...[...pendingPermissions].map(([requestId, pendingPermission]) => ({ requestId, sessionId: pendingPermission.sessionId, toolName: pendingPermission.toolName, input: pendingPermission.input })),
+      ...[...pendingPermissions].map(([requestId, pendingPermission]) => ({
+        requestId,
+        sessionId: pendingPermission.sessionId,
+        toolName: pendingPermission.toolName,
+        input: pendingPermission.input,
+        alwaysAllowLabel: pendingPermission.alwaysAllowLabel,
+      })),
       ...secretInput.listPending(),
     ];
   },
@@ -299,6 +414,32 @@ export const agentRuntime = {
     abortController.abort();
   },
 
+  backgroundTasksFor(sessionId: string): BackgroundTask[] {
+    return backgroundTasksBySession.get(sessionId) ?? [];
+  },
+
+  async stopBackgroundTask(sessionId: string, taskId: string): Promise<void> {
+    for (const backend of agentBackends.list()) await backend.stopBackgroundTask?.(sessionId, taskId);
+  },
+
+  /** Restores the project files to their state before this user message (dryRun: only report). */
+  async rewindFiles(sessionId: string, userItemId: string, dryRun: boolean): Promise<RewindResult> {
+    if (runningTurns.has(sessionId)) throw new Error(t("In dieser Session läuft bereits ein Durchlauf"));
+    const session = sessionStore.get(sessionId);
+    if (!session) throw new Error(t("Session nicht gefunden"));
+    const backend = agentBackends.get(normalizeBackendId(session.backendId));
+    if (!backend.rewindFiles) throw new Error(t("{0} kann Dateien nicht zurücksetzen", backend.name));
+    const { context } = await turnContextFor(sessionId, "default");
+    const rewindResult = await backend.rewindFiles(context, userItemId, dryRun);
+    if (!dryRun && rewindResult.canRewind) persistAndPublish(sessionId, { kind: "notice", text: t("Dateien auf den Stand vor dieser Nachricht zurückgesetzt") });
+    return rewindResult;
+  },
+
+  /** Ends the agent process of a deleted session. */
+  release(sessionId: string): void {
+    for (const backend of agentBackends.list()) backend.release?.(sessionId);
+  },
+
   /** Context window by category; model = the one the composer has picked (window size depends on it). */
   async measureContext(sessionId: string, model?: string): Promise<ContextBreakdown> {
     const { backend, context } = await turnContextFor(sessionId, "default", model, null, defaultAgentRole);
@@ -313,6 +454,20 @@ export const agentRuntime = {
 
   queueFor(sessionId: string): QueuedMessage[] {
     return queuedMessagesBySession.get(sessionId) ?? [];
+  },
+
+  /** Sends the message into the running turn when the agent program can take it (Claude Code); false = queue it. */
+  steer({ sessionId, text, attachments = [] }: TurnRequest): boolean {
+    if (!runningTurns.has(sessionId)) return false;
+    const session = sessionStore.get(sessionId);
+    const project = session && projectStore.get(session.projectId);
+    if (!session || !project) return false;
+    const backend = agentBackends.get(normalizeBackendId(session.backendId));
+    const userMessageId = randomUUID();
+    if (!backend.steer?.(sessionId, { project, promptText: `${text}${mentionHintFor(project.id, text, session.agentId)}`, attachments, userMessageId })) return false;
+    const chatItem = chatItemStore.append(sessionId, { kind: "user_text", text, ...(attachments.length ? { attachments } : {}) }, Date.now(), userMessageId);
+    eventHub.publish({ type: "chat_item", sessionId, chatItem });
+    return true;
   },
 
   /** Queues the message behind the running turn (or starts it right away when nothing runs). */
@@ -358,20 +513,27 @@ export const agentRuntime = {
     publishQueue(sessionId);
   },
 
-  /** answers: for AskUserQuestion (question text → chosen label(s), comma-separated). */
-  resolvePermission(requestId: string, allow: boolean, answers?: Record<string, string>): boolean {
+  resolvePermission(requestId: string, { allow, answers, always, permissionMode, message }: PermissionAnswer): boolean {
     const pendingPermission = pendingPermissions.get(requestId);
     if (!pendingPermission) return false;
     pendingPermissions.delete(requestId);
     const toolInput = (pendingPermission.input && typeof pendingPermission.input === "object" ? pendingPermission.input : {}) as Record<string, unknown>;
+    const isQuestion = pendingPermission.toolName === "AskUserQuestion";
+    // Plan approved: continue in the chosen mode (like Claude Code's "auto-accept edits" / "ask for each edit").
+    const modeUpdate: PermissionSuggestion[] = permissionMode ? [{ type: "setMode", mode: permissionMode, destination: "session" }] : [];
+    const updatedPermissions = [...(always ? pendingPermission.suggestions : []), ...modeUpdate];
     pendingPermission.resolve(
       !allow
-        ? { behavior: "deny", message: pendingPermission.toolName === "AskUserQuestion" ? "Der Nutzer hat die Fragen übersprungen." : "Vom Nutzer abgelehnt" }
-        : answers
-          ? { behavior: "allow", updatedInput: { ...toolInput, answers } }
-          : { behavior: "allow" },
+        ? { behavior: "deny", message: message?.trim() || (isQuestion ? "Der Nutzer hat die Fragen übersprungen." : "Vom Nutzer abgelehnt") }
+        : {
+            behavior: "allow",
+            ...(answers ? { updatedInput: { ...toolInput, answers } } : {}),
+            ...(updatedPermissions.length ? { updatedPermissions } : {}),
+          },
     );
     eventHub.publish({ type: "permission_resolved", sessionId: pendingPermission.sessionId, requestId });
+    const switchedMode = updatedPermissions.find((update) => update.type === "setMode")?.mode;
+    if (allow && typeof switchedMode === "string") eventHub.publish({ type: "permission_mode_changed", sessionId: pendingPermission.sessionId, permissionMode: switchedMode });
     return true;
   },
 };

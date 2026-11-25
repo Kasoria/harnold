@@ -288,8 +288,9 @@ export const chatItemStore = {
   clear(sessionId: string): void {
     database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
   },
-  append(sessionId: string, payload: ChatItemPayload, createdAt = Date.now()): ChatItem {
-    const chatItem: ChatItem = { ...payload, id: randomUUID(), sessionId, createdAt };
+  /** itemId: given when the agent program must know it in advance (Claude Code checkpoints by user message id). */
+  append(sessionId: string, payload: ChatItemPayload, createdAt = Date.now(), itemId: string = randomUUID()): ChatItem {
+    const chatItem: ChatItem = { ...payload, id: itemId, sessionId, createdAt };
     database
       .prepare("INSERT INTO chat_items (id, session_id, payload, created_at) VALUES (?, ?, ?, ?)")
       .run(chatItem.id, sessionId, JSON.stringify(payload), chatItem.createdAt);

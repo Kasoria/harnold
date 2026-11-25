@@ -159,7 +159,7 @@ type TextResult = { content: { type: "text"; text: string }[]; isError?: boolean
 const textResult = (text: string, isError = false): TextResult => ({ content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) });
 
 /** team_list / team_ask for the agent running in `sessionId`. */
-export function createTeamTools(project: Project, sessionId: string, permissionMode: string) {
+export function createTeamTools(project: Project, sessionId: string, permissionMode: string | (() => string)) {
   return [
     tool("team_list", "Listet die Agenten im Team dieses Projekts (Name, Rolle, id).", {}, async () => {
       const team = teamStore.forProject(project.id);
@@ -237,7 +237,7 @@ export function createTeamTools(project: Project, sessionId: string, permissionM
             const outcome = await agentRuntime.runTurn({
               sessionId: targetSession.id,
               text: `Nachricht von ${caller?.name ?? "Harnold"} (Team):\n\n${message}`,
-              permissionMode: permissionMode as Parameters<typeof agentRuntime.runTurn>[0]["permissionMode"],
+              permissionMode: (typeof permissionMode === "function" ? permissionMode() : permissionMode) as Parameters<typeof agentRuntime.runTurn>[0]["permissionMode"],
             });
             return outcome.success ? textResult(`${target.name}: ${outcome.finalText || "(keine Antwort)"}`) : textResult(`${target.name} konnte nicht antworten: ${outcome.errorText ?? "Fehler"}`, true);
           } finally {

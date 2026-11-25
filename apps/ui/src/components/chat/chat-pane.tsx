@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card";
 import { SecretInputCard, isSecretInputRequest } from "@/components/chat/secret-input-card";
-import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, ShieldAlert, Square, Trash2, Users, Volume2 } from "lucide-react";
-import type { TeamAgent, Attachment, ChatItem, QueuedMessage, Environment, PermissionMode, PermissionRequest, Project, Session } from "@/types";
+import { PermissionCard } from "@/components/chat/permission-card";
+import { BackgroundTasksBar, TodoPanel, todosFromChat } from "@/components/chat/agent-progress";
+import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, Square, Trash2, Users, Volume2 } from "lucide-react";
+import type { BackgroundTask, EffortLevel, TeamAgent, Attachment, ChatItem, QueuedMessage, Environment, PermissionAnswer, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { StatusDot, type SessionStatus } from "@/components/status-dot";
 import { safeStorage } from "@/lib/storage";
 import { useSpeechPlayback } from "@/hooks/use-speech-playback";
-import { ToolGroup, summarizeToolInput, type ToolResultItem, type ToolUseItem } from "./tool-group";
+import { WorkGroup, type ToolResultItem, type ToolUseItem, type WorkStep } from "./tool-group";
 import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
 import { ImageGallery, imagePathsIn } from "./attachment-views";
@@ -61,14 +63,14 @@ type ChatPaneProps = {
   composerInsertion: { text: string; nonce: number } | null;
   workspaceOpen: boolean;
   onOpenWorkspace: () => void;
-  onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
+  onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[], effort?: EffortLevel) => void;
   /** Saves the model picked in the composer on the open session (no-op while there is none). */
   /** Saves a requested secret ("" = skipped); the value goes to the core only. */
   onSubmitSecret: (requestId: string, value: string) => void;
   onSessionModelChange: (model: string) => void;
   inheritedModel: InheritedModel;
   onInterrupt: () => void;
-  onAnswerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => void;
+  onAnswerPermission: (requestId: string, answer: PermissionAnswer) => void;
   onDeleteSession: () => void;
   /** All sessions of the project – needed to find the versions of edited messages. */
   projectSessions: Session[];
@@ -85,23 +87,28 @@ type ChatPaneProps = {
   onRemoveQueued: (queuedMessageId: string) => void;
   /** Context size reported live during the running turn. */
   liveContextTokens: number | null;
+  agentStatus: string | null;
+  backgroundTasks: BackgroundTask[];
+  onStopBackgroundTask: (taskId: string) => void;
 };
 
 type RenderBlock =
   | { type: "item"; chatItem: ChatItem }
-  | { type: "tools"; key: string; toolUses: ToolUseItem[] };
+  | { type: "work"; key: string; steps: WorkStep[]; toolUses: ToolUseItem[] };
 
 const statusLabels: Record<SessionStatus, string> = { idle: t("Idle"), running: t("Läuft"), waiting: t("Wartet"), error: t("Fehler") };
 
-/** Groups consecutive tool calls into one collapsible line. */
+/** Groups consecutive thoughts and tool calls into one collapsible line (answers stay visible). */
 function buildRenderBlocks(chatItems: ChatItem[]): RenderBlock[] {
   const renderBlocks: RenderBlock[] = [];
   for (const chatItem of chatItems) {
     if (chatItem.kind === "tool_result") continue;
-    if (chatItem.kind === "tool_use") {
+    if (chatItem.kind === "tool_use" || chatItem.kind === "thinking") {
       const previousBlock = renderBlocks.at(-1);
-      if (previousBlock?.type === "tools") previousBlock.toolUses.push(chatItem);
-      else renderBlocks.push({ type: "tools", key: chatItem.id, toolUses: [chatItem] });
+      const workBlock = previousBlock?.type === "work" ? previousBlock : { type: "work" as const, key: chatItem.id, steps: [], toolUses: [] };
+      if (workBlock !== previousBlock) renderBlocks.push(workBlock);
+      workBlock.steps.push(chatItem);
+      if (chatItem.kind === "tool_use") workBlock.toolUses.push(chatItem);
       continue;
     }
     renderBlocks.push({ type: "item", chatItem });
@@ -125,6 +132,30 @@ export function ChatPane(props: ChatPaneProps) {
   const [droppedFiles, setDroppedFiles] = useState<{ files: File[]; nonce: number } | null>(null);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const projectEnvironment = props.environments.find((environment) => props.project && environment.projectIds.includes(props.project.id)) ?? null;
+
+  /** Like Claude's "restore code": preview what changes, ask, then restore the files (the conversation stays). */
+  const rewindFilesTo = async (userItemId: string) => {
+    if (!props.session) return;
+    try {
+      const preview = await api.rewindFiles(props.session.id, userItemId, true);
+      if (!preview.canRewind) return void toast.error(preview.error || t("Für diese Nachricht gibt es keinen Datei-Stand"));
+      const changedFiles = preview.filesChanged ?? [];
+      if (!changedFiles.length) return void toast.success(t("Seit dieser Nachricht wurden keine Dateien geändert"));
+      const projectPrefix = props.project ? `${props.project.path}/` : "";
+      const fileList = changedFiles.slice(0, 8).map((filePath) => (filePath.startsWith(projectPrefix) ? filePath.slice(projectPrefix.length) : filePath)).join(", ");
+      const confirmed = await confirmAction({
+        title: t("{0} Dateien zurücksetzen?", changedFiles.length),
+        description: `${fileList}${changedFiles.length > 8 ? " …" : ""} · +${preview.insertions ?? 0} / −${preview.deletions ?? 0}. ${t("Der Chat bleibt erhalten.")}`,
+        confirmLabel: t("Zurücksetzen"),
+      });
+      if (!confirmed) return;
+      const rewindResult = await api.rewindFiles(props.session.id, userItemId, false);
+      if (rewindResult.canRewind) toast.success(t("Dateien zurückgesetzt"));
+      else toast.error(rewindResult.error || t("Zurücksetzen nicht möglich"));
+    } catch (rewindError) {
+      props.onError(rewindError);
+    }
+  };
 
   const commitTitle = () => {
     if (titleDraft?.trim() && titleDraft.trim() !== props.session?.title) props.onRenameSession(titleDraft.trim());
@@ -181,11 +212,17 @@ export function ChatPane(props: ChatPaneProps) {
   };
 
   const lastUserItem = props.chatItems.findLast((chatItem) => chatItem.kind === "user_text");
+  // A turn the agent started itself (after a background task) begins after the last finished turn.
+  const lastTurnEnd = props.chatItems.findLast((chatItem) => chatItem.kind === "turn_result")?.createdAt ?? 0;
+  const turnStartedAt = Math.max(lastUserItem?.createdAt ?? 0, lastTurnEnd) || Date.now();
   const lastMeasuredTurn = props.chatItems.findLast((chatItem) => chatItem.kind === "turn_result" && chatItem.contextTokens !== undefined);
   const lastTurnContext = lastMeasuredTurn?.kind === "turn_result" ? lastMeasuredTurn : null;
   const contextTokens = running && props.liveContextTokens !== null ? props.liveContextTokens : (lastTurnContext?.contextTokens ?? null);
   const lastItem = props.chatItems.at(-1);
   const toolPending = lastItem?.kind === "tool_use";
+  const todos = useMemo(() => todosFromChat(props.chatItems), [props.chatItems]);
+  // Like Claude Code: visible while work is left (or the turn still runs).
+  const showTodoPanel = todos.length > 0 && (running || todos.some((todo) => todo.status !== "completed"));
   const showActivity = running && !props.streamingDraft && !props.streamingThinking && props.permissionRequests.length === 0;
 
   useEffect(() => safeStorage.setItem("harnold.readAloud", readAloud ? "1" : "0"), [readAloud]);
@@ -223,7 +260,7 @@ export function ChatPane(props: ChatPaneProps) {
       if (newPaths.length) pathsByKey.set(blockKey, newPaths);
     };
     for (const renderBlock of renderBlocks) {
-      if (renderBlock.type === "tools") {
+      if (renderBlock.type === "work") {
         const toolImagePaths = renderBlock.toolUses.flatMap((toolUse) => {
           const toolResult = toolResultsByToolUseId.get(toolUse.toolUseId);
           if (!toolResult || toolResult.isError) return [];
@@ -418,12 +455,17 @@ export function ChatPane(props: ChatPaneProps) {
           <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed">
           {!props.project && <p className="text-muted-foreground">{t("Lege links ein Projekt an, um zu starten.")}</p>}
 
-          {renderBlocks.map((renderBlock) => {
-            if (renderBlock.type === "tools") {
+          {renderBlocks.map((renderBlock, blockIndex) => {
+            if (renderBlock.type === "work") {
               const toolImagePaths = imagePathsByBlockKey.get(renderBlock.key);
               return (
                 <div key={renderBlock.key} className="flex flex-col gap-2">
-                  <ToolGroup toolUses={renderBlock.toolUses} toolResultsByToolUseId={toolResultsByToolUseId} running={running} />
+                  <WorkGroup
+                    steps={renderBlock.steps}
+                    toolResultsByToolUseId={toolResultsByToolUseId}
+                    running={running}
+                    isLatest={blockIndex === renderBlocks.length - 1}
+                  />
                   {toolImagePaths && props.project && <ImageGallery projectId={props.project.id} imagePaths={toolImagePaths} />}
                 </div>
               );
@@ -442,6 +484,7 @@ export function ChatPane(props: ChatPaneProps) {
                     onShowVersion={(versionIndex) => versions && props.onOpenVersion(versions.versionSessionIds[versionIndex])}
                     canEdit={!running}
                     onSubmitEdit={(editedText) => props.onEditMessage(chatItem.id, editedText)}
+                    onRewindFiles={sessionBackend?.capabilities.rewindFiles && props.session ? () => void rewindFilesTo(chatItem.id) : undefined}
                   />
                 );
               }
@@ -483,8 +526,6 @@ export function ChatPane(props: ChatPaneProps) {
                     </div>
                   </div>
                 );
-              case "thinking":
-                return <ThinkingBlock key={chatItem.id} text={chatItem.text} />;
               case "notice":
                 return (
                   <div key={chatItem.id} className="flex animate-in items-center gap-3 py-1 text-[11.5px] text-muted-foreground fade-in duration-200">
@@ -510,7 +551,7 @@ export function ChatPane(props: ChatPaneProps) {
 
           {props.streamingThinking && <ThinkingBlock text={props.streamingThinking} live />}
           {props.streamingDraft && <ChatMarkdown text={props.streamingDraft} />}
-          {showActivity && <ActivityIndicator label={toolPending ? t("Führt aus") : t("Arbeitet")} startedAt={lastUserItem?.createdAt ?? Date.now()} />}
+          {showActivity && <ActivityIndicator label={props.agentStatus || (toolPending ? t("Führt aus") : t("Arbeitet"))} startedAt={turnStartedAt} />}
 
           {props.permissionRequests.map((permissionRequest) =>
             isSecretInputRequest(permissionRequest.toolName) ? (
@@ -524,43 +565,11 @@ export function ChatPane(props: ChatPaneProps) {
               <QuestionCard
                 key={permissionRequest.requestId}
                 input={permissionRequest.input}
-                onAnswer={(answers) => props.onAnswerPermission(permissionRequest.requestId, true, answers)}
-                onSkip={() => props.onAnswerPermission(permissionRequest.requestId, false)}
+                onAnswer={(answers) => props.onAnswerPermission(permissionRequest.requestId, { allow: true, answers })}
+                onSkip={() => props.onAnswerPermission(permissionRequest.requestId, { allow: false })}
               />
             ) : (
-            <div
-              key={permissionRequest.requestId}
-              className="animate-in fade-in slide-in-from-bottom-1 rounded-xl border bg-card p-3 shadow-xs duration-200"
-            >
-              <div className="flex items-center gap-2 text-[13px]">
-                <ShieldAlert className="size-4 text-status-waiting" />
-                <span>
-                  {permissionRequest.toolName === "FolderAccess" ? (
-                    t("Zugriff auf einen Ordner außerhalb des Projekts")
-                  ) : (
-                    <>
-                      <strong className="font-medium">{permissionRequest.toolName}</strong> {t("möchte ausgeführt werden")}
-                    </>
-                  )}
-                </span>
-              </div>
-              <div className="mt-1.5 truncate font-mono text-[12px] text-muted-foreground">
-                {permissionRequest.toolName === "FolderAccess"
-                  ? String((permissionRequest.input as { path?: string } | null)?.path ?? "")
-                  : summarizeToolInput(permissionRequest.input) || JSON.stringify(permissionRequest.input).slice(0, 200)}
-              </div>
-              {permissionRequest.toolName === "FolderAccess" && (
-                <p className="mt-1 text-[11.5px] text-muted-foreground">{t("Erlauben merkt sich den Ordner für dieses Projekt – danach wird nicht wieder gefragt.")}</p>
-              )}
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" onClick={() => props.onAnswerPermission(permissionRequest.requestId, true)}>
-                  {t("Erlauben")}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => props.onAnswerPermission(permissionRequest.requestId, false)}>
-                  {t("Ablehnen")}
-                </Button>
-              </div>
-            </div>
+              <PermissionCard key={permissionRequest.requestId} request={permissionRequest} onAnswer={(answer) => props.onAnswerPermission(permissionRequest.requestId, answer)} />
             ),
           )}
 
@@ -614,9 +623,17 @@ export function ChatPane(props: ChatPaneProps) {
 
       {props.project && (
         <div className={cn("mx-auto w-full max-w-3xl")}>
+          {(showTodoPanel || props.backgroundTasks.length > 0) && (
+            <div className="grid gap-2 px-4 pb-2">
+              {showTodoPanel && <TodoPanel todos={todos} />}
+              {props.backgroundTasks.length > 0 && <BackgroundTasksBar tasks={props.backgroundTasks} onStop={props.onStopBackgroundTask} />}
+            </div>
+          )}
           <Composer
             placeholder={t("Nachricht an {0} …", props.project.name)}
             running={running}
+            canSteer={Boolean(sessionBackend?.capabilities.steering)}
+            canChooseEffort={Boolean(sessionBackend?.capabilities.effort)}
             inheritedModel={props.inheritedModel}
             draftKey={props.session?.id ?? `project:${props.project.id}`}
             sessionModel={props.session?.model ?? ""}

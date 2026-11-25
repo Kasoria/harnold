@@ -1,5 +1,5 @@
 import { currentLanguage, t } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -77,8 +77,8 @@ export const api = {
   deleteTeamAgent: (agentId: string) => request<{ ok: true }>("DELETE", `/api/team/${agentId}`),
   deleteSession: (sessionId: string, deleteFiles = false) => request("DELETE", `/api/sessions/${sessionId}${deleteFiles ? "?deleteFiles=1" : ""}`),
   listChatItems: (sessionId: string) => request<ChatItem[]>("GET", `/api/sessions/${sessionId}/items`),
-  sendMessage: (sessionId: string, text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) =>
-    request("POST", `/api/sessions/${sessionId}/messages`, { text, permissionMode, model: model || undefined, attachments: attachments?.length ? attachments : undefined }),
+  sendMessage: (sessionId: string, text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[], effort?: EffortLevel) =>
+    request("POST", `/api/sessions/${sessionId}/messages`, { text, permissionMode, model: model || undefined, effort, attachments: attachments?.length ? attachments : undefined }),
   /** Uploads files for a chat message (multipart). */
   uploadAttachments: async (projectId: string, files: File[]): Promise<Attachment[]> => {
     const formData = new FormData();
@@ -100,7 +100,10 @@ export const api = {
   readContext: (sessionId: string, model?: string) => request<ContextBreakdown>("GET", `/api/sessions/${sessionId}/context${model ? `?model=${encodeURIComponent(model)}` : ""}`),
   /** Value ("" = skip) goes to the core only and ends up in the environment variables. */
   submitSecretInput: (requestId: string, value: string) => request("POST", `/api/secret-input/${requestId}`, { value }),
-  answerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => request("POST", `/api/permissions/${requestId}`, { allow, answers }),
+  rewindFiles: (sessionId: string, itemId: string, dryRun: boolean) => request<RewindResult>("POST", `/api/sessions/${sessionId}/rewind-files`, { itemId, dryRun }),
+  listBackgroundTasks: (sessionId: string) => request<BackgroundTask[]>("GET", `/api/sessions/${sessionId}/background-tasks`),
+  stopBackgroundTask: (sessionId: string, taskId: string) => request("POST", `/api/sessions/${sessionId}/background-tasks/${encodeURIComponent(taskId)}/stop`),
+  answerPermission: (requestId: string, answer: PermissionAnswer) => request("POST", `/api/permissions/${requestId}`, answer),
   readTree: (projectId: string) => request<FileNode[]>("GET", `/api/projects/${projectId}/tree`),
   readFile: (projectId: string, filePath: string) =>
     request<{ content: string }>("GET", `/api/projects/${projectId}/file?path=${encodeURIComponent(filePath)}`),

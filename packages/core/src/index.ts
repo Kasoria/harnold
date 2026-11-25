@@ -371,6 +371,7 @@ app.delete("/api/sessions/:sessionId", (context) => {
   if (session) {
     agentRuntime.clearQueue(session.id);
     agentRuntime.interrupt(session.id);
+    agentRuntime.release(session.id);
     // Opt-in only: ?deleteFiles=1 also removes attachments/images no other session or design file uses.
     if (context.req.query("deleteFiles") === "1") managedFiles.remove(managedFiles.exclusiveToConversation(session.id).map((file) => file.id));
     sessionStore.remove(session.id);
@@ -482,16 +483,38 @@ app.post("/api/projects/:projectId/attachments", async (context) => {
 
 app.post("/api/sessions/:sessionId/messages", async (context) => {
   const body = z
-    .object({ text: z.string(), permissionMode: permissionModeSchema.default("default"), model: z.string().optional(), attachments: z.array(attachmentSchema).max(20).optional() })
+    .object({
+      text: z.string(),
+      permissionMode: permissionModeSchema.default("default"),
+      model: z.string().optional(),
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+      attachments: z.array(attachmentSchema).max(20).optional(),
+    })
     .refine((body) => body.text.trim() || body.attachments?.length, "Nachricht ist leer")
     .parse(await context.req.json());
   const sessionId = context.req.param("sessionId");
   const session = sessionStore.get(sessionId);
   if (!session) throw new Error(t("Session nicht gefunden"));
   // While a turn runs, the message waits in the queue and starts afterwards.
-  if (agentRuntime.isRunning(sessionId)) return context.json({ ok: true, queued: agentRuntime.enqueue({ sessionId, ...body }) });
+  if (agentRuntime.isRunning(sessionId)) {
+    // Like the Claude desktop app: the running turn picks the message up; otherwise it waits in the queue.
+    if (agentRuntime.steer({ sessionId, ...body })) return context.json({ ok: true, steered: true });
+    return context.json({ ok: true, queued: agentRuntime.enqueue({ sessionId, ...body }) });
+  }
   await agentRuntime.assertReady(sessionId); // friendly error when the agent program is missing or not signed in
   void agentRuntime.runTurn({ sessionId, ...body }).catch((turnError) => console.error("[agent]", turnError));
+  return context.json({ ok: true });
+});
+
+app.post("/api/sessions/:sessionId/rewind-files", async (context) => {
+  const body = z.object({ itemId: z.string().min(1), dryRun: z.boolean().default(false) }).parse(await context.req.json());
+  return context.json(await agentRuntime.rewindFiles(context.req.param("sessionId"), body.itemId, body.dryRun));
+});
+
+app.get("/api/sessions/:sessionId/background-tasks", (context) => context.json(agentRuntime.backgroundTasksFor(context.req.param("sessionId"))));
+
+app.post("/api/sessions/:sessionId/background-tasks/:taskId/stop", async (context) => {
+  await agentRuntime.stopBackgroundTask(context.req.param("sessionId"), context.req.param("taskId"));
   return context.json({ ok: true });
 });
 
@@ -579,8 +602,16 @@ app.post("/api/secret-input/:requestId", async (context) => {
 });
 
 app.post("/api/permissions/:requestId", async (context) => {
-  const body = z.object({ allow: z.boolean(), answers: z.record(z.string(), z.string()).optional() }).parse(await context.req.json());
-  return context.json({ ok: agentRuntime.resolvePermission(context.req.param("requestId"), body.allow, body.answers) });
+  const body = z
+    .object({
+      allow: z.boolean(),
+      answers: z.record(z.string(), z.string()).optional(),
+      always: z.boolean().optional(),
+      permissionMode: permissionModeSchema.optional(),
+      message: z.string().max(10_000).optional(),
+    })
+    .parse(await context.req.json());
+  return context.json({ ok: agentRuntime.resolvePermission(context.req.param("requestId"), body) });
 });
 
 // --- Tasks ---

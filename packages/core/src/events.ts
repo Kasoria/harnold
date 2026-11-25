@@ -1,5 +1,6 @@
 import type { ChatItem } from "./db.ts";
 import type { QueuedMessage } from "./agent.ts";
+import type { BackgroundTask } from "./backends/types.ts";
 
 /** Everything the core pushes to connected clients. */
 export type ServerEvent =
@@ -18,7 +19,14 @@ export type ServerEvent =
       requestId: string;
       toolName: string;
       input: unknown;
+      /** "Always allow" offer: what the agent program would remember (label for the button). */
+      alwaysAllowLabel?: string;
     }
+  /** Live status line of a running turn (retry, compacting, subagent progress); null clears it. */
+  | { type: "agent_status"; sessionId: string; text: string | null }
+  | { type: "background_tasks"; sessionId: string; tasks: BackgroundTask[] }
+  /** The agent switched the permission mode (e.g. plan approved → edits allowed); the composer follows. */
+  | { type: "permission_mode_changed"; sessionId: string; permissionMode: string }
   | { type: "permission_resolved"; sessionId: string; requestId: string }
   | { type: "files_changed"; projectId: string; paths: string[] }
   | { type: "sessions_changed"; projectId: string }

@@ -37,6 +37,9 @@ export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
   | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string; contextTokens?: number; contextWindow?: number }
 );
 
+/** Work that outlives a turn: Bash in the background, background subagents. */
+export type BackgroundTask = { id: string; description: string; taskType: string };
+
 /** Sent while a turn ran; starts once it is done. */
 export type QueuedMessage = { id: string; createdAt: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };
 
@@ -54,7 +57,9 @@ export type Attachment = { path: string; name: string; mimeType: string; size: n
 
 export type FileNode = { name: string; path: string; type: "file" | "directory"; children?: FileNode[] };
 
-export type PermissionRequest = { requestId: string; sessionId: string; toolName: string; input: unknown };
+export type PermissionRequest = { requestId: string; sessionId: string; toolName: string; input: unknown; alwaysAllowLabel?: string };
+/** Answer to a permission card (see core agent.ts PermissionAnswer). */
+export type PermissionAnswer = { allow: boolean; answers?: Record<string, string>; always?: boolean; permissionMode?: PermissionMode; message?: string };
 
 export type ServerEvent =
   | { type: "chat_item"; sessionId: string; chatItem: ChatItem }
@@ -67,6 +72,9 @@ export type ServerEvent =
   | { type: "context_size"; sessionId: string; tokens: number }
   | ({ type: "permission_request" } & PermissionRequest)
   | { type: "permission_resolved"; sessionId: string; requestId: string }
+  | { type: "permission_mode_changed"; sessionId: string; permissionMode: PermissionMode }
+  | { type: "agent_status"; sessionId: string; text: string | null }
+  | { type: "background_tasks"; sessionId: string; tasks: BackgroundTask[] }
   | { type: "files_changed"; projectId: string; paths: string[] }
   | { type: "sessions_changed"; projectId: string }
   | { type: "tasks_changed" }
@@ -371,7 +379,9 @@ export type AgentRuntimeStatus = {
 };
 
 /** What the UI may offer for an agent program; features it lacks are hidden. */
-export type BackendCapabilities = { interactivePermissions: boolean; questions: boolean; contextBreakdown: boolean; forkAtMessage: boolean; extensions: boolean };
+export type BackendCapabilities = { interactivePermissions: boolean; questions: boolean; contextBreakdown: boolean; forkAtMessage: boolean; extensions: boolean; steering?: boolean; effort?: boolean; rewindFiles?: boolean };
+export type RewindResult = { canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number };
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 /** runtime null = nothing to install (Harnold-Agent). */
 export type BackendStatus = { id: AgentBackendId; name: string; ready: boolean; runtime: AgentRuntimeStatus | null; capabilities: BackendCapabilities };
 export type AgentBackendsView = { activeId: AgentBackendId; backends: BackendStatus[] };

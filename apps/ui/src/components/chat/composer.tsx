@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, FileUp, Folder, FolderPlus, Loader2, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
 import { startSystemSpeech, type SystemSpeechSession } from "@/lib/system-speech";
-import type { AgentCommand, Attachment, PermissionMode, TeamAgent } from "@/types";
+import type { AgentCommand, Attachment, EffortLevel, PermissionMode, TeamAgent } from "@/types";
 import { AttachmentChip } from "./attachment-views";
 import { api } from "@/api";
 import { cn, isActionEnter } from "@/lib/utils";
@@ -14,6 +14,19 @@ import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { permissionModeOptions } from "@/components/form-field";
 import { getAgentModels, ModelSelect, useAgentModels, type InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
+
+/** Window event: the agent changed the permission mode of the open session (detail = new mode). */
+export const permissionModeChangedEvent = "harnold:permission-mode-changed";
+
+/** Effort levels like Claude Code's /effort ("default" = the model decides). */
+const effortOptions: { value: EffortLevel | "default"; label: string }[] = [
+  { value: "default", label: t("Aufwand: Standard") },
+  { value: "low", label: t("Aufwand: niedrig") },
+  { value: "medium", label: t("Aufwand: mittel") },
+  { value: "high", label: t("Aufwand: hoch") },
+  { value: "xhigh", label: t("Aufwand: sehr hoch") },
+  { value: "max", label: t("Aufwand: maximal") },
+];
 
 const fieldSizingSupported = CSS.supports("field-sizing", "content");
 
@@ -49,6 +62,10 @@ type ComposerProps = {
   /** Session-level commands (/clear, /new, /rename, /move); returns false when it is not one. */
   onSessionCommand: (commandName: string, commandArguments: string) => boolean;
   running: boolean;
+  /** The agent takes messages into the running turn (otherwise they are queued). */
+  canSteer?: boolean;
+  /** The agent program supports an effort level (Claude Code). */
+  canChooseEffort?: boolean;
   insertion: { text: string; nonce: number } | null;
   /** Files dropped anywhere on the chat; attached like files picked here. */
   droppedFiles: { files: File[]; nonce: number } | null;
@@ -58,7 +75,7 @@ type ComposerProps = {
   ttsReady: boolean;
   readAloud: boolean;
   onReadAloudChange: (readAloud: boolean) => void;
-  onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => void;
+  onSend: (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[], effort?: EffortLevel) => void;
   onInterrupt: () => void;
   onError: (unknownError: unknown) => void;
   /** Team members of the project; "@" lists them, a mention hands the message to them. */
@@ -237,6 +254,16 @@ export function Composer(props: ComposerProps) {
   };
 
   useEffect(() => safeStorage.setItem("harnold.permissionMode", permissionMode), [permissionMode]);
+  /** "" = the model's default effort. */
+  const [effort, setEffort] = useState<EffortLevel | "">((safeStorage.getItem("harnold.effort") as EffortLevel | null) ?? "");
+  useEffect(() => safeStorage.setItem("harnold.effort", effort), [effort]);
+  const chosenEffort = props.canChooseEffort && effort ? effort : undefined;
+  // The agent switched the mode (plan approved → edits automatic or one by one).
+  useEffect(() => {
+    const followAgentMode = (event: Event) => setPermissionMode((event as CustomEvent<PermissionMode>).detail);
+    window.addEventListener(permissionModeChangedEvent, followAgentMode);
+    return () => window.removeEventListener(permissionModeChangedEvent, followAgentMode);
+  }, []);
 
   const insertText = (text: string) => {
     setComposerText((previous) => (previous && !/\s$/.test(previous) ? previous + " " : previous) + text);
@@ -306,7 +333,7 @@ export function Composer(props: ComposerProps) {
       return;
     }
     if (!canSend) return;
-    props.onSend(text, permissionMode, model || undefined, readyAttachments);
+    props.onSend(text, permissionMode, model || undefined, readyAttachments, chosenEffort);
     resetComposer();
   };
 
@@ -314,7 +341,7 @@ export function Composer(props: ComposerProps) {
   const sendWhatWasSaid = async () => {
     const text = (await stopListening()).trim();
     if (!text && !readyAttachments.length) return;
-    props.onSend(text, permissionMode, model || undefined, readyAttachments);
+    props.onSend(text, permissionMode, model || undefined, readyAttachments, chosenEffort);
     resetComposer();
   };
 
@@ -327,7 +354,7 @@ export function Composer(props: ComposerProps) {
     const text = `/${command.name}`;
     if (runLocalCommand(text)) setComposerText("");
     else if (!props.running) {
-      props.onSend(text, permissionMode, model || undefined);
+      props.onSend(text, permissionMode, model || undefined, undefined, chosenEffort);
       setComposerText("");
     } else setComposerText(text);
   };
@@ -638,11 +665,11 @@ export function Composer(props: ComposerProps) {
             canSend && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={submit} aria-label={t("Einreihen")}>
+                  <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={submit} aria-label={props.canSteer ? t("Nachschieben") : t("Einreihen")}>
                     <ArrowUp className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{t("Einreihen – startet nach dem laufenden Durchlauf")}</TooltipContent>
+                <TooltipContent>{props.canSteer ? t("Nachschieben – der Agent liest es nach seinem aktuellen Schritt") : t("Einreihen – startet nach dem laufenden Durchlauf")}</TooltipContent>
               </Tooltip>
             )
           ) : (
@@ -679,6 +706,20 @@ export function Composer(props: ComposerProps) {
         )}
         {props.contextIndicator?.(model)}
         <ModelSelect compact value={model} onChange={setModel} inherited={props.inheritedModel} />
+        {props.canChooseEffort && (
+          <Select value={effort || "default"} onValueChange={(value) => setEffort(value === "default" ? "" : (value as EffortLevel))}>
+            <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5" title={t("Denkaufwand")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {effortOptions.map((effortOption) => (
+                <SelectItem key={effortOption.value} value={effortOption.value}>
+                  {effortOption.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={permissionMode} onValueChange={(value) => setPermissionMode(value as PermissionMode)}>
           <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5">
             <SelectValue />

@@ -162,6 +162,7 @@ export const sessionActions = {
     const session = requireSession(sessionId);
     agentRuntime.clearQueue(sessionId);
     agentRuntime.interrupt(sessionId);
+    agentRuntime.release(sessionId);
     sessionStore.remove(sessionId);
     eventHub.publish({ type: "sessions_changed", projectId: session.projectId });
   },

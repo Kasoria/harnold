@@ -75,26 +75,56 @@ function ToolCallRow({ toolUse, toolResult }: { toolUse: ToolUseItem; toolResult
   );
 }
 
-export function ToolGroup(props: {
-  toolUses: ToolUseItem[];
-  toolResultsByToolUseId: Map<string, ToolResultItem>;
-  running: boolean;
-}) {
+export type ThinkingItem = Extract<ChatItem, { kind: "thinking" }>;
+/** One step of the agent's work between two answers: a thought or a tool call. */
+export type WorkStep = ToolUseItem | ThinkingItem;
+
+function ThinkingRow({ thinking }: { thinking: ThinkingItem }) {
   const [open, setOpen] = useState(false);
-  const pending = props.running && props.toolUses.some((toolUse) => !props.toolResultsByToolUseId.has(toolUse.toolUseId));
-  const failed = props.toolUses.some((toolUse) => props.toolResultsByToolUseId.get(toolUse.toolUseId)?.isError);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] text-muted-foreground transition-colors hover:text-foreground">
+        <ChevronRight className={cn("size-3 shrink-0 transition-transform duration-200", open && "rotate-90")} />
+        <span className="shrink-0 font-medium">{t("Gedanken")}</span>
+        {!open && <span className="truncate">{thinking.text.replace(/\s+/g, " ").slice(0, 140)}</span>}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="collapsible-animated">
+        <div className="ml-5 border-l py-1 pl-3 text-[12.5px] whitespace-pre-wrap text-muted-foreground">{thinking.text}</div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/**
+ * All thoughts and tool calls between two answers as one line (like the Claude desktop app):
+ * "5 Befehle ausgeführt, 2 Dateien gelesen". Open: every step in order, each expandable.
+ */
+export function WorkGroup(props: { steps: WorkStep[]; toolResultsByToolUseId: Map<string, ToolResultItem>; running: boolean; isLatest: boolean }) {
+  const [open, setOpen] = useState(false);
+  const toolUses = props.steps.filter((step): step is ToolUseItem => step.kind === "tool_use");
+  const pending = props.running && toolUses.some((toolUse) => !props.toolResultsByToolUseId.has(toolUse.toolUseId));
+  const active = props.running && props.isLatest;
+  const failedCount = toolUses.filter((toolUse) => props.toolResultsByToolUseId.get(toolUse.toolUseId)?.isError).length;
+  const lastToolUse = toolUses.at(-1);
+  const label = toolUses.length ? buildGroupLabel(toolUses) : t("Nachgedacht");
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="animate-in fade-in duration-200">
-      <CollapsibleTrigger className="flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
-        <span className={cn(pending && "animate-pulse", failed && "text-destructive")}>{buildGroupLabel(props.toolUses)}</span>
-        <ChevronRight className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")} />
+      <CollapsibleTrigger className="flex max-w-full items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
+        <span className={cn("shrink-0", (pending || active) && "text-shimmer")}>{label}</span>
+        {failedCount > 0 && <span className="shrink-0 text-destructive">· {t("{0} fehlgeschlagen", failedCount)}</span>}
+        {active && !open && lastToolUse && <span className="truncate font-mono text-[12px] opacity-70">{summarizeToolInput(lastToolUse.input)}</span>}
+        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform duration-200", open && "rotate-90")} />
       </CollapsibleTrigger>
       <CollapsibleContent className="collapsible-animated">
         <div className="mt-1 border-l pl-2">
-          {props.toolUses.map((toolUse) => (
-            <ToolCallRow key={toolUse.id} toolUse={toolUse} toolResult={props.toolResultsByToolUseId.get(toolUse.toolUseId)} />
-          ))}
+          {props.steps.map((step) =>
+            step.kind === "thinking" ? (
+              <ThinkingRow key={step.id} thinking={step} />
+            ) : (
+              <ToolCallRow key={step.id} toolUse={step} toolResult={props.toolResultsByToolUseId.get(step.toolUseId)} />
+            ),
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>

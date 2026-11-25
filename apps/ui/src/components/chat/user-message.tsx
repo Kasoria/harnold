@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, isActionEnter } from "@/lib/utils";
 import { CopyButton } from "./chat-markdown";
@@ -18,6 +18,8 @@ type UserMessageProps = {
   canEdit: boolean;
   /** Sends the edited text as a new version of the conversation from here on. */
   onSubmitEdit: (text: string) => void;
+  /** Restore the project files to their state before this message (only where the agent program supports it). */
+  onRewindFiles?: () => void;
 };
 
 const hoverActionClassName = "h-6 px-1 text-[11.5px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/user:opacity-100 focus-visible:opacity-100";
@@ -79,6 +81,11 @@ export function UserMessage(props: UserMessageProps) {
         {props.canEdit && (
           <Button variant="ghost" size="sm" className={cn(hoverActionClassName, "gap-1")} onClick={() => setEditDraft(props.text)}>
             <Pencil className="size-3" /> {t("Bearbeiten")}
+          </Button>
+        )}
+        {props.canEdit && props.onRewindFiles && (
+          <Button variant="ghost" size="sm" className={cn(hoverActionClassName, "gap-1")} title={t("Dateien auf den Stand vor dieser Nachricht zurücksetzen")} onClick={props.onRewindFiles}>
+            <RotateCcw className="size-3" /> {t("Dateien zurücksetzen")}
           </Button>
         )}
         {props.versions && (

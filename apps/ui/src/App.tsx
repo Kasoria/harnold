@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
-import type { TeamAgent, Attachment, SessionReference, Channel, MailInbox, ChatItem, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
+import type { BackgroundTask, EffortLevel, TeamAgent, Attachment, SessionReference, Channel, MailInbox, ChatItem, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
@@ -31,6 +31,7 @@ import { MailScreen } from "@/screens/mail-screen";
 import { Button } from "@/components/ui/button";
 import type { InheritedModel } from "@/components/model-select";
 import type { AgentRole, AgentRoleSettings } from "@/types";
+import { permissionModeChangedEvent } from "@/components/chat/composer";
 import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/components/confirm-dialog";
 import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
@@ -65,6 +66,9 @@ export function App() {
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [liveContextTokens, setLiveContextTokens] = useState<number | null>(null);
+  /** Live status of the open session's turn (retry, compacting, subagent progress). */
+  const [agentStatus, setAgentStatus] = useState<string | null>(null);
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
   const [fileChangeCounter, setFileChangeCounter] = useState(0);
   const [lastChangedPaths, setLastChangedPaths] = useState<string[]>([]);
   const [composerInsertion, setComposerInsertion] = useState<{ text: string; nonce: number } | null>(null);
@@ -200,7 +204,10 @@ export function App() {
     setStreamingThinking("");
     setQueuedMessages([]);
     setLiveContextTokens(null);
+    setAgentStatus(null);
+    setBackgroundTasks([]);
     if (activeSessionId) api.listChatItems(activeSessionId).then(setChatItems).catch(reportError);
+    if (activeSessionId) api.listBackgroundTasks(activeSessionId).then(setBackgroundTasks).catch(() => undefined);
     if (activeSessionId) api.listQueue(activeSessionId).then(setQueuedMessages).catch(() => undefined);
   }, [activeSessionId, reportError]);
 
@@ -263,6 +270,16 @@ export function App() {
             return;
           case "permission_resolved":
             setPermissionRequests((previous) => previous.filter((request) => request.requestId !== serverEvent.requestId));
+            return;
+          case "agent_status":
+            if (serverEvent.sessionId === currentSessionId) setAgentStatus(serverEvent.text);
+            return;
+          case "background_tasks":
+            if (serverEvent.sessionId === currentSessionId) setBackgroundTasks(serverEvent.tasks);
+            return;
+          case "permission_mode_changed":
+            // Plan approved → the composer continues in the chosen mode (otherwise the next message would switch back to plan).
+            if (serverEvent.sessionId === currentSessionId) window.dispatchEvent(new CustomEvent(permissionModeChangedEvent, { detail: serverEvent.permissionMode }));
             return;
           case "files_changed":
             if (serverEvent.projectId !== currentProjectId) return;
@@ -608,13 +625,13 @@ export function App() {
   };
 
   /** Ensures a session exists, then sends — used by the composer and by "In Code übernehmen". */
-  const sendToAgent = async (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[]) => {
+  const sendToAgent = async (text: string, permissionMode: PermissionMode, model?: string, attachments?: Attachment[], effort?: EffortLevel) => {
     if (!activeProjectId) return;
     try {
       const targetSessionId = activeSessionId ?? (await createSession(activeProjectId))?.id;
       // A session created by this very send remembers the model it was started with.
       if (targetSessionId && !activeSessionId && model) await api.updateSession(targetSessionId, { model });
-      if (targetSessionId) await api.sendMessage(targetSessionId, text, permissionMode, model, attachments);
+      if (targetSessionId) await api.sendMessage(targetSessionId, text, permissionMode, model, attachments, effort);
     } catch (sendError) {
       reportError(sendError);
     }
@@ -718,7 +735,7 @@ export function App() {
             sessionReferenceFor={sessionReferenceFor}
             reloadCounter={todayReloadCounter}
             onOpenSession={openSessionFromScreen}
-            onAnswerPermission={(requestId, allow, answers) => api.answerPermission(requestId, allow, answers).catch(reportError)}
+            onAnswerPermission={(requestId, answer) => api.answerPermission(requestId, answer).catch(reportError)}
             onError={reportError}
           />
         );
@@ -984,7 +1001,7 @@ export function App() {
               onSessionModelChange={(model) => activeSessionId && api.updateSession(activeSessionId, { model: model || null }).catch(reportError)}
               inheritedModel={inheritedModelFor(activeProjectId)}
               onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
-              onAnswerPermission={(requestId, allow, answers) => api.answerPermission(requestId, allow, answers).catch(reportError)}
+              onAnswerPermission={(requestId, answer) => api.answerPermission(requestId, answer).catch(reportError)}
               onDeleteSession={() => activeSession && void deleteSession(activeSession)}
               projectSessions={activeProjectId ? (sessionsByProjectId[activeProjectId] ?? []) : []}
               onOpenVersion={setActiveSessionId}
@@ -997,6 +1014,9 @@ export function App() {
               onSendQueuedNow={(queuedMessageId) => activeSessionId && api.sendQueuedNow(activeSessionId, queuedMessageId).catch(reportError)}
               onRemoveQueued={(queuedMessageId) => activeSessionId && api.removeQueued(activeSessionId, queuedMessageId).catch(reportError)}
               liveContextTokens={liveContextTokens}
+              agentStatus={agentStatus}
+              backgroundTasks={backgroundTasks}
+              onStopBackgroundTask={(taskId) => activeSessionId && api.stopBackgroundTask(activeSessionId, taskId).catch(reportError)}
             />
             <AppVersionBadge onOpenSettings={() => navigate(routePath("settings"))} />
           </ResizablePanel>

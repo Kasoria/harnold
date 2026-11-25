@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, CircleAlert, Loader2, MessageCircleQuestion, MessageSquare, ShieldAlert, Trash2 } from "lucide-react";
 import { isQuestionRequest, questionsOf } from "@/components/chat/question-card";
 import { api } from "@/api";
-import type { Environment, PermissionRequest, Project, SessionReference, TodayOverview } from "@/types";
+import type { Environment, PermissionAnswer, PermissionRequest, Project, SessionReference, TodayOverview } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { formatRelativeTime } from "@/components/form-field";
@@ -20,7 +20,7 @@ type TodayScreenProps = {
   /** Bumped on task runs and session changes. */
   reloadCounter: number;
   onOpenSession: (projectId: string, sessionId: string) => void;
-  onAnswerPermission: (requestId: string, allow: boolean, answers?: Record<string, string>) => void;
+  onAnswerPermission: (requestId: string, answer: PermissionAnswer) => void;
   onError: (unknownError: unknown) => void;
 };
 
@@ -171,10 +171,10 @@ export function TodayScreen(props: TodayScreenProps) {
                     </Button>
                   ) : (
                   <div className="flex shrink-0 gap-1.5">
-                    <Button size="sm" className="h-7" onClick={() => props.onAnswerPermission(permissionRequest.requestId, true)}>
+                    <Button size="sm" className="h-7" onClick={() => props.onAnswerPermission(permissionRequest.requestId, { allow: true })}>
                       {t("Erlauben")}
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7" onClick={() => props.onAnswerPermission(permissionRequest.requestId, false)}>
+                    <Button size="sm" variant="ghost" className="h-7" onClick={() => props.onAnswerPermission(permissionRequest.requestId, { allow: false })}>
                       {t("Ablehnen")}
                     </Button>
                   </div>

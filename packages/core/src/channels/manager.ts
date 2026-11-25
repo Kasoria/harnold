@@ -152,14 +152,14 @@ async function handleInbound(channelId: string, inboundMessage: InboundMessage):
     // One question: the whole message. Several: one line per question (missing lines repeat the last one).
     const answerLines = trimmedText.split("\n").map((line) => line.trim()).filter(Boolean);
     const answers = Object.fromEntries(pendingQuestion.questions.map((question, questionIndex) => [question, pendingQuestion.questions.length === 1 ? trimmedText : (answerLines[questionIndex] ?? answerLines.at(-1) ?? trimmedText)]));
-    agentRuntime.resolvePermission(pendingQuestion.requestId, true, answers);
+    agentRuntime.resolvePermission(pendingQuestion.requestId, { allow: true, answers });
     return;
   }
 
   const pendingRequestId = pendingPermissionByConversation.get(conversationKey(channel.id, inboundMessage.chatId));
   if (pendingRequestId) {
-    if (/^(ja|yes|ok|erlauben)\b/i.test(trimmedText)) return void agentRuntime.resolvePermission(pendingRequestId, true);
-    if (/^(nein|no|ablehnen)\b/i.test(trimmedText)) return void agentRuntime.resolvePermission(pendingRequestId, false);
+    if (/^(ja|yes|ok|erlauben)\b/i.test(trimmedText)) return void agentRuntime.resolvePermission(pendingRequestId, { allow: true });
+    if (/^(nein|no|ablehnen)\b/i.test(trimmedText)) return void agentRuntime.resolvePermission(pendingRequestId, { allow: false });
   }
 
   const sessionId = sessionForConversation(channel, inboundMessage);
@@ -219,7 +219,7 @@ export const channelManager = {
         settings: channel.settings,
         secrets: channel.secrets,
         onInbound: (inboundMessage) => void handleInbound(channelId, inboundMessage).catch((inboundError) => console.error("[channels] inbound failed:", inboundError)),
-        onPermissionAnswer: (requestId, allow) => void agentRuntime.resolvePermission(requestId, allow),
+        onPermissionAnswer: (requestId, allow) => void agentRuntime.resolvePermission(requestId, { allow }),
       });
       activeAdapters.set(channelId, adapter);
       await adapter.start();

@@ -115,7 +115,7 @@ export const codexBackend: AgentBackend = {
       ...(input.model && input.model !== codexDefaultModel ? { model: input.model } : {}),
       sandboxMode: sandboxFor[input.permissionMode],
       approvalPolicy: "never",
-      workingDirectory: input.project.path,
+      workingDirectory: input.workingDirectory,
       skipGitRepoCheck: true,
       networkAccessEnabled: input.permissionMode === "bypassPermissions",
       additionalDirectories: [designSystemsDirectory, memoryConfig.workspaceDirectory(), ...(projectEnvironment ? [environmentMemoryDirectory(projectEnvironment.id)] : []), ...input.session.directories],

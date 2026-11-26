@@ -1,5 +1,5 @@
 import { currentLanguage, t } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, DevServer, PreviewOpening, GitStatus, GitCommit, TerminalInfo, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, DevServer, PreviewOpening, GitStatus, GitCommit, GitBranches, TerminalInfo, ProjectRoot, DirectoryEntry, WorktreeStatus, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -36,6 +36,8 @@ async function request<ResponseBody>(method: string, path: string, body?: unknow
 
 const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
   new URLSearchParams({ scope: noteRef.scope, projectId: noteRef.projectId ?? "", path: noteRef.path }).toString();
+
+const rootQuery = (root?: string) => (root ? `?${new URLSearchParams({ root })}` : "");
 
 export const api = {
   pushWorkspaceToServer: (serverUrl: string, token: string) => request<{ ok: true; sizeBytes: number }>("POST", "/api/migration/push", { serverUrl, token }),
@@ -101,27 +103,39 @@ export const api = {
   /** Value ("" = skip) goes to the core only and ends up in the environment variables. */
   submitSecretInput: (requestId: string, value: string) => request("POST", `/api/secret-input/${requestId}`, { value }),
   rewindFiles: (sessionId: string, itemId: string, dryRun: boolean) => request<RewindResult>("POST", `/api/sessions/${sessionId}/rewind-files`, { itemId, dryRun }),
-  gitStatus: (projectId: string) => request<GitStatus>("GET", `/api/projects/${projectId}/git/status`),
-  gitDiff: (projectId: string, filePath: string, staged: boolean) =>
-    request<{ diff: string }>("GET", `/api/projects/${projectId}/git/diff?${new URLSearchParams({ path: filePath, staged: staged ? "1" : "0" })}`),
-  gitLog: (projectId: string) => request<GitCommit[]>("GET", `/api/projects/${projectId}/git/log`),
-  gitFileAction: (projectId: string, action: "stage" | "unstage" | "discard", paths: string[]) =>
-    request<GitStatus>("POST", `/api/projects/${projectId}/git/${action}`, { paths }),
-  gitCommit: (projectId: string, message: string) => request<{ commit: GitCommit; status: GitStatus }>("POST", `/api/projects/${projectId}/git/commit`, { message }),
-  gitRemoteAction: (projectId: string, action: "push" | "pull" | "init") => request<GitStatus>("POST", `/api/projects/${projectId}/git/${action}`),
+  // root = one of the project's folders (ProjectRoot.path); without it the project folder.
+  gitStatus: (projectId: string, root?: string) => request<GitStatus>("GET", `/api/projects/${projectId}/git/status${rootQuery(root)}`),
+  gitDiff: (projectId: string, filePath: string, staged: boolean, root?: string) =>
+    request<{ diff: string }>("GET", `/api/projects/${projectId}/git/diff?${new URLSearchParams({ path: filePath, staged: staged ? "1" : "0", ...(root ? { root } : {}) })}`),
+  gitLog: (projectId: string, root?: string) => request<GitCommit[]>("GET", `/api/projects/${projectId}/git/log${rootQuery(root)}`),
+  gitBranches: (projectId: string, root?: string) => request<GitBranches>("GET", `/api/projects/${projectId}/git/branches${rootQuery(root)}`),
+  gitSwitchBranch: (projectId: string, branch: string, create: boolean, root?: string) =>
+    request<GitStatus>("POST", `/api/projects/${projectId}/git/switch${rootQuery(root)}`, { branch, create }),
+  gitFileAction: (projectId: string, action: "stage" | "unstage" | "discard", paths: string[], root?: string) =>
+    request<GitStatus>("POST", `/api/projects/${projectId}/git/${action}${rootQuery(root)}`, { paths }),
+  gitCommit: (projectId: string, message: string, root?: string) =>
+    request<{ commit: GitCommit; status: GitStatus }>("POST", `/api/projects/${projectId}/git/commit${rootQuery(root)}`, { message }),
+  gitRemoteAction: (projectId: string, action: "push" | "pull" | "init", root?: string) => request<GitStatus>("POST", `/api/projects/${projectId}/git/${action}${rootQuery(root)}`),
   listTerminals: (projectId: string) => request<{ available: boolean; terminals: TerminalInfo[] }>("GET", `/api/projects/${projectId}/terminals`),
-  createTerminal: (projectId: string, size: { cols: number; rows: number }) => request<TerminalInfo>("POST", `/api/projects/${projectId}/terminals`, size),
+  createTerminal: (projectId: string, options: { cols: number; rows: number; root?: string }) => request<TerminalInfo>("POST", `/api/projects/${projectId}/terminals`, options),
   closeTerminal: (terminalId: string) => request<{ ok: boolean }>("DELETE", `/api/terminals/${terminalId}`),
+  listProjectRoots: (projectId: string) => request<ProjectRoot[]>("GET", `/api/projects/${projectId}/roots`),
+  readDirectory: (projectId: string, root: string, directoryPath: string) =>
+    request<DirectoryEntry[]>("GET", `/api/projects/${projectId}/directory?${new URLSearchParams({ root, path: directoryPath })}`),
+  sessionWorktree: (sessionId: string) => request<{ worktree: WorktreeStatus | null }>("GET", `/api/sessions/${sessionId}/worktree`),
+  createSessionWorktree: (sessionId: string, folder: string) => request<{ worktree: WorktreeStatus | null }>("POST", `/api/sessions/${sessionId}/worktree`, { folder }),
+  applySessionWorktree: (sessionId: string) => request<{ worktree: WorktreeStatus | null }>("POST", `/api/sessions/${sessionId}/worktree/apply`),
+  removeSessionWorktree: (sessionId: string, deleteBranch: boolean) => request<{ worktree: null }>("DELETE", `/api/sessions/${sessionId}/worktree${deleteBranch ? "?deleteBranch=1" : ""}`),
   listDevServers: () => request<DevServer[]>("GET", "/api/dev-servers"),
   openDevServer: (port: number) => request<PreviewOpening>("POST", `/api/dev-servers/${port}/open`),
   listBackgroundTasks: (sessionId: string) => request<BackgroundTask[]>("GET", `/api/sessions/${sessionId}/background-tasks`),
   stopBackgroundTask: (sessionId: string, taskId: string) => request("POST", `/api/sessions/${sessionId}/background-tasks/${encodeURIComponent(taskId)}/stop`),
   answerPermission: (requestId: string, answer: PermissionAnswer) => request("POST", `/api/permissions/${requestId}`, answer),
   readTree: (projectId: string) => request<FileNode[]>("GET", `/api/projects/${projectId}/tree`),
-  readFile: (projectId: string, filePath: string) =>
-    request<{ content: string }>("GET", `/api/projects/${projectId}/file?path=${encodeURIComponent(filePath)}`),
-  writeFile: (projectId: string, filePath: string, content: string) =>
-    request("PUT", `/api/projects/${projectId}/file`, { path: filePath, content }),
+  readFile: (projectId: string, filePath: string, root?: string) =>
+    request<{ content: string }>("GET", `/api/projects/${projectId}/file?${new URLSearchParams({ path: filePath, ...(root ? { root } : {}) })}`),
+  writeFile: (projectId: string, filePath: string, content: string, root?: string) =>
+    request("PUT", `/api/projects/${projectId}/file`, { path: filePath, content, ...(root ? { root } : {}) }),
   listTasks: () => request<Task[]>("GET", "/api/tasks"),
   createTask: (taskInput: TaskInput) => request<Task>("POST", "/api/tasks", taskInput),
   updateTask: (taskId: string, taskInput: TaskInput) => request<Task>("PUT", `/api/tasks/${taskId}`, taskInput),

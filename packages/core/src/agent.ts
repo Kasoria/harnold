@@ -1,3 +1,4 @@
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { chatItemStore, projectStore, sessionStore, type Attachment, type ChatItemPayload, type Project, type Session } from "./db.ts";
 import { eventHub } from "./events.ts";
@@ -18,14 +19,36 @@ import { secretInput } from "./secret-input.ts";
 import { t } from "./i18n.ts";
 import { devServerInstructions } from "./dev-servers.ts";
 
+/** A folder inside the chat's repository is used from its worktree instead (same relative place). */
+const throughWorktree = (folderPath: string, session: Session): string => {
+  const worktree = session.worktree;
+  if (!worktree) return folderPath;
+  if (folderPath === worktree.repositoryPath) return worktree.path;
+  return folderPath.startsWith(worktree.repositoryPath + path.sep) ? worktree.path + folderPath.slice(worktree.repositoryPath.length) : folderPath;
+};
+
+/** Where the agent starts: the project folder, or its counterpart in the chat's worktree. */
+const sessionWorkingDirectory = (session: Session, project: Project): string => throughWorktree(project.path, session);
+
 /** Chat folders plus the project's folder context (memory levels) – every agent program gets access to them. */
-const sessionDirectories = (session: Session): string[] => [...new Set([...session.directories, ...folderStore.pathsForProject(session.projectId)])];
+const sessionDirectories = (session: Session, project: Project): string[] => {
+  const directories = [...session.directories, ...folderStore.pathsForProject(session.projectId)].map((folderPath) => throughWorktree(folderPath, session));
+  if (session.worktree) directories.push(session.worktree.path);
+  // Working in a worktree of the project folder: attachments and design files stay in the project folder.
+  if (sessionWorkingDirectory(session, project) !== project.path) directories.push(project.path);
+  return [...new Set(directories)].filter((folderPath) => folderPath !== sessionWorkingDirectory(session, project));
+};
+
+const worktreeContext = (session: Session): string =>
+  session.worktree
+    ? `## Eigener Worktree\nDieser Chat arbeitet in einem eigenen Git-Worktree: ${session.worktree.path} (Branch ${session.worktree.branch}, abgezweigt von ${session.worktree.baseBranch ?? "HEAD"}). Ändere den Code nur dort, nicht im Repository ${session.worktree.repositoryPath} selbst. Committen darfst du auf diesem Branch; zusammengeführt wird über Harnold („Übernehmen“).`
+    : "";
 
 /** Tells the agent which folders beyond the project folder it may work in. */
-const whereAllowedContext = (directories: string[], project: Project) =>
+const whereAllowedContext = (directories: string[], workingDirectory: string) =>
   directories.length
     ? `${t("Zusätzliche Ordner (du darfst darin lesen und arbeiten):")}\n${directories.map((directory) => `- ${directory}`).join("\n")}`
-    : `${t("Du arbeitest nur im Projektordner:")} ${project.path}`;
+    : `${t("Du arbeitest nur im Projektordner:")} ${workingDirectory}`;
 
 export type { ContextBreakdown } from "./backends/types.ts";
 import type { ContextBreakdown } from "./backends/types.ts";
@@ -177,7 +200,8 @@ async function turnContextFor(
   const backend = agentBackends.get(backendId);
   const agentSetup = await environmentStore.agentSetupFor(project.id, backendId);
   // Folders of the project's context (chat + memory levels) apply to every turn, whichever backend runs.
-  const directories = sessionDirectories(session);
+  const directories = sessionDirectories(session, project);
+  const workingDirectory = sessionWorkingDirectory(session, project);
   const fitting = (candidate?: string | null) => (candidate && modelFitsBackend(candidate, backendId) ? candidate : undefined);
   return {
     backend,
@@ -185,12 +209,13 @@ async function turnContextFor(
       sessionId,
       session: { ...session, directories },
       project,
+      workingDirectory,
       teamAgentId: session.agentId,
       permissionMode,
       // The caller's model (composer or unit), then the team member's, the role's, the environment's, then the default.
       model: fitting(model) || fitting(teamAgent?.model) || fitting(roleDefaults.model) || fitting(agentSetup.model) || backend.defaultModel(),
       env: agentSetup.env,
-      systemPromptAppend: [harnoldSystemAppend(), whereAllowedContext(directories, project), folderStore.contextFor(project), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
+      systemPromptAppend: [harnoldSystemAppend(), whereAllowedContext(directories, workingDirectory), worktreeContext(session), folderStore.contextFor(project), teamContextFor(project, session.agentId), environmentStore.contextFor(project.id), designSystemStore.contextFor(project.id, sessionId), memoryNotes.contextFor(project), memoryFiles.contextFor(project)]
         .filter(Boolean)
         .join("\n\n"),
     },

@@ -188,3 +188,95 @@ export async function gitPull(project: ProjectRef) {
 export async function gitInit(project: ProjectRef) {
   await runGit(project, ["init", "--quiet"]);
 }
+
+export type GitBranches = {
+  current: string | null;
+  local: string[];
+  /** Remote branches without a local one of the same name (switching creates it). */
+  remote: string[];
+};
+
+export async function gitBranches(project: ProjectRef): Promise<GitBranches> {
+  const listing = await runGit(project, ["for-each-ref", "--sort=-committerdate", "--format=%(refname)%1f%(HEAD)", "refs/heads", "refs/remotes"]);
+  let current: string | null = null;
+  const local: string[] = [];
+  const remote: string[] = [];
+  for (const line of listing.split("\n").filter(Boolean)) {
+    const [refName, headMarker] = line.split("\x1f");
+    if (refName.startsWith("refs/heads/")) {
+      const branchName = refName.slice(11);
+      local.push(branchName);
+      if (headMarker === "*") current = branchName;
+    } else if (!refName.endsWith("/HEAD")) {
+      remote.push(refName.slice(13));
+    }
+  }
+  const remoteOnly = remote.filter((remoteBranch) => !local.includes(remoteBranch.slice(remoteBranch.indexOf("/") + 1)));
+  return { current, local, remote: remoteOnly };
+}
+
+async function validBranchName(project: ProjectRef, branchName: string): Promise<string> {
+  const trimmedName = branchName.trim();
+  const checked = (await runGit(project, ["check-ref-format", "--branch", trimmedName], { allowFailure: true })).trim();
+  if (!checked || trimmedName.startsWith("-")) throw new Error(t("Ungültiger Branch-Name: {0}", trimmedName));
+  return checked;
+}
+
+/** Switches the branch; a remote branch ("origin/x") gets a local tracking branch. Uncommitted changes that conflict make git refuse. */
+export async function gitSwitch(project: ProjectRef, branchName: string) {
+  const { local, remote } = await gitBranches(project);
+  if (local.includes(branchName)) await runGit(project, ["switch", "--quiet", branchName]);
+  else if (remote.includes(branchName)) await runGit(project, ["switch", "--quiet", "--track", branchName]);
+  else throw new Error(t("Branch nicht gefunden: {0}", branchName));
+}
+
+/** New branch from the current state, checked out right away (changes come along). */
+export async function gitCreateBranch(project: ProjectRef, branchName: string) {
+  await runGit(project, ["switch", "--quiet", "-c", await validBranchName(project, branchName)]);
+}
+
+// --- Worktrees (one per chat, see worktrees.ts) ---
+
+export async function gitAddWorktree(repository: ProjectRef, worktreePath: string, branchName: string) {
+  await runGit(repository, ["worktree", "add", "--quiet", "-b", await validBranchName(repository, branchName), worktreePath, "HEAD"], { timeoutMs: 120_000 });
+}
+
+export async function gitRemoveWorktree(repository: ProjectRef, worktreePath: string) {
+  await runGit(repository, ["worktree", "remove", "--force", worktreePath], { allowFailure: true });
+  await runGit(repository, ["worktree", "prune"], { allowFailure: true });
+}
+
+export async function gitCurrentBranch(project: ProjectRef): Promise<string | null> {
+  return (await runGit(project, ["symbolic-ref", "--quiet", "--short", "HEAD"], { allowFailure: true })).trim() || null;
+}
+
+export async function gitHasChanges(project: ProjectRef): Promise<boolean> {
+  return Boolean((await runGit(project, ["status", "--porcelain"], { allowFailure: true })).trim());
+}
+
+/** Commits everything in the folder (worktree before it is merged or removed). Returns false when there was nothing. */
+export async function gitCommitAll(project: ProjectRef, message: string): Promise<boolean> {
+  const porcelain = await runGit(project, ["status", "--porcelain"]);
+  if (!porcelain.trim()) return false;
+  await runGit(project, ["add", "--all"]);
+  await runGit(project, ["commit", "--quiet", "-m", message]);
+  return true;
+}
+
+export async function gitCommitsAhead(project: ProjectRef, baseRef: string, branchRef: string): Promise<number> {
+  return Number((await runGit(project, ["rev-list", "--count", `${baseRef}..${branchRef}`], { allowFailure: true })).trim() || 0);
+}
+
+/** Merges a branch into the branch checked out in this folder. Aborts cleanly on conflicts. */
+export async function gitMergeBranch(project: ProjectRef, branchName: string, message: string) {
+  try {
+    await runGit(project, ["merge", "--no-ff", "--quiet", "-m", message, branchName], { timeoutMs: 60_000 });
+  } catch (mergeError) {
+    await runGit(project, ["merge", "--abort"], { allowFailure: true });
+    throw new Error(t("Zusammenführen nicht möglich (Konflikt oder offene Änderungen): {0}", mergeError instanceof Error ? mergeError.message : String(mergeError)));
+  }
+}
+
+export async function gitDeleteBranch(project: ProjectRef, branchName: string) {
+  await runGit(project, ["branch", "-D", branchName], { allowFailure: true });
+}

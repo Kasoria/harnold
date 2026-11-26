@@ -135,8 +135,8 @@ function TerminalScreen(props: { terminalId: string; theme: "light" | "dark"; ac
 }
 
 /** Terminal panel below the workspace: tabs of shells in the project folder that keep running in the Core. */
-export function TerminalPanel(props: { project: Project; theme: "light" | "dark"; onClose: () => void }) {
-  const { project } = props;
+export function TerminalPanel(props: { project: Project; /** Folder new shells start in (where the code lives). */ startRoot: string; theme: "light" | "dark"; onClose: () => void }) {
+  const { project, startRoot } = props;
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -146,7 +146,7 @@ export function TerminalPanel(props: { project: Project; theme: "light" | "dark"
     if (creatingRef.current) return;
     creatingRef.current = true;
     try {
-      const createdTerminal = await api.createTerminal(project.id, { cols: 100, rows: 24 });
+      const createdTerminal = await api.createTerminal(project.id, { cols: 100, rows: 24, root: startRoot });
       setTerminals((previous) => [...previous, createdTerminal]);
       setActiveTerminalId(createdTerminal.id);
     } catch (createError) {
@@ -154,7 +154,7 @@ export function TerminalPanel(props: { project: Project; theme: "light" | "dark"
     } finally {
       creatingRef.current = false;
     }
-  }, [project.id]);
+  }, [project.id, startRoot]);
 
   // Running terminals of the project come back; without one, a new one opens.
   useEffect(() => {
@@ -172,7 +172,9 @@ export function TerminalPanel(props: { project: Project; theme: "light" | "dark"
     return () => {
       cancelled = true;
     };
-  }, [project.id, createTerminal]);
+    // Only when the panel opens; a later change of the start folder applies to new shells.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
 
   const closeTerminal = (terminalId: string) => {
     void api.closeTerminal(terminalId).catch(() => undefined);
@@ -195,7 +197,7 @@ export function TerminalPanel(props: { project: Project; theme: "light" | "dark"
                 terminal.id === activeTerminalId ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60",
               )}
             >
-              <button type="button" onClick={() => setActiveTerminalId(terminal.id)} className={cn(terminal.exited && "line-through opacity-70")}>
+              <button type="button" onClick={() => setActiveTerminalId(terminal.id)} className={cn(terminal.exited && "line-through opacity-70")} title={terminal.workingDirectory}>
                 {terminal.title} {terminals.length > 1 ? terminalIndex + 1 : ""}
               </button>
               <button type="button" className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-background" title={t("Terminal schließen")} aria-label={t("Terminal schließen")} onClick={() => closeTerminal(terminal.id)}>

@@ -31,6 +31,7 @@ import { WorkGroup, type ToolResultItem, type ToolUseItem, type WorkStep } from 
 import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
 import { ImageGallery, imagePathsIn } from "./attachment-views";
+import { WorktreeControl } from "./worktree-control";
 import { ProjectQuickSelect } from "./project-quick-select";
 import { ContextIndicator } from "./context-indicator";
 import { useSessionBackend } from "@/lib/agent-backends";
@@ -670,7 +671,13 @@ export function ChatPane(props: ChatPaneProps) {
             onAddDirectory={props.session ? () => void addDirectory() : undefined}
             onAddProjectFolder={props.session ? () => void addProjectFolder() : undefined}
             onRemoveDirectory={(directory) => saveDirectories((props.session?.directories ?? []).filter((existing) => existing !== directory))}
-            footerStart={props.project.kind === "quick" && props.session ? <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} /> : undefined}
+            footerStart={
+              props.project.kind === "quick" && props.session ? (
+                <ProjectQuickSelect projects={props.projects} onSelect={props.onMoveSession} />
+              ) : props.session ? (
+                <WorktreeControl project={props.project} session={props.session} hasMessages={props.chatItems.length > 0} running={running} />
+              ) : undefined
+            }
           />
         </div>
       )}

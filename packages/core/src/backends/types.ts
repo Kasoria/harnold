@@ -45,6 +45,8 @@ export type TurnContext = {
   sessionId: string;
   session: Session;
   project: Project;
+  /** Where the agent starts: the project folder, or its counterpart in the chat's worktree. */
+  workingDirectory: string;
   teamAgentId: string | null;
   permissionMode: PermissionMode;
   /** Resolved model id; "" = the program's own default. */

@@ -37,7 +37,9 @@ import { agentRoleSettings } from "./agent-roles.ts";
 import { codexAuth, codexSettings } from "./codex-auth.ts";
 import { listDevServers, openDevServer, startPreviewProxy } from "./dev-servers.ts";
 import { attachTerminal, closeProjectTerminals, closeTerminal, createTerminal, listTerminals, terminalAvailable, type TerminalClientMessage } from "./terminal.ts";
-import { gitCommit, gitDiff, gitDiscard, gitInit, gitLog, gitPull, gitPush, gitStage, gitStatus, gitUnstage } from "./git.ts";
+import { gitBranches, gitCommit, gitCreateBranch, gitDiff, gitDiscard, gitInit, gitLog, gitPull, gitPush, gitStage, gitStatus, gitSwitch, gitUnstage } from "./git.ts";
+import { listProjectRoots, readRootDirectory, repositoryTopLevel, resolveInsideProjectRoot, resolveProjectRoot } from "./project-roots.ts";
+import { applySessionWorktree, createSessionWorktree, removeSessionWorktree, sessionWorktreeStatus } from "./worktrees.ts";
 import { harnoldMcp } from "./mcp-http.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { agentRuntimes } from "./agent-runtimes.ts";
@@ -263,16 +265,27 @@ app.get("/api/projects/:projectId/tree", (context) =>
   context.json(readFileTree(requireProject(context.req.param("projectId")))),
 );
 
+/** The folders the project consists of (project folder, attached folders, chat worktrees) with their repositories. */
+app.get("/api/projects/:projectId/roots", async (context) => context.json(await listProjectRoots(requireProject(context.req.param("projectId")))));
+
+/** One level of a project folder (the file panel loads deeper levels on expand). */
+app.get("/api/projects/:projectId/directory", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  return context.json(readRootDirectory(resolveProjectRoot(project, context.req.query("root")), context.req.query("path") ?? ""));
+});
+
+// ?root= reads/writes in one of the project's folders; without it, the project folder.
 app.get("/api/projects/:projectId/file", (context) => {
   const project = requireProject(context.req.param("projectId"));
-  const absolutePath = resolveInsideProject(project, context.req.query("path") ?? "");
+  const absolutePath = resolveInsideProjectRoot(project, context.req.query("root"), context.req.query("path") ?? "");
+  if ((fs.statSync(absolutePath, { throwIfNoEntry: false })?.size ?? 0) > 5 * 1024 * 1024) throw new Error(t("Datei ist zu groß für den Editor."));
   return context.json({ content: fs.readFileSync(absolutePath, "utf8") });
 });
 
 app.put("/api/projects/:projectId/file", async (context) => {
   const project = requireProject(context.req.param("projectId"));
-  const body = z.object({ path: z.string().min(1), content: z.string() }).parse(await context.req.json());
-  const absolutePath = resolveInsideProject(project, body.path);
+  const body = z.object({ path: z.string().min(1), content: z.string(), root: z.string().optional() }).parse(await context.req.json());
+  const absolutePath = resolveInsideProjectRoot(project, body.root, body.path);
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   fs.writeFileSync(absolutePath, body.content);
   return context.json({ ok: true });
@@ -1246,32 +1259,69 @@ app.post("/api/plugins/folders/remove", async (context) => {
 });
 
 // --- Git (Workspace → Git): status, diff, stage, commit, push/pull with the project's environment ---
+// ?root= picks one of the project's folders (project folder, attached folders, chat worktrees); Git works on its repository.
 const gitPathsSchema = z.object({ paths: z.array(z.string().min(1)).min(1) });
-app.get("/api/projects/:projectId/git/status", async (context) => context.json(await gitStatus(requireProject(context.req.param("projectId")))));
+async function gitTarget(context: { req: { param: (name: string) => string | undefined; query: (name: string) => string | undefined } }) {
+  const project = requireProject(context.req.param("projectId") ?? "");
+  const rootPath = resolveProjectRoot(project, context.req.query("root"));
+  return { id: project.id, path: (await repositoryTopLevel(rootPath)) ?? rootPath };
+}
+app.get("/api/projects/:projectId/git/status", async (context) => context.json(await gitStatus(await gitTarget(context))));
 app.get("/api/projects/:projectId/git/diff", async (context) => {
-  const project = requireProject(context.req.param("projectId"));
-  return context.json({ diff: await gitDiff(project, context.req.query("path") ?? "", context.req.query("staged") === "1") });
+  return context.json({ diff: await gitDiff(await gitTarget(context), context.req.query("path") ?? "", context.req.query("staged") === "1") });
 });
-app.get("/api/projects/:projectId/git/log", async (context) => context.json(await gitLog(requireProject(context.req.param("projectId")))));
+app.get("/api/projects/:projectId/git/log", async (context) => context.json(await gitLog(await gitTarget(context))));
+app.get("/api/projects/:projectId/git/branches", async (context) => context.json(await gitBranches(await gitTarget(context))));
 for (const [actionName, gitAction] of [["stage", gitStage], ["unstage", gitUnstage], ["discard", gitDiscard]] as const) {
   app.post(`/api/projects/:projectId/git/${actionName}`, async (context) => {
-    const project = requireProject(context.req.param("projectId"));
-    await gitAction(project, gitPathsSchema.parse(await context.req.json()).paths);
-    return context.json(await gitStatus(project));
+    const target = await gitTarget(context);
+    await gitAction(target, gitPathsSchema.parse(await context.req.json()).paths);
+    return context.json(await gitStatus(target));
   });
 }
 app.post("/api/projects/:projectId/git/commit", async (context) => {
-  const project = requireProject(context.req.param("projectId"));
+  const target = await gitTarget(context);
   const { message } = z.object({ message: z.string().trim().min(1) }).parse(await context.req.json());
-  return context.json({ commit: await gitCommit(project, message), status: await gitStatus(project) });
+  return context.json({ commit: await gitCommit(target, message), status: await gitStatus(target) });
 });
 for (const [actionName, gitAction] of [["push", gitPush], ["pull", gitPull], ["init", gitInit]] as const) {
   app.post(`/api/projects/:projectId/git/${actionName}`, async (context) => {
-    const project = requireProject(context.req.param("projectId"));
-    await gitAction(project);
-    return context.json(await gitStatus(project));
+    const target = await gitTarget(context);
+    await gitAction(target);
+    return context.json(await gitStatus(target));
   });
 }
+app.post("/api/projects/:projectId/git/switch", async (context) => {
+  const target = await gitTarget(context);
+  const { branch, create } = z.object({ branch: z.string().trim().min(1), create: z.boolean().default(false) }).parse(await context.req.json());
+  if (create) await gitCreateBranch(target, branch);
+  else await gitSwitch(target, branch);
+  return context.json(await gitStatus(target));
+});
+
+// --- Worktree of a chat: own checkout on its own branch ---
+app.get("/api/sessions/:sessionId/worktree", async (context) => context.json({ worktree: await sessionWorktreeStatus(context.req.param("sessionId")) }));
+app.post("/api/sessions/:sessionId/worktree", async (context) => {
+  const { folder } = z.object({ folder: z.string().min(1) }).parse(await context.req.json());
+  const sessionId = context.req.param("sessionId");
+  await createSessionWorktree(sessionId, folder);
+  agentRuntime.release(sessionId);
+  eventHub.publish({ type: "sessions_changed", projectId: sessionStore.get(sessionId)?.projectId ?? "" });
+  return context.json({ worktree: await sessionWorktreeStatus(sessionId) });
+});
+app.post("/api/sessions/:sessionId/worktree/apply", async (context) => {
+  const sessionId = context.req.param("sessionId");
+  await applySessionWorktree(sessionId);
+  return context.json({ worktree: await sessionWorktreeStatus(sessionId) });
+});
+app.delete("/api/sessions/:sessionId/worktree", async (context) => {
+  const sessionId = context.req.param("sessionId");
+  if (agentRuntime.isRunning(sessionId)) throw new Error(t("Erst den laufenden Durchlauf beenden."));
+  agentRuntime.release(sessionId);
+  await removeSessionWorktree(sessionId, { deleteBranch: context.req.query("deleteBranch") === "1" });
+  eventHub.publish({ type: "sessions_changed", projectId: sessionStore.get(sessionId)?.projectId ?? "" });
+  return context.json({ worktree: null });
+});
 
 // --- Terminals (Workspace → Terminal): shells in the project folder, kept alive in the Core ---
 app.get("/api/projects/:projectId/terminals", (context) => {
@@ -1280,8 +1330,8 @@ app.get("/api/projects/:projectId/terminals", (context) => {
 });
 app.post("/api/projects/:projectId/terminals", async (context) => {
   const project = requireProject(context.req.param("projectId"));
-  const size = z.object({ cols: z.number().int().min(2).max(1000).default(100), rows: z.number().int().min(2).max(500).default(30) }).parse(await context.req.json().catch(() => ({})));
-  return context.json(createTerminal(project, size));
+  const request = z.object({ cols: z.number().int().min(2).max(1000).default(100), rows: z.number().int().min(2).max(500).default(30), root: z.string().optional() }).parse(await context.req.json().catch(() => ({})));
+  return context.json(createTerminal(project, request, resolveProjectRoot(project, request.root)));
 });
 app.delete("/api/terminals/:terminalId", (context) => context.json({ ok: closeTerminal(context.req.param("terminalId")) }));
 app.get(

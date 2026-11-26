@@ -1,13 +1,14 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ChevronRight, ExternalLink, Loader2, PanelLeft, RotateCw, Save, SquareTerminal, Wand2, X } from "lucide-react";
 import { api } from "@/api";
-import type { FileNode, Project } from "@/types";
+import type { Project } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SegmentedControl } from "@/components/segmented-control";
-import { FileTree } from "./file-tree";
-import { AppPreview, belongsToProject, useDevServers } from "./app-preview";
+import { ProjectFiles, type FileSelection } from "./file-tree";
+import { AppPreview, useDevServers } from "./app-preview";
+import { preferredCodeRoot, serverBelongsToProject, useProjectRoots } from "./project-roots";
 import { GitView } from "./git-view";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
@@ -37,7 +38,10 @@ const previewableExtensions = /\.(html?|svg|png|jpe?g|webp|gif)$/i;
 
 const languageByExtension: Record<string, string> = {
   ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", json: "json",
+  mjs: "javascript", cjs: "javascript", mts: "typescript", cts: "typescript", scss: "scss", less: "less",
   css: "css", html: "html", md: "markdown", py: "python", yml: "yaml", yaml: "yaml", sh: "shell", swift: "swift",
+  rs: "rust", go: "go", rb: "ruby", php: "php", java: "java", kt: "kotlin", sql: "sql", xml: "xml", toml: "ini", ini: "ini",
+  c: "c", h: "c", cpp: "cpp", cs: "csharp", dockerfile: "dockerfile", vue: "html", svelte: "html",
 };
 
 function IconAction(props: { label: string; onClick?: () => void; href?: string; children: React.ReactNode }) {
@@ -61,9 +65,9 @@ function IconAction(props: { label: string; onClick?: () => void; href?: string;
 }
 
 export function WorkspacePane(props: WorkspacePaneProps) {
-  const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [filePanelOpen, setFilePanelOpen] = useState(false);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selection, setSelection] = useState<FileSelection | null>(null);
+  const [fileTreeReloadKey, setFileTreeReloadKey] = useState(0);
   const [activeView, setActiveView] = useState<WorkspaceView>("canvas");
   const [editorContent, setEditorContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
@@ -71,8 +75,16 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
 
   const { project, onError } = props;
+  const selectedPath = selection?.path ?? null;
+  // Files outside the project folder are code, not design files: no HTML preview, no "implement design".
+  const selectionInProjectFolder = !selection || selection.root === project.path;
+  // The project's folders: the code often lives in an attached folder, not in the project folder.
+  const roots = useProjectRoots(project, `${props.fileChangeCounter}-${activeView}-${filePanelOpen}`);
+  const codeRoot = preferredCodeRoot(roots, project);
+  const [chosenGitRoot, setChosenGitRoot] = useState<string | null>(null);
+  const gitRoot = chosenGitRoot && roots.some((root) => root.path === chosenGitRoot) ? chosenGitRoot : codeRoot;
   const devServers = useDevServers(activeView === "app" ? 4000 : 15_000);
-  const projectHasRunningServer = devServers.some((devServer) => belongsToProject(devServer, project));
+  const projectHasRunningServer = devServers.some((devServer) => serverBelongsToProject(devServer, project, roots));
   const [gitChangeCount, setGitChangeCount] = useState(0);
   const [terminalOpen, setTerminalOpen] = useState(false);
 
@@ -91,16 +103,19 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   // Number of uncommitted changes for the Git tab (the view itself refreshes while open).
   useEffect(() => {
     if (activeView === "git") return;
-    api
-      .gitStatus(project.id)
-      .then((gitStatus) => setGitChangeCount(gitStatus.isRepository ? gitStatus.files.length : 0))
-      .catch(() => setGitChangeCount(0));
-  }, [project.id, props.fileChangeCounter, activeView]);
+    const refreshCount = () =>
+      api
+        .gitStatus(project.id, gitRoot)
+        .then((gitStatus) => setGitChangeCount(gitStatus.isRepository ? gitStatus.files.length : 0))
+        .catch(() => setGitChangeCount(0));
+    refreshCount();
+    // Attached folders aren't watched: check now and then.
+    const pollTimer = window.setInterval(() => document.visibilityState === "visible" && refreshCount(), 20_000);
+    return () => window.clearInterval(pollTimer);
+  }, [project.id, gitRoot, props.fileChangeCounter, activeView]);
   const editorIsDirty = editorContent !== savedContent;
 
-  useEffect(() => {
-    api.readTree(project.id).then(setFileTree).catch(onError);
-  }, [project.id, props.fileChangeCounter, onError]);
+  useEffect(() => setFileTreeReloadKey((previous) => previous + 1), [props.fileChangeCounter]);
 
   // A new/changed design artifact from the agent is shown immediately.
   useEffect(() => {
@@ -108,7 +123,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
     const changedDesignFile = props.lastChangedPaths.find((changedPath) => /^design\/.+\.html?$/i.test(changedPath));
     // On the canvas the artifact appears in place; elsewhere jump to its preview.
     if (changedDesignFile && changedDesignFile !== selectedPath && activeView !== "canvas") {
-      setSelectedPath(changedDesignFile);
+      setSelection({ root: project.path, path: changedDesignFile });
       setActiveView("preview");
     }
     setPreviewReloadKey((previous) => previous + 1);
@@ -116,28 +131,33 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   }, [props.fileChangeCounter]);
 
   useEffect(() => {
-    if (!selectedPath || activeView !== "code") return;
-    if (editorIsDirty && props.lastChangedPaths.includes(selectedPath)) return; // keep unsaved local edits
+    const editorShown = activeView === "code" || (activeView === "preview" && !selectionInProjectFolder);
+    if (!selectedPath || !editorShown) return;
+    if (editorIsDirty && selectionInProjectFolder && props.lastChangedPaths.includes(selectedPath)) return; // keep unsaved local edits
     api
-      .readFile(project.id, selectedPath)
+      .readFile(project.id, selectedPath, selection?.root)
       .then(({ content }) => {
         setEditorContent(content);
         setSavedContent(content);
       })
       .catch(onError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, selectedPath, activeView, previewReloadKey]);
+  }, [project.id, selection?.root, selectedPath, activeView, previewReloadKey]);
 
-  const selectFile = (filePath: string) => {
-    setSelectedPath(filePath);
-    setActiveView(previewableExtensions.test(filePath) ? "preview" : "code");
+  const selectFile = (nextSelection: FileSelection) => {
+    setSelection(nextSelection);
+    setActiveView(nextSelection.root === project.path && previewableExtensions.test(nextSelection.path) ? "preview" : "code");
   };
+
+  // Outside the project folder the chat gets the absolute path.
+  const referenceFile = (fileSelection: FileSelection) =>
+    props.onReferenceFile(fileSelection.root === project.path ? fileSelection.path : `${fileSelection.root}/${fileSelection.path}`);
 
   const saveFile = async () => {
     if (!selectedPath) return;
     setSavingFile(true);
     try {
-      await api.writeFile(project.id, selectedPath, editorContent);
+      await api.writeFile(project.id, selectedPath, editorContent, selection?.root);
       setSavedContent(editorContent);
       toast.success(t("{0} gespeichert", selectedPath.split("/").pop() ?? selectedPath));
     } catch (saveError) {
@@ -152,22 +172,20 @@ export function WorkspacePane(props: WorkspacePaneProps) {
       ? [project.name, "Canvas"]
       : activeView === "app" || activeView === "git"
         ? [project.name, activeView === "app" ? t("App") : "Git"]
-      : [project.name, ...(selectedPath?.split("/") ?? [])];
-  const isDesignFile = selectedPath ? selectedPath.startsWith("design/") : false;
+      : [selectionInProjectFolder ? project.name : (roots.find((root) => root.path === selection?.root)?.label ?? project.name), ...(selectedPath?.split("/") ?? [])];
+  const isDesignFile = selectedPath && selectionInProjectFolder ? selectedPath.startsWith("design/") : false;
 
   const workspaceBody = (
       <div className="flex min-h-0 flex-1">
         <nav
           className={cn(
             "shrink-0 overflow-hidden border-r bg-background transition-[width,opacity] duration-200 ease-out",
-            filePanelOpen ? "w-56 opacity-100" : "w-0 border-r-0 opacity-0",
+            filePanelOpen ? "w-64 opacity-100" : "w-0 border-r-0 opacity-0",
           )}
         >
-          <div className="h-full w-56 overflow-y-auto p-1.5">
-            {fileTree.length ? (
-              <FileTree nodes={fileTree} selectedPath={selectedPath} onSelect={selectFile} onReference={props.onReferenceFile} />
-            ) : (
-              <p className="p-2 text-[12.5px] text-muted-foreground">{t("Noch keine Entwürfe.")}</p>
+          <div className="h-full w-64 overflow-y-auto p-1.5">
+            {filePanelOpen && (
+              <ProjectFiles project={project} roots={roots} codeRoot={codeRoot} selected={selection} refreshKey={fileTreeReloadKey} onSelect={selectFile} onReference={referenceFile} />
             )}
           </div>
         </nav>
@@ -179,21 +197,29 @@ export function WorkspacePane(props: WorkspacePaneProps) {
               fileChangeCounter={props.fileChangeCounter}
               lastChangedPaths={props.lastChangedPaths}
               onOpenFile={(filePath) => {
-                setSelectedPath(filePath);
+                setSelection({ root: project.path, path: filePath });
                 setActiveView("preview");
               }}
               onSendToAgent={props.onInsertIntoComposer}
               onError={onError}
             />
           ) : activeView === "git" ? (
-            <GitView project={project} fileChangeCounter={props.fileChangeCounter} onAskAgent={props.onInsertIntoComposer} onStatusChange={setGitChangeCount} />
+            <GitView
+              project={project}
+              roots={roots}
+              root={gitRoot}
+              onSelectRoot={setChosenGitRoot}
+              fileChangeCounter={props.fileChangeCounter}
+              onAskAgent={props.onInsertIntoComposer}
+              onStatusChange={setGitChangeCount}
+            />
           ) : activeView === "app" ? (
-            <AppPreview project={project} devServers={devServers} />
+            <AppPreview project={project} roots={roots} devServers={devServers} />
           ) : !selectedPath ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-muted-foreground">
               {t("Datei wählen. Neue Entwürfe des Agents erscheinen hier automatisch.")}
             </div>
-          ) : activeView === "preview" ? (
+          ) : activeView === "preview" && selectionInProjectFolder ? (
             <div key={selectedPath} className="absolute inset-0 animate-in fade-in p-3 duration-200">
               <iframe
                 key={previewReloadKey}
@@ -215,9 +241,9 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             >
               <Suspense fallback={<div className="flex h-full items-center justify-center text-[13px] text-muted-foreground">{t("Editor lädt …")}</div>}>
                 <CodeEditor
-                  path={selectedPath}
+                  path={selectionInProjectFolder ? selectedPath : `${selection!.root.replace(/^\/+/, "")}/${selectedPath}`}
                   value={editorContent}
-                  language={languageByExtension[selectedPath.split(".").pop() ?? ""] ?? "plaintext"}
+                  language={languageByExtension[(selectedPath.split("/").pop()?.split(".").pop() ?? "").toLowerCase()] ?? "plaintext"}
                   theme={props.resolvedTheme}
                   onChange={setEditorContent}
                 />
@@ -284,7 +310,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
               {savingFile ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             </IconAction>
           )}
-          {activeView === "preview" && selectedPath && (
+          {activeView === "preview" && selectedPath && selectionInProjectFolder && (
             <>
               <IconAction label={t("Neu laden")} onClick={() => setPreviewReloadKey((previous) => previous + 1)}>
                 <RotateCw className="size-4" />
@@ -312,7 +338,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             <ResizableHandle />
             <ResizablePanel id="workspace-terminal" defaultSize="35" minSize={100}>
               <Suspense fallback={<div className="h-full bg-background" />}>
-                <TerminalPanel project={project} theme={props.resolvedTheme} onClose={() => setTerminalOpen(false)} />
+                <TerminalPanel project={project} startRoot={codeRoot} theme={props.resolvedTheme} onClose={() => setTerminalOpen(false)} />
               </Suspense>
             </ResizablePanel>
           </>

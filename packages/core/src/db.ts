@@ -45,6 +45,7 @@ addColumnIfMissing("sessions", "mail_inbox_id", "TEXT");
 addColumnIfMissing("sessions", "backend_id", "TEXT");
 addColumnIfMissing("sessions", "directories", "TEXT");
 addColumnIfMissing("sessions", "model", "TEXT");
+addColumnIfMissing("sessions", "worktree", "TEXT");
 // Conversation history of Harnold's own agent (other agent programs keep theirs themselves).
 database.exec(`
   CREATE TABLE IF NOT EXISTS agent_messages (
@@ -88,8 +89,21 @@ export type Session = {
   directories: string[];
   /** Model last picked in the composer for this conversation; null = inherited. */
   model: string | null;
+  /** Own Git worktree of this chat (see worktrees.ts); null = works in the folders directly. */
+  worktree: SessionWorktree | null;
   createdAt: number;
   updatedAt: number;
+};
+
+/** A chat's own checkout of a repository on its own branch, so parallel chats don't get in each other's way. */
+export type SessionWorktree = {
+  /** Top level of the repository the worktree belongs to. */
+  repositoryPath: string;
+  /** Folder of the worktree (under the data directory). */
+  path: string;
+  branch: string;
+  /** Branch the worktree started from; "apply" merges back into it. */
+  baseBranch: string | null;
 };
 
 /** A file attached to a chat message; stored in the project under attachments/. */
@@ -146,6 +160,7 @@ const mapSession = (row: Row): Session => ({
   mailInboxId: row.mail_inbox_id ? String(row.mail_inbox_id) : null,
   directories: row.directories ? (JSON.parse(String(row.directories)) as string[]) : [],
   model: row.model ? String(row.model) : null,
+  worktree: row.worktree ? (JSON.parse(String(row.worktree)) as SessionWorktree) : null,
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
 });
@@ -179,6 +194,9 @@ export const projectStore = {
     database.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
   },
 };
+
+/** Cleanup that lives outside the database (e.g. a chat's worktree). */
+export const sessionRemovalListeners = new Set<(session: Session) => void>();
 
 export const sessionStore = {
   listByProject(projectId: string): Session[] {
@@ -214,12 +232,14 @@ export const sessionStore = {
       mailInboxId: null,
       directories,
       model: fork ? (sessionStore.get(fork.originSessionId)?.model ?? null) : null,
+      // A version of a chat keeps working in the chat's worktree.
+      worktree: fork ? (sessionStore.get(fork.originSessionId)?.worktree ?? null) : null,
       createdAt: now,
       updatedAt: now,
     };
     database
       .prepare(
-        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, directories, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sessions (id, project_id, title, fork_origin_session_id, fork_origin_item_id, pending_fork, agent_id, directories, model, worktree, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         session.id,
@@ -231,6 +251,7 @@ export const sessionStore = {
         agentId,
         directories.length ? JSON.stringify(directories) : null,
         session.model,
+        session.worktree ? JSON.stringify(session.worktree) : null,
         now,
         now,
       );
@@ -239,13 +260,13 @@ export const sessionStore = {
   /** `agentSessionId: null` starts a fresh agent context on the next turn. */
   update(
     sessionId: string,
-    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null; directories?: string[]; model?: string | null },
+    changes: { title?: string; agentSessionId?: string | null; projectId?: string; forkItemId?: string; pendingFork?: null; agentId?: string | null; backendId?: string | null; directories?: string[]; model?: string | null; worktree?: SessionWorktree | null },
   ): void {
     const current = sessionStore.get(sessionId);
     if (!current) return;
     const pendingFork = changes.pendingFork === undefined ? current.pendingFork : changes.pendingFork;
     database
-      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, directories = ?, model = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE sessions SET title = ?, agent_session_id = ?, project_id = ?, fork_item_id = ?, pending_fork = ?, agent_id = ?, backend_id = ?, directories = ?, model = ?, worktree = ?, updated_at = ? WHERE id = ?")
       .run(
         changes.title ?? current.title,
         changes.agentSessionId === undefined ? current.agentSessionId : changes.agentSessionId,
@@ -256,9 +277,13 @@ export const sessionStore = {
         changes.backendId === undefined ? current.backendId : changes.backendId,
         (changes.directories ?? current.directories).length ? JSON.stringify(changes.directories ?? current.directories) : null,
         changes.model === undefined ? current.model : changes.model,
+        (changes.worktree === undefined ? current.worktree : changes.worktree) ? JSON.stringify(changes.worktree === undefined ? current.worktree : changes.worktree) : null,
         Date.now(),
         sessionId,
       );
+  },
+  listAllWithWorktree(): Session[] {
+    return database.prepare("SELECT * FROM sessions WHERE worktree IS NOT NULL").all().map(mapSession);
   },
   /** Versions created by editing a message in this session. */
   listForks(sessionId: string): Session[] {
@@ -267,6 +292,8 @@ export const sessionStore = {
   /** Removes the session and every version forked from it. */
   remove(sessionId: string): void {
     for (const fork of sessionStore.listForks(sessionId)) sessionStore.remove(fork.id);
+    const removedSession = sessionStore.get(sessionId);
+    if (removedSession) for (const listener of sessionRemovalListeners) listener(removedSession);
     database.prepare("DELETE FROM chat_items WHERE session_id = ?").run(sessionId);
     database.prepare("DELETE FROM agent_messages WHERE session_id = ?").run(sessionId);
     database.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);

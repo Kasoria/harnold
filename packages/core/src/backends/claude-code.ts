@@ -155,7 +155,7 @@ async function sharedAgentOptions(context: TurnContext): Promise<Options> {
   const toolServers = createHarnoldToolServers(project, sessionId, () => liveSessions.get(sessionId)?.permissionMode ?? permissionMode);
   return {
     pathToClaudeCodeExecutable: await claudeExecutable(),
-    cwd: project.path,
+    cwd: context.workingDirectory,
     // The project's environment (accounts, git identity, variables) on top of the provider credentials.
     // Prompt caching stays on: the CLI then reuses the grown conversation prefix instead of re-reading it.
     env: { ...context.env, DISABLE_PROMPT_CACHING: "0" },
@@ -619,7 +619,7 @@ export const claudeCodeBackend: AgentBackend = {
 
   async generatedTitle(context) {
     if (!context.session.agentSessionId) return undefined;
-    const sessionInfo = await getSessionInfo(context.session.agentSessionId, { dir: context.project.path }).catch(() => undefined);
+    const sessionInfo = await getSessionInfo(context.session.agentSessionId, { dir: context.workingDirectory }).catch(() => undefined);
     const title = sessionInfo?.customTitle ?? sessionInfo?.summary;
     // Without a generated title the summary is just the first prompt.
     return title && title !== sessionInfo?.firstPrompt ? title : undefined;

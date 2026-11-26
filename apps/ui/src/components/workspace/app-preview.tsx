@@ -4,24 +4,19 @@ import { api, previewOpeningUrl } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { t } from "@/lib/i18n";
-import type { DevServer, Project } from "@/types";
+import type { DevServer, Project, ProjectRoot } from "@/types";
+import { cn } from "@/lib/utils";
+import { serverBelongsToProject } from "./project-roots";
 
 /** Preview tickets live 60 s on the Core; the "open externally" link is renewed before that. */
 const externalLinkRefreshMs = 45_000;
 
-/** macOS reports /private/tmp for /tmp. */
-const normalizedPath = (fsPath: string) => fsPath.replace(/^\/private(?=\/)/, "").replace(/\/$/, "");
-
-export function belongsToProject(devServer: DevServer, project: Project): boolean {
-  if (!devServer.workingDirectory) return false;
-  const serverDirectory = normalizedPath(devServer.workingDirectory);
-  const projectDirectory = normalizedPath(project.path);
-  return serverDirectory === projectDirectory || serverDirectory.startsWith(projectDirectory + "/");
-}
-
+/** ":5173 · node · harnold" – port, program and the folder it runs in. */
 function serverLabel(devServer: DevServer): string {
-  const origin = devServer.container ? t("Container {0}", devServer.container) : (devServer.processName ?? "").split("/").pop();
-  return origin ? `:${devServer.port} · ${origin}` : `:${devServer.port}`;
+  if (devServer.container) return `:${devServer.port} · ${t("Container {0}", devServer.container)}`;
+  const program = (devServer.processName ?? "").trim().split(/\s+/)[0]?.split("/").pop();
+  const folderName = devServer.workingDirectory && devServer.workingDirectory !== "/" ? devServer.workingDirectory.split("/").filter(Boolean).pop() : undefined;
+  return [`:${devServer.port}`, program, folderName].filter(Boolean).join(" · ");
 }
 
 /** Running servers, polled while the workspace is open (faster while the App view is shown). */
@@ -45,10 +40,15 @@ export function useDevServers(pollIntervalMs: number): DevServer[] {
 }
 
 /** Workspace → App: the running dev server in a frame, through Harnold's preview proxy on a server. */
-export function AppPreview(props: { project: Project; devServers: DevServer[] }) {
-  const { project, devServers } = props;
-  const projectServers = devServers.filter((devServer) => belongsToProject(devServer, project));
-  const otherServers = devServers.filter((devServer) => !belongsToProject(devServer, project));
+export function AppPreview(props: { project: Project; roots: ProjectRoot[]; devServers: DevServer[] }) {
+  const { project, roots, devServers } = props;
+  const [showAllPorts, setShowAllPorts] = useState(false);
+  const [manualPort, setManualPort] = useState("");
+  const projectServers = devServers.filter((devServer) => serverBelongsToProject(devServer, project, roots));
+  // Other dev servers (node, python, containers …); background apps that merely listen only on request.
+  const otherApps = devServers.filter((devServer) => !serverBelongsToProject(devServer, project, roots) && devServer.likelyApp);
+  const backgroundPorts = devServers.filter((devServer) => !serverBelongsToProject(devServer, project, roots) && !devServer.likelyApp);
+  const otherServers = showAllPorts ? [...otherApps, ...backgroundPorts].sort((first, second) => first.port - second.port) : otherApps;
   const [selectedPort, setSelectedPort] = useState<number | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [externalUrl, setExternalUrl] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export function AppPreview(props: { project: Project; devServers: DevServer[] })
   // First server of the project; another one once the chosen server is gone.
   useEffect(() => {
     if (selectedPort !== null && selectedServerRunning) return;
-    const fallbackServer = projectServers[0] ?? (selectedPort === null ? undefined : otherServers[0]);
+    const fallbackServer = projectServers[0] ?? (selectedPort === null ? undefined : otherApps[0]);
     if (fallbackServer) setSelectedPort(fallbackServer.port);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devServers]);
@@ -103,12 +103,27 @@ export function AppPreview(props: { project: Project; devServers: DevServer[] })
     };
   }, [selectedPort, selectedServerRunning]);
 
-  if (!devServers.length) {
+  const openManualPort = () => {
+    const port = Number(manualPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return;
+    setSelectedPort(port);
+    setManualPort("");
+    if (port === selectedPort) void openInFrame(port);
+  };
+
+  const allPortsToggle = backgroundPorts.length > 0 && (
+    <button type="button" className={cn("text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline", showAllPorts && "text-foreground")} onClick={() => setShowAllPorts((shown) => !shown)}>
+      {showAllPorts ? t("Nur Dev-Server") : t("Alle Ports ({0})", String(backgroundPorts.length))}
+    </button>
+  );
+
+  if (!projectServers.length && !otherServers.length && selectedPort === null) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-[13px] text-muted-foreground">
         <MonitorPlay className="size-6 opacity-60" />
         <p>{t("Kein Dev-Server läuft.")}</p>
         <p className="max-w-80 text-[12px]">{t("Bitte den Agenten, die App zu starten (z. B. „Starte den Dev-Server“). Sie erscheint hier automatisch.")}</p>
+        {allPortsToggle}
       </div>
     );
   }
@@ -133,7 +148,7 @@ export function AppPreview(props: { project: Project; devServers: DevServer[] })
             )}
             {otherServers.length > 0 && (
               <SelectGroup>
-                <SelectLabel>{t("Weitere Server")}</SelectLabel>
+                <SelectLabel>{showAllPorts ? t("Weitere Ports") : t("Weitere Dev-Server")}</SelectLabel>
                 {otherServers.map((devServer) => (
                   <SelectItem key={devServer.port} value={String(devServer.port)}>
                     {serverLabel(devServer)}
@@ -146,6 +161,16 @@ export function AppPreview(props: { project: Project; devServers: DevServer[] })
         <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={t("Neu laden")} title={t("Neu laden")} disabled={selectedPort === null} onClick={() => selectedPort !== null && void openInFrame(selectedPort)}>
           {opening ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
         </Button>
+        <input
+          className="h-7 w-20 rounded-md border bg-background px-2 text-[12px] tabular-nums outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          inputMode="numeric"
+          placeholder={t("Port")}
+          aria-label={t("Port öffnen")}
+          title={t("Port öffnen")}
+          value={manualPort}
+          onChange={(changeEvent) => setManualPort(changeEvent.target.value.replace(/\D/g, "").slice(0, 5))}
+          onKeyDown={(keyboardEvent) => keyboardEvent.key === "Enter" && openManualPort()}
+        />
         {externalUrl && (
           <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" asChild>
             <a href={externalUrl} target="_blank" rel="noreferrer" aria-label={t("Extern öffnen")} title={t("Extern öffnen")}>
@@ -153,6 +178,7 @@ export function AppPreview(props: { project: Project; devServers: DevServer[] })
             </a>
           </Button>
         )}
+        <span className="ml-auto">{allPortsToggle}</span>
       </div>
       {openError ? (
         <div className="flex flex-1 items-center justify-center rounded-lg border bg-background p-6 text-center text-[13px] text-muted-foreground">{openError}</div>

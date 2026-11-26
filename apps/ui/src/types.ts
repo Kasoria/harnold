@@ -24,7 +24,11 @@ export type Session = {
   directories?: string[];
   /** Model picked in the composer for this conversation (null/absent = inherited). */
   model?: string | null;
+  /** Own Git worktree of this chat; null = works in the folders directly. */
+  worktree?: SessionWorktree | null;
 };
+export type SessionWorktree = { repositoryPath: string; path: string; branch: string; baseBranch: string | null };
+export type WorktreeStatus = SessionWorktree & { exists: boolean; uncommittedChanges: boolean; commitsAhead: number; repositoryBranch: string | null };
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
 
 export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
@@ -40,8 +44,13 @@ export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
 /** Work that outlives a turn: Bash in the background, background subagents. */
 export type BackgroundTask = { id: string; description: string; taskType: string };
 /** A listening server (npm run dev …) the user can open in Workspace → App. */
-export type DevServer = { port: number; targetHost: string; processName?: string; workingDirectory?: string; container?: string };
-export type TerminalInfo = { id: string; projectId: string; title: string; createdAt: number; exited: boolean };
+export type DevServer = { port: number; targetHost: string; processName?: string; workingDirectory?: string; container?: string; likelyApp?: boolean };
+export type TerminalInfo = { id: string; projectId: string; title: string; workingDirectory: string; createdAt: number; exited: boolean };
+export type ProjectRootKind = "project" | "project-folder" | "environment-folder" | "workspace-folder" | "worktree";
+/** A folder the project consists of: its own, an attached one, or a chat's worktree. */
+export type ProjectRoot = { path: string; label: string; kind: ProjectRootKind; repositoryPath: string | null; sessionId?: string; branch?: string };
+export type DirectoryEntry = { name: string; path: string; type: "file" | "directory"; heavy?: boolean };
+export type GitBranches = { current: string | null; local: string[]; remote: string[] };
 export type GitFileChange = { path: string; originalPath?: string; staged: string; unstaged: string };
 export type GitStatus =
   | { isRepository: false; gitAvailable: boolean }

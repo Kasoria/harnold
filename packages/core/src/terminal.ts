@@ -13,7 +13,7 @@ import { t } from "./i18n.ts";
  * Same environment as the agent (accounts, git identity).
  */
 
-export type TerminalInfo = { id: string; projectId: string; title: string; createdAt: number; exited: boolean };
+export type TerminalInfo = { id: string; projectId: string; title: string; workingDirectory: string; createdAt: number; exited: boolean };
 
 type TerminalSession = TerminalInfo & {
   pty: IPty;
@@ -63,20 +63,20 @@ function defaultShell(): string {
 }
 
 function publicInfo(session: TerminalSession): TerminalInfo {
-  return { id: session.id, projectId: session.projectId, title: session.title, createdAt: session.createdAt, exited: session.exited };
+  return { id: session.id, projectId: session.projectId, title: session.title, workingDirectory: session.workingDirectory, createdAt: session.createdAt, exited: session.exited };
 }
 
 export function listTerminals(projectId: string): TerminalInfo[] {
   return [...terminalsById.values()].filter((session) => session.projectId === projectId).map(publicInfo);
 }
 
-export function createTerminal(project: { id: string; path: string }, size: { cols: number; rows: number }): TerminalInfo {
+export function createTerminal(project: { id: string; path: string }, size: { cols: number; rows: number }, startDirectory = project.path): TerminalInfo {
   const pty = loadPty();
   if (!pty) throw new Error(t("Das Terminal ist auf diesem Rechner nicht verfügbar (node-pty fehlt)."));
   const projectTerminals = listTerminals(project.id);
   if (projectTerminals.length >= maxTerminalsPerProject) throw new Error(t("Höchstens {0} Terminals je Projekt.", String(maxTerminalsPerProject)));
   const shellPath = defaultShell();
-  const workingDirectory = fs.existsSync(project.path) ? project.path : os.homedir();
+  const workingDirectory = fs.existsSync(startDirectory) ? startDirectory : os.homedir();
   const ptyProcess = pty.spawn(shellPath, process.platform === "win32" ? [] : ["-l"], {
     name: "xterm-256color",
     cols: Math.max(2, Math.floor(size.cols)),
@@ -96,7 +96,8 @@ export function createTerminal(project: { id: string; path: string }, size: { co
   const session: TerminalSession = {
     id: randomUUID(),
     projectId: project.id,
-    title: shellPath.split("/").pop() ?? "shell",
+    title: path.basename(workingDirectory) || (shellPath.split("/").pop() ?? "shell"),
+    workingDirectory,
     createdAt: Date.now(),
     exited: false,
     pty: ptyProcess,

@@ -26,6 +26,8 @@ export type DevServer = {
   workingDirectory?: string;
   /** Started in the Docker sidecar (docker compose …). */
   container?: string;
+  /** Looks like something to open in a browser (dev runtime or container), not a background app. */
+  likelyApp?: boolean;
 };
 
 export const previewProxyPort = process.env.HARNOLD_PREVIEW_PORT ? Number(process.env.HARNOLD_PREVIEW_PORT) : null;
@@ -155,6 +157,13 @@ async function dockerPublishedPorts(): Promise<DevServer[]> {
 
 /** Processes that listen but aren't something to look at. */
 const ignoredProcessPattern = /\b(sshd|cupsd|rapportd|ControlCe|AirPlay|Spotify|Dropbox|postgres|mysqld|redis-server|mongod|containerd|dockerd)\b/i;
+/** Runtimes dev servers run in (npm run dev, vite, next, python -m http.server, rails …). */
+const appRuntimePattern = /^(node|nodejs|bun|deno|python[\d.]*|uvicorn|gunicorn|flask|ruby|rails|puma|php|php-fpm|java|dotnet|go|hugo|caddy|nginx|httpd|vite|next-server|astro|esbuild|wrangler|webpack)$/i;
+
+function executableName(processName: string): string {
+  const firstToken = processName.trim().split(/\s+/)[0] ?? "";
+  return firstToken.split("/").pop() ?? firstToken;
+}
 
 export async function listDevServers(): Promise<DevServer[]> {
   const localServers = process.platform === "linux" ? linuxListeningSockets() : process.platform === "darwin" ? await macListeningSockets() : [];
@@ -168,6 +177,7 @@ export async function listDevServers(): Promise<DevServer[]> {
   });
   return allServers
     .filter((devServer) => !ownPorts.has(devServer.port) && !(devServer.processName && ignoredProcessPattern.test(devServer.processName)))
+    .map((devServer) => ({ ...devServer, likelyApp: Boolean(devServer.container) || (devServer.processName ? appRuntimePattern.test(executableName(devServer.processName)) : false) }))
     .sort((first, second) => first.port - second.port);
 }
 

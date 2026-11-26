@@ -190,7 +190,7 @@ export async function* runNativeTurn(input: TurnInput): AsyncGenerator<TurnEvent
   const skills = agentExtensions.skills(input.project);
   remember(userMessageFor(input, expandSlashCommand(input.promptText, input.project, skills)));
 
-  const cwd = input.project.path || os.homedir();
+  const cwd = input.workingDirectory || input.project.path || os.homedir();
   const projectEnvironment = environmentStore.forProject(input.project.id);
   const toolContext: NativeToolContext = {
     cwd,

@@ -122,7 +122,7 @@ export function WorkGroup(props: { steps: WorkStep[]; toolResultsByToolUseId: Ma
       {!open &&
         toolUses.map((toolUse) => {
           const toolResult = toolUse.toolName.startsWith("mcp__") ? props.toolResultsByToolUseId.get(toolUse.toolUseId) : undefined;
-          return toolResult?.images?.length ? (
+          return (toolResult?.images?.length || toolResult?.html?.length) ? (
             <div key={toolUse.id} className="mt-2">
               <ToolResultImages toolResult={toolResult} />
             </div>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { ChatMarkdown } from "./chat-markdown";
+import { HtmlFrame, looksLikeHtmlDocument } from "./html-frame";
 import type { ToolResultItem } from "./tool-group";
 
 const MAX_TABLE_ROWS = 50;
@@ -71,10 +72,11 @@ function JsonView({ value }: { value: unknown }) {
 }
 
 export function ToolResultImages({ toolResult }: { toolResult: ToolResultItem }) {
-  if (!toolResult.images?.length) return null;
+  if (!toolResult.images?.length && !toolResult.html?.length) return null;
   return (
-    <div className="flex flex-wrap gap-2">
-      {toolResult.images.map((image, imageIndex) => (
+    <div className="flex flex-col gap-2">
+      {toolResult.html?.map((htmlDocument, htmlIndex) => <HtmlFrame key={htmlIndex} html={htmlDocument} />)}
+      {toolResult.images?.map((image, imageIndex) => (
         <img
           key={imageIndex}
           src={`data:${image.mediaType};base64,${image.data}`}
@@ -95,11 +97,13 @@ export function ToolResultView({ toolName, toolResult }: { toolName: string; too
     return <pre className={plainClass}>{content || t("(keine Ausgabe)")}</pre>;
   }
   const parsedJson = parseJson(content);
+  const textIsHtml = looksLikeHtmlDocument(content);
   return (
     <div className="space-y-2">
       <ToolResultImages toolResult={toolResult} />
-      {!content ? (
-        !toolResult.images?.length && <pre className={plainClass}>{t("(keine Ausgabe)")}</pre>
+      {textIsHtml && <HtmlFrame html={content} />}
+      {!content || textIsHtml ? (
+        !toolResult.images?.length && !toolResult.html?.length && !textIsHtml && <pre className={plainClass}>{t("(keine Ausgabe)")}</pre>
       ) : parsedJson !== undefined ? (
         <JsonView value={parsedJson} />
       ) : (

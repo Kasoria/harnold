@@ -24,6 +24,16 @@ const imagesOfToolResult = (content: unknown): { mediaType: string; data: string
   return images.length ? images.slice(0, 6) : undefined;
 };
 
+/** Embedded HTML resources of an MCP result (interactive UIs), shown sandboxed in the chat. */
+const htmlOfToolResult = (content: unknown): string[] | undefined => {
+  if (!Array.isArray(content)) return undefined;
+  const documents = content.flatMap((block) => {
+    const resource = block && typeof block === "object" && block.type === "resource" ? (block as { resource?: { mimeType?: string; text?: string } }).resource : undefined;
+    return resource?.text && resource.mimeType?.startsWith("text/html") ? [resource.text.slice(0, 500_000)] : [];
+  });
+  return documents.length ? documents.slice(0, 3) : undefined;
+};
+
 const stringifyToolResultContent = (content: unknown): string => {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -139,6 +149,7 @@ function* eventsFor(projectId: string, agentMessage: SDKMessage, turnTracking: T
               content: stringifyToolResultContent(contentBlock.content).slice(0, 20_000),
               isError: Boolean(contentBlock.is_error),
               images: imagesOfToolResult(contentBlock.content),
+              html: htmlOfToolResult(contentBlock.content),
             },
           };
         }

@@ -466,8 +466,8 @@ export function ChatPane(props: ChatPaneProps) {
       </header>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div ref={scrollContainerRef} onScroll={trackScrollPosition} className="flex-1 overflow-y-auto">
-          <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed max-md:px-4 max-md:text-[15px]">
+        <div ref={scrollContainerRef} onScroll={trackScrollPosition} className="flex-1 overflow-x-hidden overflow-y-auto">
+          <div ref={contentRef} className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed [overflow-wrap:anywhere] max-md:px-4 max-md:text-[15px] [&>*]:min-w-0">
           {!props.project && <p className="text-muted-foreground">{t("Lege links ein Projekt an, um zu starten.")}</p>}
 
           {renderBlocks.map((renderBlock, blockIndex) => {

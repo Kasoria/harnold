@@ -37,7 +37,7 @@ export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
   | { kind: "thinking"; text: string }
   | { kind: "notice"; text: string }
   | { kind: "tool_use"; toolUseId: string; toolName: string; input: unknown }
-  | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean; images?: { mediaType: string; data: string }[] }
+  | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean; images?: { mediaType: string; data: string }[]; html?: string[] }
   | { kind: "turn_result"; success: boolean; costUsd: number; durationMs: number; errorText?: string; contextTokens?: number; contextWindow?: number }
 );
 

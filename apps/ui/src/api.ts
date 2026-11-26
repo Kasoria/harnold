@@ -310,24 +310,59 @@ export function terminalSocketUrl(terminalId: string): string {
   return httpBase.replace(/^http/, "ws") + `/ws/terminals/${terminalId}` + (accessToken ? `?token=${encodeURIComponent(accessToken)}` : "");
 }
 
-export function connectEvents(onServerEvent: (serverEvent: ServerEvent) => void): () => void {
+/**
+ * Live events from the Core. `onConnectionChange` reports every connect/disconnect; `isReconnect` is true from the second
+ * connect on – events sent while the socket was down are lost, so the caller must reload what it shows.
+ * A socket that died silently (sleep, network change) is replaced when the window comes back or the network returns.
+ */
+export function connectEvents(
+  onServerEvent: (serverEvent: ServerEvent) => void,
+  onConnectionChange?: (connected: boolean, isReconnect: boolean) => void,
+): () => void {
   let socket: WebSocket | undefined;
   let closedByClient = false;
   let reconnectTimer: number | undefined;
+  let hasConnectedBefore = false;
 
   const open = () => {
+    window.clearTimeout(reconnectTimer);
     const httpBase = coreBaseUrl || window.location.origin;
     const socketUrl = httpBase.replace(/^http/, "ws") + "/ws" + (accessToken ? `?token=${encodeURIComponent(accessToken)}` : "");
-    socket = new WebSocket(socketUrl);
-    socket.onmessage = (messageEvent) => onServerEvent(JSON.parse(messageEvent.data) as ServerEvent);
-    socket.onclose = () => {
+    const currentSocket = new WebSocket(socketUrl);
+    socket = currentSocket;
+    currentSocket.onopen = () => {
+      onConnectionChange?.(true, hasConnectedBefore);
+      hasConnectedBefore = true;
+    };
+    currentSocket.onmessage = (messageEvent) => onServerEvent(JSON.parse(messageEvent.data) as ServerEvent);
+    currentSocket.onerror = () => console.warn(`Harnold: Live-Verbindung zu ${socketUrl.replace(/\?token=.*/, "")} fehlgeschlagen`);
+    currentSocket.onclose = () => {
+      if (socket !== currentSocket) return; // already replaced on purpose
+      onConnectionChange?.(false, hasConnectedBefore);
       if (!closedByClient) reconnectTimer = window.setTimeout(open, 1500);
     };
   };
+
+  /** Replaces a socket that is closed, still connecting for too long, or may have died unnoticed. */
+  const replaceSocket = () => {
+    if (closedByClient) return;
+    const previousSocket = socket;
+    socket = undefined;
+    previousSocket?.close();
+    if (previousSocket?.readyState === WebSocket.OPEN) onConnectionChange?.(false, hasConnectedBefore);
+    open();
+  };
+  const onWindowBackAgain = () => {
+    if (document.visibilityState === "visible") replaceSocket();
+  };
+  document.addEventListener("visibilitychange", onWindowBackAgain);
+  window.addEventListener("online", replaceSocket);
   open();
 
   return () => {
     closedByClient = true;
+    document.removeEventListener("visibilitychange", onWindowBackAgain);
+    window.removeEventListener("online", replaceSocket);
     window.clearTimeout(reconnectTimer);
     socket?.close();
   };

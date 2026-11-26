@@ -502,6 +502,7 @@ export const englishTexts: Record<string, string> = {
   "Zugriffstoken des Servers": "Server access token",
   "Zum Server übertragen": "Transfer to server",
   "Keine Verbindung zu {0}": "Cannot connect to {0}",
+  "Live-Verbindung getrennt – verbinde neu …": "Live connection lost – reconnecting …",
   "Verbindet …": "Connecting …",
   "Verbindung": "Connection",
   "Verbindung fehlgeschlagen": "Connection failed",

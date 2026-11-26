@@ -109,6 +109,7 @@ export function App() {
 
   const workspaceOpenRef = useRef(true);
   const openWorkspaceRef = useRef<() => void>(() => undefined);
+  const [liveConnected, setLiveConnected] = useState(true);
   const activeIdsRef = useRef({ activeProjectId, activeSessionId });
   activeIdsRef.current = { activeProjectId, activeSessionId };
   const environmentsRef = useRef(environments);
@@ -355,6 +356,27 @@ export function App() {
             });
             return;
         }
+      },
+      (connected, isReconnect) => {
+        setLiveConnected(connected);
+        if (!connected || !isReconnect) return;
+        // Events during the gap are gone for good: reload everything the screen shows from the Core.
+        const { activeProjectId: currentProjectId, activeSessionId: currentSessionId } = activeIdsRef.current;
+        if (currentSessionId) {
+          api.listChatItems(currentSessionId).then(setChatItems).catch(() => undefined);
+          api.listQueue(currentSessionId).then(setQueuedMessages).catch(() => undefined);
+          api.listBackgroundTasks(currentSessionId).then(setBackgroundTasks).catch(() => undefined);
+        }
+        setStreamingDraft("");
+        setStreamingThinking("");
+        if (currentProjectId) void refreshSessions(currentProjectId);
+        api.listProjects().then(setProjects).catch(() => undefined);
+        void refreshTasks();
+        void refreshChannels();
+        void refreshMail();
+        void refreshEnvironments();
+        setTodayReloadCounter((previous) => previous + 1);
+        setFileChangeCounter((previous) => previous + 1);
       }),
     [refreshSessions, refreshTasks, refreshChannels, refreshMail, refreshEnvironments, navigate],
   );
@@ -939,6 +961,11 @@ export function App() {
   return (
     <TooltipProvider delayDuration={400}>
       <div className={cn("h-full", panelsAnimating && "panels-animating")}>
+        {!liveConnected && (
+          <div role="status" className="fixed left-1/2 top-2 z-50 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-xs text-muted-foreground shadow-md">
+            {t("Live-Verbindung getrennt – verbinde neu …")}
+          </div>
+        )}
         <ResizablePanelGroup id="harnold-shell" orientation="horizontal" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
           <ResizablePanel
             id="sidebar"

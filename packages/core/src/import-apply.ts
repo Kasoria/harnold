@@ -5,6 +5,11 @@ import { agentHomesFolderName, applyAgentHomes, createPathRewriter, repairEnviro
 
 /** Folder inside the data directory where an uploaded workspace waits for the next start. */
 export const importFolderName = ".import";
+/** Describes the running upload; and, after the restart, how applying it went. */
+export const importUploadFileName = "upload.json";
+export const importResultFileName = "result.json";
+/** `error` and `warning` hold technical details; the Core translates them (this file runs before settings exist). */
+export type ImportResult = { uploadId: string; error?: string; warning?: string };
 export type ImportManifest = {
   sourceDataDirectory: string;
   /** Project folders that lived outside the data directory; copied to `external/<folder>` in the archive. */
@@ -21,6 +26,14 @@ export function applyPendingImport(dataDirectory: string, projectsDirectory: str
   const importDirectory = path.join(dataDirectory, importFolderName);
   const stagedDirectory = path.join(importDirectory, "staged");
   if (!fs.existsSync(path.join(importDirectory, "ready")) || !fs.existsSync(stagedDirectory)) return;
+  let uploadId = "";
+  let failure: string | undefined;
+  let warning: string | undefined;
+  try {
+    uploadId = (JSON.parse(fs.readFileSync(path.join(importDirectory, importUploadFileName), "utf8")) as { id: string }).id;
+  } catch {
+    // staged without an upload description: nobody waits for the result
+  }
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(stagedDirectory, "manifest.json"), "utf8")) as ImportManifest;
     const backupDirectory = path.join(importDirectory, `backup-${new Date().toISOString().replace(/[:.]/g, "-")}`);
@@ -52,13 +65,18 @@ export function applyPendingImport(dataDirectory: string, projectsDirectory: str
       repairEnvironmentClaudeDirectories(dataDirectory, createPathRewriter(movedPathPairs, manifest.agentHomes?.caseInsensitivePaths ?? false));
     } catch (agentHomesError) {
       console.error("Übernahme der Agent-Konfiguration fehlgeschlagen:", agentHomesError);
+      warning = agentHomesError instanceof Error ? agentHomesError.message : String(agentHomesError);
     }
   } catch (importError) {
     console.error("Import des Workspaces fehlgeschlagen:", importError);
+    failure = importError instanceof Error ? importError.message : String(importError);
   } finally {
     fs.rmSync(path.join(importDirectory, "ready"), { force: true });
     fs.rmSync(stagedDirectory, { recursive: true, force: true });
     fs.rmSync(path.join(importDirectory, "incoming.tgz"), { force: true });
+    fs.rmSync(path.join(importDirectory, importUploadFileName), { force: true });
+    const result: ImportResult = { uploadId, error: failure, warning };
+    fs.writeFileSync(path.join(importDirectory, importResultFileName), JSON.stringify(result));
   }
 }
 

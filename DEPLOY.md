@@ -41,7 +41,9 @@ und die eingebundenen Server-Ordner. Images und Container liegen im Volume `harn
 
 ## Lokalen Workspace umziehen
 
-In der Desktop-App: Einstellungen → Allgemein → „Auf Server umziehen“. Server-Adresse und Token eintragen, „Zum Server übertragen“ klicken. Übertragen werden Projekte (auch Ordner außerhalb von `~/.harnold`, ohne `node_modules`), Chats, Memory, Einstellungen, Konten und Schlüssel. Der Server startet neu und ersetzt seine Daten (Backup unter `.import/backup-…` im Daten-Volume). Claude-/Codex-Anmeldungen und Agent-Sitzungsverläufe der Agent-Programme selbst werden nicht mitgenommen; dort neu anmelden. Hinter eigenem Reverse Proxy darf das Upload-Limit nicht klein sein (nginx: `client_max_body_size 0;`).
+In der Desktop-App: Einstellungen → Allgemein → „Auf Server umziehen“. Server-Adresse und Token eintragen, „Zum Server übertragen“ klicken; die App bis zum Ende geöffnet lassen. Übertragen werden Projekte (auch Ordner außerhalb von `~/.harnold`; ohne `node_modules` und Build-Caches wie Rusts `target`), Chats, Memory, Einstellungen, Konten und Schlüssel, auf Wunsch Claude-/Codex-Konfiguration und Chat-Verläufe. Anmeldungen bei Claude/Codex auf dem Server neu vornehmen.
+
+Der Upload läuft in kleinen Stücken und setzt nach Verbindungsabbrüchen fort; ein eigener Reverse Proxy braucht keine besonderen Limits. Der Server muss Harnold in derselben aktuellen Version laufen haben. Er startet am Ende neu; die ersetzten Daten bleiben unter `.import/backup-…` im Daten-Volume (bei Bedarf selbst löschen).
 
 ## Updates
 - Eine neue Version erscheint in der UI unten und unter Einstellungen als „Update auf x“. Ein Klick auf **Auf x aktualisieren** holt das neue Image und startet Harnold neu (laufende Sitzungen werden unterbrochen). Die Seite lädt danach von selbst neu.

@@ -536,3 +536,14 @@ export type TeamAgentInput = {
   icon: string | null;
 };
 export type TeamAgent = TeamAgentInput & { id: string; createdAt: number };
+
+/** State of a workspace move to a server (runs in the local Core). */
+export type WorkspacePushStatus = {
+  phase: "idle" | "packing" | "uploading" | "unpacking" | "restarting" | "done" | "failed" | "cancelled";
+  sentBytes: number;
+  totalBytes: number;
+  remainingSeconds: number | null;
+  reconnecting: boolean;
+  error: string | null;
+  warning: string | null;
+};

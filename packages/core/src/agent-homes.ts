@@ -70,9 +70,9 @@ const isInsideAny = (candidate: string, parents: string[], caseInsensitive: bool
   return parents.some((parent) => normalize(candidate) === normalize(parent) || normalize(candidate).startsWith(normalize(parent) + path.sep));
 };
 
-const copyIfPresent = (sourcePath: string, targetPath: string, filtered: boolean) => {
+const copyIfPresent = async (sourcePath: string, targetPath: string, filtered: boolean) => {
   if (!fs.existsSync(sourcePath)) return false;
-  fs.cpSync(sourcePath, targetPath, { recursive: true, verbatimSymlinks: true, filter: filtered ? (candidate) => !skippedFolderNames.has(path.basename(candidate)) : undefined });
+  await fs.promises.cp(sourcePath, targetPath, { recursive: true, verbatimSymlinks: true, filter: filtered ? (candidate) => !skippedFolderNames.has(path.basename(candidate)) : undefined });
   return true;
 };
 
@@ -80,7 +80,7 @@ const copyIfPresent = (sourcePath: string, targetPath: string, filtered: boolean
  * Export side: copies the agent homes into `<staging>/agent-homes`. `movedPaths` are the folders that travel with
  * the workspace (projects, extra folders, data directory) – only transcripts recorded inside them are useful there.
  */
-export function stageAgentHomes(stagingDirectory: string, movedPaths: string[], options: AgentTransferOptions): AgentHomesManifest | null {
+export async function stageAgentHomes(stagingDirectory: string, movedPaths: string[], options: AgentTransferOptions): Promise<AgentHomesManifest | null> {
   if (!options.includeConfiguration && !options.includeTranscripts) return null;
   const caseInsensitivePaths = process.platform === "darwin" || process.platform === "win32";
   const targetRoot = path.join(stagingDirectory, agentHomesFolderName);
@@ -92,7 +92,7 @@ export function stageAgentHomes(stagingDirectory: string, movedPaths: string[], 
     const claudeTarget = path.join(targetRoot, "claude");
     fs.mkdirSync(claudeTarget, { recursive: true });
     if (options.includeConfiguration) {
-      for (const entryName of claudeConfigurationEntries) copyIfPresent(path.join(claudeSource, entryName), path.join(claudeTarget, entryName), entryName !== "plugins");
+      for (const entryName of claudeConfigurationEntries) await copyIfPresent(path.join(claudeSource, entryName), path.join(claudeTarget, entryName), entryName !== "plugins");
     }
     if (options.includeTranscripts) {
       // One folder per working directory: transcripts, subagent logs, tool results and Claude's auto-memory.
@@ -104,7 +104,7 @@ export function stageAgentHomes(stagingDirectory: string, movedPaths: string[], 
         const workingDirectory = listFiles(folderPath, ".jsonl").map(recordedWorkingDirectory).find(Boolean) ?? null;
         // A folder with only auto-memory has no cwd to read: match its name against the moved folders.
         const matchesByName = !workingDirectory && movedEncodedNames.some((encodedName) => (caseInsensitivePaths ? folderName.toLowerCase().startsWith(encodedName.toLowerCase()) : folderName.startsWith(encodedName)));
-        if (wasMoved(workingDirectory) || matchesByName) fs.cpSync(folderPath, path.join(claudeTarget, "projects", folderName), { recursive: true, verbatimSymlinks: true });
+        if (wasMoved(workingDirectory) || matchesByName) await fs.promises.cp(folderPath, path.join(claudeTarget, "projects", folderName), { recursive: true, verbatimSymlinks: true });
       }
     }
     manifest.claudeDirectory = claudeSource;
@@ -128,7 +128,7 @@ export function stageAgentHomes(stagingDirectory: string, movedPaths: string[], 
     const codexTarget = path.join(targetRoot, "codex");
     fs.mkdirSync(codexTarget, { recursive: true });
     if (options.includeConfiguration) {
-      for (const entryName of codexConfigurationEntries) copyIfPresent(path.join(codexSource, entryName), path.join(codexTarget, entryName), true);
+      for (const entryName of codexConfigurationEntries) await copyIfPresent(path.join(codexSource, entryName), path.join(codexTarget, entryName), true);
     }
     if (options.includeTranscripts) {
       // Rollouts (sessions/YYYY/MM/DD/rollout-…-<thread id>.jsonl) are what `resumeThread` looks up.

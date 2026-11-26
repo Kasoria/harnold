@@ -8,7 +8,8 @@ import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { z } from "zod";
 import { config } from "./config.ts";
-import { pushWorkspaceToServer, receiveWorkspaceArchive } from "./migration.ts";
+import { cancelWorkspacePush, readWorkspacePush, startWorkspacePush } from "./migration-push.ts";
+import { appendChunk, completeUpload, createUpload, maximumReceivedChunkBytes, migrationProtocolVersion, readUploadStatus } from "./migration-receive.ts";
 import { imagePublished, latestRelease, requestUpdateInstall } from "./update-check.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
@@ -188,17 +189,50 @@ app.post("/api/migration/push", async (context) => {
   const { serverUrl, token, includeAgentConfiguration, includeAgentTranscripts } = z
     .object({ serverUrl: z.string().min(1), token: z.string().default(""), includeAgentConfiguration: z.boolean().default(true), includeAgentTranscripts: z.boolean().default(true) })
     .parse(await context.req.json());
-  return context.json({ ok: true, ...(await pushWorkspaceToServer(serverUrl, token, { includeConfiguration: includeAgentConfiguration, includeTranscripts: includeAgentTranscripts })) });
+  return context.json(await startWorkspacePush(serverUrl, token, { includeConfiguration: includeAgentConfiguration, includeTranscripts: includeAgentTranscripts }));
+});
+app.get("/api/migration/push", (context) => context.json(readWorkspacePush()));
+app.delete("/api/migration/push", (context) => context.json(cancelWorkspacePush()));
+
+/** Server core: only where a supervisor restarts the core (Docker server); the desktop app's core would just end. */
+const acceptsImport = () => process.env.HARNOLD_DEPLOYMENT === "docker";
+app.get("/api/migration/status", (context) => context.json({ protocol: migrationProtocolVersion, canImport: acceptsImport() }));
+app.use("/api/migration/uploads/*", async (context, next) => {
+  if (!acceptsImport()) return context.json({ error: t("Nur auf einem Docker-Server möglich") }, 400);
+  await next();
+});
+const unknownUpload = () => ({ error: t("Der Server kennt diese Übertragung nicht mehr. Starte sie erneut.") });
+
+app.post("/api/migration/uploads", async (context) => {
+  const { sizeBytes, unpackedBytes } = z.object({ sizeBytes: z.number().int().positive(), unpackedBytes: z.number().int().nonnegative() }).parse(await context.req.json());
+  return context.json(createUpload(sizeBytes, unpackedBytes));
 });
 
-/** Server core: takes a workspace archive and restarts to swap it in (the old data is kept as a backup). */
-app.post("/api/migration/import", async (context) => {
-  // Only where a supervisor restarts the core (Docker server); the desktop app's core would just end.
-  if (process.env.HARNOLD_DEPLOYMENT !== "docker") return context.json({ error: t("Nur auf einem Docker-Server möglich") }, 400);
-  await receiveWorkspaceArchive(context.req.raw.body);
-  setTimeout(() => process.exit(0), 500); // Docker (restart: unless-stopped) starts the core again; it applies the import first
-  return context.json({ ok: true });
+app.put("/api/migration/uploads/:uploadId/chunk", async (context) => {
+  const offset = z.coerce.number().int().nonnegative().parse(context.req.query("offset"));
+  const declaredBytes = Number(context.req.header("content-length"));
+  if (!(declaredBytes > 0 && declaredBytes <= maximumReceivedChunkBytes)) return context.json({ error: t("Ungültiges Archiv") }, 413);
+  const chunk = Buffer.from(await context.req.arrayBuffer());
+  // A connection cut off halfway: ask for the piece again.
+  if (chunk.length !== declaredBytes) return context.json({ error: t("Kein Archiv übertragen") }, 408);
+  const result = appendChunk(context.req.param("uploadId"), offset, chunk);
+  if (!result) return context.json(unknownUpload(), 404);
+  return context.json({ receivedBytes: result.receivedBytes }, result.accepted ? 200 : 409);
 });
+
+app.post("/api/migration/uploads/:uploadId/complete", (context) => {
+  const uploadStatus = completeUpload(context.req.param("uploadId"));
+  return uploadStatus ? context.json(uploadStatus) : context.json(unknownUpload(), 404);
+});
+
+app.get("/api/migration/uploads/:uploadId", (context) => {
+  context.header("cache-control", "no-store");
+  const uploadStatus = readUploadStatus(context.req.param("uploadId"));
+  return uploadStatus ? context.json(uploadStatus) : context.json(unknownUpload(), 404);
+});
+
+/** Desktop apps up to 0.18 sent everything in one request, which large workspaces did not survive. */
+app.post("/api/migration/import", (context) => context.json({ error: t("Diese Desktop-App ist zu alt für den Umzug. Aktualisiere sie zuerst.") }, 400));
 
 // Errors: the full error goes to the log; the client gets the message with filesystem paths
 // removed (a stack trace or an absolute path helps an attacker, not the user).

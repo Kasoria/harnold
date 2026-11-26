@@ -539,10 +539,10 @@ export function ChatPane(props: ChatPaneProps) {
                 );
               case "notice":
                 return (
-                  <div key={chatItem.id} className="flex animate-in items-center gap-3 py-1 text-[11.5px] text-muted-foreground fade-in duration-200">
-                    <span className="h-px flex-1 bg-border" />
-                    {chatItem.text}
-                    <span className="h-px flex-1 bg-border" />
+                  <div key={chatItem.id} className="flex min-w-0 animate-in items-center gap-3 py-1 text-[11.5px] text-muted-foreground fade-in duration-200">
+                    <span className="h-px min-w-4 flex-1 bg-border" />
+                    <span className="min-w-0 max-w-full truncate" title={chatItem.text}>{chatItem.text}</span>
+                    <span className="h-px min-w-4 flex-1 bg-border" />
                   </div>
                 );
               case "turn_result":

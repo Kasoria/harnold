@@ -29,14 +29,14 @@ export function ActivityIndicator({ label, startedAt }: { label: string; started
   }, []);
   const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
   return (
-    <div className="flex animate-in items-center gap-2 text-[13px] fade-in duration-300" role="status">
-      <span className="flex gap-1" aria-hidden>
+    <div className="flex min-w-0 animate-in items-center gap-2 text-[13px] fade-in duration-300" role="status">
+      <span className="flex shrink-0 gap-1" aria-hidden>
         {[0, 1, 2].map((dotIndex) => (
           <span key={dotIndex} className="size-1.5 animate-pulse rounded-full bg-muted-foreground/70" style={{ animationDelay: `${dotIndex * 200}ms` }} />
         ))}
       </span>
-      <span className="text-shimmer">{label}</span>
-      {elapsedSeconds >= 2 && <span className="text-[12px] text-muted-foreground tabular-nums">{elapsedSeconds} s</span>}
+      <span className="min-w-0 truncate text-shimmer" title={label}>{label}</span>
+      {elapsedSeconds >= 2 && <span className="shrink-0 text-[12px] text-muted-foreground tabular-nums">{elapsedSeconds} s</span>}
     </div>
   );
 }

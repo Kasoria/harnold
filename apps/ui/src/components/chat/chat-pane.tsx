@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { confirmAction } from "@/components/confirm-dialog";
-import { ChatMarkdown, CopyButton } from "./chat-markdown";
+import { ChatMarkdown } from "./chat-markdown";
 import { ActivityIndicator, ThinkingBlock } from "./activity";
 import { MoveSessionDialog } from "./move-session-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -31,6 +31,7 @@ import { WorkGroup, type ToolResultItem, type ToolUseItem, type WorkStep } from 
 import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
 import { MessageTimestamp } from "./message-timestamp";
+import { CopyMessageAction, MessageAction } from "./message-actions";
 import { ImageGallery, imagePathsIn } from "./attachment-views";
 import { WorktreeControl } from "./worktree-control";
 import { ProjectQuickSelect } from "./project-quick-select";
@@ -499,17 +500,12 @@ export function ChatPane(props: ChatPaneProps) {
                       <ImageGallery projectId={props.project.id} imagePaths={imagePathsByBlockKey.get(chatItem.id)!} className="mt-2" />
                     )}
                     <div className="mt-0.5 flex items-center gap-1">
-                    <CopyButton
-                      readText={() => chatItem.text}
-                      label={t("Kopieren")}
-                      className="h-6 px-1 text-[11.5px] opacity-0 transition-opacity duration-150 group-hover/answer:opacity-100 focus-visible:opacity-100"
-                    />
+                    <CopyMessageAction readText={() => chatItem.text} className="opacity-0 transition-opacity duration-150 group-hover/answer:opacity-100 focus-visible:opacity-100" />
                     {props.ttsReady && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                      <MessageAction
+                        label={speechPlayback.speakingKey === chatItem.id ? t("Stopp") : t("Vorlesen")}
                         className={cn(
-                          "-ml-2 h-6 gap-1 px-2 text-[11.5px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/answer:opacity-100 focus-visible:opacity-100",
+                          "opacity-0 transition-opacity duration-150 group-hover/answer:opacity-100 focus-visible:opacity-100",
                           (speechPlayback.speakingKey === chatItem.id || speechPlayback.loadingKey === chatItem.id) && "opacity-100",
                         )}
                         onClick={() =>
@@ -517,14 +513,13 @@ export function ChatPane(props: ChatPaneProps) {
                         }
                       >
                         {speechPlayback.loadingKey === chatItem.id ? (
-                          <Loader2 className="size-3 animate-spin" />
+                          <Loader2 className="animate-spin" />
                         ) : speechPlayback.speakingKey === chatItem.id ? (
-                          <Square className="size-2.5 fill-current" />
+                          <Square className="fill-current" />
                         ) : (
-                          <Volume2 className="size-3" />
+                          <Volume2 />
                         )}
-                        {speechPlayback.speakingKey === chatItem.id ? t("Stopp") : t("Vorlesen")}
-                      </Button>
+                      </MessageAction>
                     )}
                     <MessageTimestamp createdAt={chatItem.createdAt} className="group-hover/answer:opacity-100" />
                     </div>

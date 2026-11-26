@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Pencil, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, isActionEnter } from "@/lib/utils";
-import { CopyButton } from "./chat-markdown";
+import { CopyMessageAction, MessageAction } from "./message-actions";
 import { SentAttachments } from "./attachment-views";
 import { MessageTimestamp } from "./message-timestamp";
 import type { Attachment } from "@/types";
@@ -29,7 +29,7 @@ const collapsibleCharacterCount = 900;
 const collapsibleLineCount = 14;
 const isLongMessage = (text: string) => text.length > collapsibleCharacterCount || text.split("\n").length > collapsibleLineCount;
 
-const hoverActionClassName = "h-6 px-1 text-[11.5px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/user:opacity-100 focus-visible:opacity-100";
+const hoverActionClassName = "opacity-0 transition-opacity duration-150 group-hover/user:opacity-100 focus-visible:opacity-100";
 
 export function UserMessage(props: UserMessageProps) {
   const [editDraft, setEditDraft] = useState<string | null>(null);
@@ -107,16 +107,16 @@ export function UserMessage(props: UserMessageProps) {
       )}
       <div className="mt-0.5 flex items-center gap-0.5">
         <MessageTimestamp createdAt={props.createdAt} className="group-hover/user:opacity-100" />
-        <CopyButton readText={() => props.text} label={t("Kopieren")} className={hoverActionClassName} />
+        <CopyMessageAction readText={() => props.text} className={hoverActionClassName} />
         {props.canEdit && (
-          <Button variant="ghost" size="sm" className={cn(hoverActionClassName, "gap-1")} onClick={() => setEditDraft(props.text)}>
-            <Pencil className="size-3" /> {t("Bearbeiten")}
-          </Button>
+          <MessageAction label={t("Bearbeiten")} className={hoverActionClassName} onClick={() => setEditDraft(props.text)}>
+            <Pencil />
+          </MessageAction>
         )}
         {props.canEdit && props.onRewindFiles && (
-          <Button variant="ghost" size="sm" className={cn(hoverActionClassName, "gap-1")} title={t("Dateien auf den Stand vor dieser Nachricht zurücksetzen")} onClick={props.onRewindFiles}>
-            <RotateCcw className="size-3" /> {t("Dateien zurücksetzen")}
-          </Button>
+          <MessageAction label={t("Dateien auf den Stand vor dieser Nachricht zurücksetzen")} className={hoverActionClassName} onClick={props.onRewindFiles}>
+            <RotateCcw />
+          </MessageAction>
         )}
         {props.versions && (
           <span className="flex items-center text-[11.5px] text-muted-foreground tabular-nums">

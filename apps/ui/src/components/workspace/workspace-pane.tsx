@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, Loader2, PanelLeft, RotateCw, Save, SquareTerminal, Wand2, X } from "lucide-react";
+import { AppWindow, Check, ChevronDown, ChevronRight, ExternalLink, FileCode2, GitBranch, LayoutDashboard, Loader2, PanelLeft, RotateCw, Save, SquareTerminal, Wand2, X } from "lucide-react";
 import { api } from "@/api";
 import type { Project } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SegmentedControl } from "@/components/segmented-control";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ProjectFiles, type FileSelection } from "./file-tree";
 import { AppPreview, useDevServers } from "./app-preview";
 import { preferredCodeRoot, serverBelongsToProject, useProjectRoots } from "./project-roots";
@@ -43,6 +44,18 @@ const languageByExtension: Record<string, string> = {
   rs: "rust", go: "go", rb: "ruby", php: "php", java: "java", kt: "kotlin", sql: "sql", xml: "xml", toml: "ini", ini: "ini",
   c: "c", h: "c", cpp: "cpp", cs: "csharp", dockerfile: "dockerfile", vue: "html", svelte: "html",
 };
+
+/** The views of the workspace; "file" covers preview and editor of the selected file. */
+type ViewChoice = "canvas" | "file" | "app" | "git";
+
+const viewChoices: { value: ViewChoice; label: string; hint: string; icon: typeof AppWindow }[] = [
+  { value: "canvas", label: t("Canvas"), hint: t("Entwürfe, Bilder, Notizen"), icon: LayoutDashboard },
+  { value: "file", label: t("Datei"), hint: t("Vorschau und Editor"), icon: FileCode2 },
+  { value: "app", label: t("App"), hint: t("Laufende Dev-Server"), icon: AppWindow },
+  { value: "git", label: "Git", hint: t("Änderungen, Commits, Branches"), icon: GitBranch },
+];
+
+const viewChoiceOf = (view: WorkspaceView): ViewChoice => (view === "preview" || view === "code" ? "file" : view);
 
 function IconAction(props: { label: string; onClick?: () => void; href?: string; children: React.ReactNode }) {
   const button = (
@@ -175,6 +188,26 @@ export function WorkspacePane(props: WorkspacePaneProps) {
       : [selectionInProjectFolder ? project.name : (roots.find((root) => root.path === selection?.root)?.label ?? project.name), ...(selectedPath?.split("/") ?? [])];
   const isDesignFile = selectedPath && selectionInProjectFolder ? selectedPath.startsWith("design/") : false;
 
+  const currentViewChoice = viewChoices.find((choice) => choice.value === viewChoiceOf(activeView))!;
+  const CurrentViewIcon = currentViewChoice.icon;
+  /** Small status next to a view: running server, number of Git changes, unsaved file. */
+  const viewIndicator = (choice: ViewChoice) =>
+    choice === "app" && projectHasRunningServer ? (
+      <span className="size-1.5 rounded-full bg-emerald-500" aria-label={t("Server läuft")} />
+    ) : choice === "git" && gitChangeCount > 0 ? (
+      <span className="text-[10.5px] text-muted-foreground tabular-nums">{gitChangeCount}</span>
+    ) : choice === "file" && editorIsDirty ? (
+      <span className="size-1.5 rounded-full bg-foreground/60" aria-label={t("Ungespeichert")} />
+    ) : null;
+  const openView = (choice: ViewChoice) => {
+    if (choice !== "file") return setActiveView(choice);
+    if (!selection) {
+      setFilePanelOpen(true);
+      return setActiveView("code");
+    }
+    setActiveView(selectionInProjectFolder && previewableExtensions.test(selection.path) ? "preview" : "code");
+  };
+
   const workspaceBody = (
       <div className="flex min-h-0 flex-1">
         <nav
@@ -272,34 +305,42 @@ export function WorkspacePane(props: WorkspacePaneProps) {
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <SegmentedControl
-              className="mr-1 w-88"
+          {activeView !== "canvas" && activeView !== "app" && activeView !== "git" && selectedPath && selectionInProjectFolder && previewableExtensions.test(selectedPath) && (
+            <SegmentedControl
+              className="mr-1 w-40"
               value={activeView}
               onValueChange={setActiveView}
               options={[
-                { value: "canvas", label: t("Canvas") },
-                { value: "preview", label: t("Preview") },
+                { value: "preview", label: t("Vorschau") },
                 { value: "code", label: editorIsDirty ? "Code •" : "Code" },
-                {
-                  value: "app",
-                  label: (
-                    <span className="inline-flex items-center gap-1">
-                      {t("App")}
-                      {projectHasRunningServer && <span className="size-1.5 rounded-full bg-emerald-500" aria-label={t("Server läuft")} />}
-                    </span>
-                  ),
-                },
-                {
-                  value: "git",
-                  label: (
-                    <span className="inline-flex items-center gap-1">
-                      Git
-                      {gitChangeCount > 0 && <span className="text-[10.5px] text-muted-foreground tabular-nums">{gitChangeCount}</span>}
-                    </span>
-                  ),
-                },
               ]}
             />
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="mr-1 h-7 gap-1.5 px-2 text-[12.5px] font-medium">
+                <CurrentViewIcon className="size-3.5 text-muted-foreground" />
+                {currentViewChoice.label}
+                {viewIndicator(currentViewChoice.value)}
+                <ChevronDown className="size-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              {viewChoices.map((choice) => (
+                <DropdownMenuItem key={choice.value} className="gap-2.5 py-1.5" onSelect={() => openView(choice.value)}>
+                  <choice.icon className="size-4 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center gap-1.5 text-[12.5px]">
+                      {choice.label}
+                      {viewIndicator(choice.value)}
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">{choice.hint}</span>
+                  </span>
+                  <Check className={cn("size-3.5", choice.value !== currentViewChoice.value && "invisible")} />
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {isDesignFile && selectedPath && (activeView === "preview" || activeView === "code") && (
             <Button size="sm" variant="secondary" className="h-7 text-[12px]" onClick={() => props.onImplementDesign(selectedPath)}>
               <Wand2 className="size-3.5" /> {t("In Code übernehmen")}

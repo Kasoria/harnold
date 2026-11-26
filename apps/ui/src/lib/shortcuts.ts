@@ -13,6 +13,7 @@ export type ShortcutId =
   | "newQuickChat"
   | "newProject"
   | "toggleWorkspace"
+  | "toggleSidebar"
   | "toggleTheme"
   | "interrupt"
   | "previousSession"
@@ -45,6 +46,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   { id: "nextSession", group: t("Chat"), label: t("Nächste Session"), defaultCombo: "Mod+Alt+ArrowDown" },
   { id: "interrupt", group: t("Chat"), label: t("Durchlauf stoppen"), defaultCombo: "Mod+." },
   { id: "toggleWorkspace", group: t("Chat"), label: t("Workspace ein-/ausblenden"), defaultCombo: "Mod+B" },
+  { id: "toggleSidebar", group: t("Allgemein"), label: t("Seitenleiste ein-/ausklappen"), defaultCombo: "Mod+Shift+B" },
   { id: "goChat", group: t("Navigation"), label: t("Chat & Workspace"), defaultCombo: "Mod+0" },
   { id: "goToday", group: t("Navigation"), label: t("Heute"), defaultCombo: "Mod+1" },
   { id: "goTasks", group: t("Navigation"), label: t("Tasks"), defaultCombo: "Mod+2" },

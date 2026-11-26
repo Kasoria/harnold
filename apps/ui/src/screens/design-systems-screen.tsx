@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SegmentedControl } from "@/components/segmented-control";
+import { OptionSelect } from "@/components/option-select";
 import { FormField, formatRelativeTime } from "@/components/form-field";
 import { DesignTokensEditor } from "@/components/design-system/design-tokens-editor";
 import { SavedCheck, useSavedFlash } from "@/components/save-feedback";
@@ -183,10 +184,11 @@ function CreateDesignSystemForm(props: {
           <Input id="design-system-name" autoFocus value={name} placeholder={t("z. B. Kasoria Marke")} onChange={(changeEvent) => setName(changeEvent.target.value)} />
         </FormField>
         <FormField label={t("Start")}>
-          <SegmentedControl
+          <OptionSelect
+            className="w-full"
             options={[
               { value: "starter", label: t("Vorlage") },
-              { value: "derive", label: t("Aus Projekt") },
+              { value: "derive", label: t("Aus Projekt ableiten") },
               { value: "empty", label: t("Leer") },
             ]}
             value={template}

@@ -97,7 +97,7 @@ type RenderBlock =
   | { type: "item"; chatItem: ChatItem }
   | { type: "work"; key: string; steps: WorkStep[]; toolUses: ToolUseItem[] };
 
-const statusLabels: Record<SessionStatus, string> = { idle: t("Idle"), running: t("Läuft"), waiting: t("Wartet"), error: t("Fehler") };
+const statusLabels: Record<SessionStatus, string> = { idle: t("Idle"), recent: t("Kürzlich aktiv"), running: t("Läuft"), waiting: t("Wartet"), error: t("Fehler") };
 
 /** Groups consecutive thoughts and tool calls into one collapsible line (answers stay visible). */
 function buildRenderBlocks(chatItems: ChatItem[]): RenderBlock[] {

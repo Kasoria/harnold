@@ -12,21 +12,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { safeStorage } from "@/lib/storage";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { permissionModeOptions } from "@/components/form-field";
-import { getAgentModels, ModelSelect, useAgentModels, type InheritedModel } from "@/components/model-select";
+import { getAgentModels, ModelEffortPicker, useAgentModels, type InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
 
 /** Window event: the agent changed the permission mode of the open session (detail = new mode). */
 export const permissionModeChangedEvent = "harnold:permission-mode-changed";
 
-/** Effort levels like Claude Code's /effort ("default" = the model decides). */
-const effortOptions: { value: EffortLevel | "default"; label: string }[] = [
-  { value: "default", label: t("Aufwand: Standard") },
-  { value: "low", label: t("Aufwand: niedrig") },
-  { value: "medium", label: t("Aufwand: mittel") },
-  { value: "high", label: t("Aufwand: hoch") },
-  { value: "xhigh", label: t("Aufwand: sehr hoch") },
-  { value: "max", label: t("Aufwand: maximal") },
-];
 
 const fieldSizingSupported = CSS.supports("field-sizing", "content");
 
@@ -705,21 +696,13 @@ export function Composer(props: ComposerProps) {
           </Tooltip>
         )}
         {props.contextIndicator?.(model)}
-        <ModelSelect compact value={model} onChange={setModel} inherited={props.inheritedModel} />
-        {props.canChooseEffort && (
-          <Select value={effort || "default"} onValueChange={(value) => setEffort(value === "default" ? "" : (value as EffortLevel))}>
-            <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5" title={t("Denkaufwand")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              {effortOptions.map((effortOption) => (
-                <SelectItem key={effortOption.value} value={effortOption.value}>
-                  {effortOption.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <ModelEffortPicker
+          value={model}
+          onChange={setModel}
+          inherited={props.inheritedModel}
+          effort={effort}
+          onEffortChange={props.canChooseEffort ? setEffort : undefined}
+        />
         <Select value={permissionMode} onValueChange={(value) => setPermissionMode(value as PermissionMode)}>
           <SelectTrigger size="sm" className="h-7 border-0 bg-transparent text-[12px] shadow-none hover:bg-foreground/5">
             <SelectValue />

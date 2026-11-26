@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 
-export type SessionStatus = "idle" | "running" | "waiting" | "error";
+/** "recent" = idle, but active in the last minutes (probably waiting for the next message). */
+export type SessionStatus = "idle" | "recent" | "running" | "waiting" | "error";
 
 const statusClassNames: Record<SessionStatus, string> = {
   idle: "bg-muted-foreground/40",
+  recent: "bg-status-recent",
   running: "bg-status-running animate-pulse",
   waiting: "bg-status-waiting",
   error: "bg-status-error",

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/segmented-control";
+import { OptionSelect } from "@/components/option-select";
 import { StatusDot } from "@/components/status-dot";
 import { FormField } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
@@ -196,10 +197,10 @@ function McpServerEditor(props: {
               <Input value={serverInput.name} placeholder="github" onChange={(changeEvent) => updateInput({ name: changeEvent.target.value })} />
             </FormField>
             <FormField label={t("Verbindung")}>
-              <SegmentedControl
+              <OptionSelect
                 className="w-52"
                 options={[
-                  { value: "stdio", label: t("Lokal") },
+                  { value: "stdio", label: t("Lokal (Befehl)") },
                   { value: "http", label: "HTTP" },
                   { value: "sse", label: "SSE" },
                 ]}

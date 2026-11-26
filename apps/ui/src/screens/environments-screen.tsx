@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { BookOpen, CheckCircle2, CircleAlert, Download, Loader2, Lock, LockOpen, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "@/api";
 import type { ClaudeAuthStatus, CustomProvider, Environment, EnvironmentAccountChecks, EnvironmentClaudeMode, EnvironmentInput, EnvironmentProvider, EnvironmentVariable, Project } from "@/types";
-import { SegmentedControl } from "@/components/segmented-control";
 import { ClaudeAccountSection } from "@/components/claude-connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

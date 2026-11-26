@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/segmented-control";
+import { OptionSelect } from "@/components/option-select";
 import { formatRelativeTime } from "@/components/form-field";
 import { EmptyState, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
@@ -286,9 +287,10 @@ export function MemoryScreen(props: MemoryScreenProps) {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input className="h-8 pl-8" placeholder={t("Suchen …")} value={searchText} onChange={(changeEvent) => setSearchText(changeEvent.target.value)} />
         </div>
-        <SegmentedControl
+        <OptionSelect
+          ariaLabel={t("Ebene")}
           options={[
-            { value: "all", label: t("Alle") },
+            { value: "all", label: t("Alle Ebenen") },
             { value: "project", label: t("Projekt") },
             ...(props.environment ? [{ value: "environment" as const, label: t("Umgebung") }] : []),
             { value: "workspace", label: t("Workspace") },

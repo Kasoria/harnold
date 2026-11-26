@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { SegmentedControl } from "@/components/segmented-control";
+import { OptionSelect } from "@/components/option-select";
 import { formatRelativeTime } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
@@ -158,11 +158,12 @@ export function FilesScreen(props: FilesScreenProps) {
             </SelectContent>
           </Select>
         </div>
-        <SegmentedControl
+        <OptionSelect
+          ariaLabel={t("Status")}
           options={[
-            { value: "all", label: t("Alle") },
-            { value: "orphaned", label: `Verwaist ${orphanedFiles.length || ""}`.trim() },
-            { value: "duplicates", label: `Doppelt ${duplicateFiles.length || ""}`.trim() },
+            { value: "all", label: t("Alle Dateien") },
+            { value: "orphaned", label: orphanedFiles.length ? t("Verwaist ({0})", String(orphanedFiles.length)) : t("Verwaist") },
+            { value: "duplicates", label: duplicateFiles.length ? t("Doppelt ({0})", String(duplicateFiles.length)) : t("Doppelt") },
           ]}
           value={statusFilter}
           onValueChange={setStatusFilter}
@@ -360,10 +361,11 @@ export function FilesScreen(props: FilesScreenProps) {
     <ScreenLayout
       title={t("Dateien")}
       tabs={
-        <SegmentedControl
-          className="w-80"
+        <OptionSelect
+          quiet
+          ariaLabel={t("Art")}
           options={[
-            { value: "all", label: t("Alle") },
+            { value: "all", label: t("Alle Arten") },
             { value: "attachment", label: t("Anhänge") },
             { value: "generated", label: t("Generiert") },
             { value: "memory", label: t("Memory") },

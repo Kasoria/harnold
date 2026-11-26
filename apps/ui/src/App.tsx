@@ -49,6 +49,8 @@ import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
 import { formatCombo, useShortcutBindings, type ShortcutId } from "@/lib/shortcuts";
 
 const panelAnimationMs = 260;
+/** A chat counts as "recently active" (blue dot) this long after its last activity. */
+const recentActivityWindowMs = 30 * 60_000;
 const activeEnvironmentStorageKey = "harnold.activeEnvironment";
 
 export function App() {
@@ -99,6 +101,8 @@ export function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const workspacePanelRef = usePanelRef();
+  const sidebarPanelRef = usePanelRef();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "harnold-shell-v2", storage: safeStorage });
   const { defaultLayout: mainDefaultLayout, onLayoutChanged: onMainLayoutChanged } = useDefaultLayout({ id: "harnold-main", storage: safeStorage });
   const { route, navigate } = useHashRoute();
@@ -392,10 +396,36 @@ export function App() {
     return lastTurnResult?.kind === "turn_result" && !lastTurnResult.success;
   }, [chatItems]);
 
+  // Blue dot: a chat that worked in the last minutes and now probably waits for the next message.
+  const [turnEndedAtBySessionId, setTurnEndedAtBySessionId] = useState<Map<string, number>>(new Map());
+  const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const endedSessionIds = [...previousRunningSessionIdsRef.current].filter((sessionId) => !runningSessionIds.has(sessionId));
+    previousRunningSessionIdsRef.current = runningSessionIds;
+    if (!endedSessionIds.length) return;
+    setTurnEndedAtBySessionId((previous) => {
+      const next = new Map(previous);
+      for (const sessionId of endedSessionIds) next.set(sessionId, Date.now());
+      return next;
+    });
+  }, [runningSessionIds]);
+  const [statusClock, setStatusClock] = useState(() => Date.now());
+  useEffect(() => {
+    const clockTimer = window.setInterval(() => setStatusClock(Date.now()), 60_000);
+    return () => window.clearInterval(clockTimer);
+  }, []);
+  const lastActivityBySessionId = useMemo(() => {
+    const lastActivity = new Map<string, number>();
+    for (const projectSessions of Object.values(sessionsByProjectId)) for (const session of projectSessions) lastActivity.set(session.id, session.updatedAt);
+    for (const [sessionId, endedAt] of turnEndedAtBySessionId) lastActivity.set(sessionId, Math.max(endedAt, lastActivity.get(sessionId) ?? 0));
+    return lastActivity;
+  }, [sessionsByProjectId, turnEndedAtBySessionId]);
+
   const sessionStatusFor = (sessionId: string): SessionStatus => {
     if (permissionRequests.some((request) => request.sessionId === sessionId)) return "waiting";
     if (runningSessionIds.has(sessionId)) return "running";
     if (sessionId === activeSessionId && lastTurnFailed) return "error";
+    if (statusClock - (lastActivityBySessionId.get(sessionId) ?? 0) < recentActivityWindowMs) return "recent";
     return "idle";
   };
 
@@ -407,6 +437,10 @@ export function App() {
   const setWorkspaceVisibility = (visible: boolean) => {
     animatePanels();
     requestAnimationFrame(() => (visible ? workspacePanelRef.current?.expand() : workspacePanelRef.current?.collapse()));
+  };
+  const toggleSidebar = () => {
+    animatePanels();
+    requestAnimationFrame(() => (sidebarCollapsed ? sidebarPanelRef.current?.expand() : sidebarPanelRef.current?.collapse()));
   };
   workspaceOpenRef.current = workspaceOpen;
   openWorkspaceRef.current = () => setWorkspaceVisibility(true);
@@ -697,6 +731,7 @@ export function App() {
     newQuickChat: () => void createQuickChat(),
     newProject: () => setNewProjectDialogOpen(true),
     toggleWorkspace,
+    toggleSidebar,
     toggleTheme,
     interrupt: () => activeSessionId && runningSessionIds.has(activeSessionId) && void api.interrupt(activeSessionId).catch(reportError),
     previousSession: () => stepSession(-1),
@@ -905,8 +940,20 @@ export function App() {
     <TooltipProvider delayDuration={400}>
       <div className={cn("h-full", panelsAnimating && "panels-animating")}>
         <ResizablePanelGroup id="harnold-shell" orientation="horizontal" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
-          <ResizablePanel id="sidebar" defaultSize={250} minSize={200} maxSize={380}>
+          <ResizablePanel
+            id="sidebar"
+            panelRef={sidebarPanelRef}
+            defaultSize={250}
+            minSize={200}
+            maxSize={380}
+            collapsible
+            collapsedSize={52}
+            onResize={(panelSize) => setSidebarCollapsed(panelSize.inPixels < 120)}
+          >
             <AppSidebar
+              collapsed={sidebarCollapsed}
+              onToggleCollapsed={toggleSidebar}
+              toggleShortcut={shortcutHint("toggleSidebar")}
               projects={projects}
               sessionsByProjectId={sessionsByProjectId}
               expandedProjectIds={expandedProjectIds}

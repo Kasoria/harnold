@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/option-select";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Cron } from "croner";
 import { Input } from "@/components/ui/input";
@@ -272,9 +273,10 @@ export function ScheduleEditor(props: { value: string; onChange: (expression: st
 
   return (
     <div className="grid gap-5 rounded-xl border p-4">
-      <SegmentedControl
+      <OptionSelect
+        className="w-52"
         value={config.kind}
-        onChange={switchKind}
+        onValueChange={switchKind}
         options={[
           { value: "daily", label: t("Täglich") },
           { value: "interval", label: t("Mehrmals am Tag") },

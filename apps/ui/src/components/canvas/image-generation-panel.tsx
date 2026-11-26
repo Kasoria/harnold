@@ -3,7 +3,7 @@ import { ImagePlus, Loader2, Sparkles, X } from "lucide-react";
 import { api } from "@/api";
 import type { ImageAspectRatio, ImageSettingsView } from "@/types";
 import { Button } from "@/components/ui/button";
-import { SegmentedControl } from "@/components/segmented-control";
+import { OptionSelect } from "@/components/option-select";
 import { t } from "@/lib/i18n";
 
 type ImageGenerationPanelProps = {
@@ -18,14 +18,14 @@ type ImageGenerationPanelProps = {
 };
 
 const aspectRatioOptions: { value: ImageAspectRatio; label: string }[] = [
-  { value: "1:1", label: "1:1" },
-  { value: "16:9", label: "16:9" },
-  { value: "9:16", label: "9:16" },
-  { value: "4:3", label: "4:3" },
-  { value: "3:4", label: "3:4" },
+  { value: "1:1", label: t("Quadrat 1:1") },
+  { value: "16:9", label: t("Quer 16:9") },
+  { value: "9:16", label: t("Hoch 9:16") },
+  { value: "4:3", label: t("Quer 4:3") },
+  { value: "3:4", label: t("Hoch 3:4") },
 ];
 
-const countOptions = ["1", "2", "3", "4"].map((countValue) => ({ value: countValue, label: countValue }));
+const countOptions = ["1", "2", "3", "4"].map((countValue) => ({ value: countValue, label: countValue === "1" ? t("1 Bild") : t("{0} Bilder", countValue) }));
 
 export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
   const [imageSettings, setImageSettings] = useState<ImageSettingsView | null>(null);
@@ -120,14 +120,14 @@ export function ImageGenerationPanel(props: ImageGenerationPanelProps) {
           )}
 
           <div className="mt-2.5 flex items-center gap-2">
-            <SegmentedControl className="w-56" options={aspectRatioOptions} value={aspectRatio} onValueChange={setAspectRatio} />
-            <SegmentedControl className="w-28" options={countOptions} value={imageCount} onValueChange={setImageCount} />
-            <Button size="sm" className="ml-auto gap-1.5" disabled={!prompt.trim() || generating} onClick={() => void generate()}>
+            <OptionSelect ariaLabel={t("Format")} options={aspectRatioOptions} value={aspectRatio} onValueChange={setAspectRatio} />
+            <OptionSelect ariaLabel={t("Anzahl")} options={countOptions} value={imageCount} onValueChange={setImageCount} />
+            <kbd className="ml-auto font-sans text-[11px] text-muted-foreground" title={t("⌘↵ erzeugen")}>⌘↵</kbd>
+            <Button size="sm" className="gap-1.5" disabled={!prompt.trim() || generating} onClick={() => void generate()}>
               {generating ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
               {generating ? t("Erzeuge …") : t("Erzeugen")}
             </Button>
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">{t("⌘↵ erzeugen")}</p>
         </>
       )}
     </div>

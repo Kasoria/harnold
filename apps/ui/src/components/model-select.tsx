@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
-import type { AgentBackendId, CodexStatus, CustomProvider, ProvidersView } from "@/types";
+import { Check, ChevronDown } from "lucide-react";
+import type { AgentBackendId, CodexStatus, CustomProvider, EffortLevel, ProvidersView } from "@/types";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
@@ -92,5 +94,80 @@ export function ModelSelect(props: { models?: ModelOption[]; value: string; onCh
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** Effort levels like Claude Code's /effort ("" = the model decides). */
+const effortChoices: { value: EffortLevel | ""; label: string }[] = [
+  { value: "", label: t("Standard") },
+  { value: "low", label: t("niedrig") },
+  { value: "medium", label: t("mittel") },
+  { value: "high", label: t("hoch") },
+  { value: "xhigh", label: t("sehr hoch") },
+  { value: "max", label: t("maximal") },
+];
+
+function PickerItem(props: { selected: boolean; onSelect: () => void; children: React.ReactNode }) {
+  return (
+    <DropdownMenuItem className="gap-2 pr-2 text-[12.5px]" onSelect={props.onSelect}>
+      <span className="flex-1 truncate">{props.children}</span>
+      <Check className={cn("size-3.5 shrink-0", !props.selected && "invisible")} />
+    </DropdownMenuItem>
+  );
+}
+
+/**
+ * Model and effort in one picker (composer). The trigger shows "Opus 5.5 · hoch"; the effort part
+ * only exists when the agent program supports it (onEffortChange set).
+ */
+export function ModelEffortPicker(props: {
+  value: string;
+  onChange: (model: string) => void;
+  inherited?: InheritedModel;
+  effort: EffortLevel | "";
+  onEffortChange?: (effort: EffortLevel | "") => void;
+}) {
+  const models = useAgentModels();
+  const displayedModel = props.value || props.inherited?.model || models[0]?.value || "";
+  const modelName = models.find((model) => model.value === displayedModel)?.label ?? modelLabel(displayedModel);
+  const effortName = props.onEffortChange && props.effort ? effortChoices.find((choice) => choice.value === props.effort)?.label : null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex h-7 max-w-64 items-center gap-1.5 rounded-md px-2 text-[12px] whitespace-nowrap transition-colors hover:bg-foreground/5 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          title={props.onEffortChange ? t("Modell und Denkaufwand") : t("Modell")}
+        >
+          <span className="truncate">{modelName}</span>
+          {effortName && <span className="text-muted-foreground">· {effortName}</span>}
+          <ChevronDown className="size-3.5 shrink-0 opacity-50" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">{t("Modell")}</DropdownMenuLabel>
+        {props.inherited && (
+          <PickerItem selected={!props.value} onSelect={() => props.onChange("")}>
+            {modelLabel(props.inherited.model)} <span className="text-muted-foreground">· {props.inherited.source}</span>
+          </PickerItem>
+        )}
+        {models.map((model) => (
+          <PickerItem key={model.value} selected={props.value === model.value || (!props.value && !props.inherited && model.value === displayedModel)} onSelect={() => props.onChange(model.value)}>
+            {model.label}
+          </PickerItem>
+        ))}
+        {props.onEffortChange && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">{t("Denkaufwand")}</DropdownMenuLabel>
+            {effortChoices.map((choice) => (
+              <PickerItem key={choice.value || "default"} selected={props.effort === choice.value} onSelect={() => props.onEffortChange!(choice.value)}>
+                {choice.label}
+              </PickerItem>
+            ))}
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

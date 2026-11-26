@@ -1,3 +1,4 @@
+import { closeProjectTerminals } from "./terminal.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
@@ -181,6 +182,7 @@ export function createWorkspaceServer(project: Project, sessionId: string, permi
           }
           eventHub.publish({ type: "tasks_changed" });
           folderStore.removeOwner("project", targetProject.id);
+          closeProjectTerminals(targetProject.id);
           projectStore.remove(targetProject.id);
           return textResult(`Projekt „${targetProject.name}“ gelöscht.`);
         }),

@@ -35,6 +35,9 @@ import { agentBackends } from "./backends/index.ts";
 import { agentBackendSettings, isAgentBackendId, normalizeBackendId } from "./agent-backend-settings.ts";
 import { agentRoleSettings } from "./agent-roles.ts";
 import { codexAuth, codexSettings } from "./codex-auth.ts";
+import { listDevServers, openDevServer, startPreviewProxy } from "./dev-servers.ts";
+import { attachTerminal, closeProjectTerminals, closeTerminal, createTerminal, listTerminals, terminalAvailable, type TerminalClientMessage } from "./terminal.ts";
+import { gitCommit, gitDiff, gitDiscard, gitInit, gitLog, gitPull, gitPush, gitStage, gitStatus, gitUnstage } from "./git.ts";
 import { harnoldMcp } from "./mcp-http.ts";
 import { agentModelSettings, claudeAuth, claudeProfileForEnvironment, claudeSettingsSchema, defaultClaudeProfile } from "./claude-auth.ts";
 import { agentRuntimes } from "./agent-runtimes.ts";
@@ -242,6 +245,7 @@ app.delete("/api/projects/:projectId", (context) => {
   }
   eventHub.publish({ type: "tasks_changed" });
   folderStore.removeOwner("project", context.req.param("projectId"));
+  closeProjectTerminals(context.req.param("projectId"));
   projectStore.remove(context.req.param("projectId"));
   return context.json({ ok: true });
 });
@@ -1241,6 +1245,73 @@ app.post("/api/plugins/folders/remove", async (context) => {
   return context.json({ ok: true });
 });
 
+// --- Git (Workspace → Git): status, diff, stage, commit, push/pull with the project's environment ---
+const gitPathsSchema = z.object({ paths: z.array(z.string().min(1)).min(1) });
+app.get("/api/projects/:projectId/git/status", async (context) => context.json(await gitStatus(requireProject(context.req.param("projectId")))));
+app.get("/api/projects/:projectId/git/diff", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  return context.json({ diff: await gitDiff(project, context.req.query("path") ?? "", context.req.query("staged") === "1") });
+});
+app.get("/api/projects/:projectId/git/log", async (context) => context.json(await gitLog(requireProject(context.req.param("projectId")))));
+for (const [actionName, gitAction] of [["stage", gitStage], ["unstage", gitUnstage], ["discard", gitDiscard]] as const) {
+  app.post(`/api/projects/:projectId/git/${actionName}`, async (context) => {
+    const project = requireProject(context.req.param("projectId"));
+    await gitAction(project, gitPathsSchema.parse(await context.req.json()).paths);
+    return context.json(await gitStatus(project));
+  });
+}
+app.post("/api/projects/:projectId/git/commit", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const { message } = z.object({ message: z.string().trim().min(1) }).parse(await context.req.json());
+  return context.json({ commit: await gitCommit(project, message), status: await gitStatus(project) });
+});
+for (const [actionName, gitAction] of [["push", gitPush], ["pull", gitPull], ["init", gitInit]] as const) {
+  app.post(`/api/projects/:projectId/git/${actionName}`, async (context) => {
+    const project = requireProject(context.req.param("projectId"));
+    await gitAction(project);
+    return context.json(await gitStatus(project));
+  });
+}
+
+// --- Terminals (Workspace → Terminal): shells in the project folder, kept alive in the Core ---
+app.get("/api/projects/:projectId/terminals", (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  return context.json({ available: terminalAvailable(), terminals: listTerminals(project.id) });
+});
+app.post("/api/projects/:projectId/terminals", async (context) => {
+  const project = requireProject(context.req.param("projectId"));
+  const size = z.object({ cols: z.number().int().min(2).max(1000).default(100), rows: z.number().int().min(2).max(500).default(30) }).parse(await context.req.json().catch(() => ({})));
+  return context.json(createTerminal(project, size));
+});
+app.delete("/api/terminals/:terminalId", (context) => context.json({ ok: closeTerminal(context.req.param("terminalId")) }));
+app.get(
+  "/ws/terminals/:terminalId",
+  upgradeWebSocket((context) => {
+    const terminalId = context.req.param("terminalId") ?? "";
+    let connection: ReturnType<typeof attachTerminal> = null;
+    return {
+      onOpen(_openEvent, socket) {
+        connection = attachTerminal(terminalId, (message) => socket.send(JSON.stringify(message)));
+        if (!connection) socket.close(4404, "terminal not found");
+      },
+      onMessage(messageEvent) {
+        try {
+          connection?.receive(JSON.parse(String(messageEvent.data)) as TerminalClientMessage);
+        } catch {
+          // ignore malformed messages
+        }
+      },
+      onClose() {
+        connection?.detach();
+      },
+    };
+  }),
+);
+
+// --- Dev servers (Workspace → App): running servers and opening them through the preview proxy ---
+app.get("/api/dev-servers", async (context) => context.json(await listDevServers()));
+app.post("/api/dev-servers/:port/open", async (context) => context.json(await openDevServer(Number(context.req.param("port")))));
+
 // --- Live events ---
 app.get(
   "/ws",
@@ -1284,6 +1355,7 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
   console.log(`Harnold Core läuft auf http://${config.host}:${address.port}`);
 });
 injectWebSocket(server);
+startPreviewProxy();
 
 // Desktop app: the app holds our stdin open; when it closes (quit, crash, kill), the Core ends too.
 if (process.env.HARNOLD_EXIT_WITH_PARENT === "1") {

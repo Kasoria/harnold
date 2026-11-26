@@ -1,5 +1,5 @@
 import { currentLanguage, t } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, DevServer, PreviewOpening, GitStatus, GitCommit, TerminalInfo, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -101,6 +101,19 @@ export const api = {
   /** Value ("" = skip) goes to the core only and ends up in the environment variables. */
   submitSecretInput: (requestId: string, value: string) => request("POST", `/api/secret-input/${requestId}`, { value }),
   rewindFiles: (sessionId: string, itemId: string, dryRun: boolean) => request<RewindResult>("POST", `/api/sessions/${sessionId}/rewind-files`, { itemId, dryRun }),
+  gitStatus: (projectId: string) => request<GitStatus>("GET", `/api/projects/${projectId}/git/status`),
+  gitDiff: (projectId: string, filePath: string, staged: boolean) =>
+    request<{ diff: string }>("GET", `/api/projects/${projectId}/git/diff?${new URLSearchParams({ path: filePath, staged: staged ? "1" : "0" })}`),
+  gitLog: (projectId: string) => request<GitCommit[]>("GET", `/api/projects/${projectId}/git/log`),
+  gitFileAction: (projectId: string, action: "stage" | "unstage" | "discard", paths: string[]) =>
+    request<GitStatus>("POST", `/api/projects/${projectId}/git/${action}`, { paths }),
+  gitCommit: (projectId: string, message: string) => request<{ commit: GitCommit; status: GitStatus }>("POST", `/api/projects/${projectId}/git/commit`, { message }),
+  gitRemoteAction: (projectId: string, action: "push" | "pull" | "init") => request<GitStatus>("POST", `/api/projects/${projectId}/git/${action}`),
+  listTerminals: (projectId: string) => request<{ available: boolean; terminals: TerminalInfo[] }>("GET", `/api/projects/${projectId}/terminals`),
+  createTerminal: (projectId: string, size: { cols: number; rows: number }) => request<TerminalInfo>("POST", `/api/projects/${projectId}/terminals`, size),
+  closeTerminal: (terminalId: string) => request<{ ok: boolean }>("DELETE", `/api/terminals/${terminalId}`),
+  listDevServers: () => request<DevServer[]>("GET", "/api/dev-servers"),
+  openDevServer: (port: number) => request<PreviewOpening>("POST", `/api/dev-servers/${port}/open`),
   listBackgroundTasks: (sessionId: string) => request<BackgroundTask[]>("GET", `/api/sessions/${sessionId}/background-tasks`),
   stopBackgroundTask: (sessionId: string, taskId: string) => request("POST", `/api/sessions/${sessionId}/background-tasks/${encodeURIComponent(taskId)}/stop`),
   answerPermission: (requestId: string, answer: PermissionAnswer) => request("POST", `/api/permissions/${requestId}`, answer),
@@ -260,6 +273,22 @@ export const api = {
   previewUrl: (projectId: string, filePath: string) =>
     `${coreBaseUrl}/preview/${projectId}/${filePath.split("/").map(encodeURIComponent).join("/")}${accessToken ? `?token=${encodeURIComponent(accessToken)}` : ""}`,
 };
+
+/** Browser address of an opened dev server: proxy port on the Core's host (server) or localhost (desktop). */
+export function previewOpeningUrl(opening: PreviewOpening): string | null {
+  if (opening.mode === "direct") return opening.url;
+  if (opening.mode === "unavailable") return null;
+  if (opening.url) return opening.url;
+  const proxyAddress = new URL(coreBaseUrl || window.location.origin);
+  proxyAddress.port = String(opening.publicPort);
+  return proxyAddress.origin + opening.path;
+}
+
+/** WebSocket address of a terminal in the Core. */
+export function terminalSocketUrl(terminalId: string): string {
+  const httpBase = coreBaseUrl || window.location.origin;
+  return httpBase.replace(/^http/, "ws") + `/ws/terminals/${terminalId}` + (accessToken ? `?token=${encodeURIComponent(accessToken)}` : "");
+}
 
 export function connectEvents(onServerEvent: (serverEvent: ServerEvent) => void): () => void {
   let socket: WebSocket | undefined;

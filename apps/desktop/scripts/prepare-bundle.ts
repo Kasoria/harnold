@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { signingIdentity } from "./signing.ts";
 
 const nodeVersion = "26.13.1";
 const desktopDirectory = path.resolve(import.meta.dirname, "..");
@@ -70,6 +71,24 @@ function prepareCore() {
   }
 }
 
+/**
+ * node-pty (terminal) is the only native module: keep this Mac's prebuild, make spawn-helper executable
+ * (missing in the npm package) and sign both, since notarization rejects unsigned Mach-O files in the bundle.
+ */
+function prepareNativeModules(coreTarget: string) {
+  const prebuildsDirectory = path.join(coreTarget, "node_modules/node-pty/prebuilds");
+  if (!fs.existsSync(prebuildsDirectory)) return;
+  const ownPlatform = `darwin-${nodeArch}`;
+  for (const platformDirectory of fs.readdirSync(prebuildsDirectory)) {
+    if (platformDirectory !== ownPlatform) fs.rmSync(path.join(prebuildsDirectory, platformDirectory), { recursive: true, force: true });
+  }
+  const nativeFiles = [path.join(prebuildsDirectory, ownPlatform, "pty.node"), path.join(prebuildsDirectory, ownPlatform, "spawn-helper")].filter((filePath) => fs.existsSync(filePath));
+  for (const nativeFile of nativeFiles) fs.chmodSync(nativeFile, 0o755);
+  const identity = signingIdentity();
+  if (!identity) return;
+  for (const nativeFile of nativeFiles) run("codesign", ["--force", "--options", "runtime", "--timestamp", "--sign", identity, nativeFile]);
+}
+
 function prepareUi() {
   run("pnpm", ["--filter", "@harnold/ui", "build"]);
   const uiTarget = path.join(resourcesDirectory, "ui");
@@ -79,5 +98,6 @@ function prepareUi() {
 
 await prepareNodeRuntime();
 prepareCore();
+prepareNativeModules(path.join(resourcesDirectory, "core"));
 prepareUi();
 console.log("Desktop-Bundle vorbereitet.");

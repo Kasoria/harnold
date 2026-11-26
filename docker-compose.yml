@@ -18,12 +18,18 @@ services:
       # Update-Knopf in der UI: spricht den Watchtower-Dienst (nur im Compose-Netz erreichbar).
       HARNOLD_UPDATER_URL: http://watchtower:8080
       HARNOLD_UPDATER_TOKEN: ${HARNOLD_TOKEN}
+      # Vorschau laufender Dev-Server (Workspace → App): eigener Port, den der Browser erreicht (mit Caddy 8443).
+      HARNOLD_PREVIEW_PUBLIC_PORT: ${HARNOLD_PREVIEW_PUBLIC_PORT:-4318}
+      HARNOLD_PREVIEW_PUBLIC_URL: ${HARNOLD_PREVIEW_PUBLIC_URL:-}
+      # Docker für den Agenten (Profil "docker"): eigener Docker-Dienst, nicht der des Servers.
+      DOCKER_HOST: ${HARNOLD_DOCKER_HOST:-}
     volumes:
       - harnold-data:/data
       - harnold-home:/home/harnold
     # Nur lokal gebunden; öffentlich erreichbar über Caddy (Profil "proxy") oder Tailscale/Tunnel.
     ports:
       - "127.0.0.1:${HARNOLD_PORT:-4317}:4317"
+      - "127.0.0.1:${HARNOLD_PREVIEW_PORT:-4318}:4318"
 
   # Update-Dienst: holt auf Knopfdruck in der UI (oder nachts, mit HARNOLD_AUTO_UPDATE=true) das neue Image und startet Harnold neu.
   # Nur er hat Docker-Zugriff, nicht Harnold. Er fasst nur Container mit dem Label oben an.
@@ -42,6 +48,21 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
+  # Optional (COMPOSE_PROFILES=docker): Docker für den Agenten (docker compose für Datenbanken, Dienste …).
+  # Eigener Docker-Daemon im Container: sieht weder die Container des Servers noch Harnold selbst.
+  # Projekte und Home sind unter denselben Pfaden eingebunden, damit Bind-Mounts wie ./src:/app funktionieren.
+  docker:
+    profiles: ["docker"]
+    image: docker:dind
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: "" # nur im internen Compose-Netz erreichbar
+    volumes:
+      - harnold-docker:/var/lib/docker
+      - harnold-data:/data
+      - harnold-home:/home/harnold
+
   caddy:
     profiles: ["proxy"]
     image: caddy:2
@@ -49,14 +70,22 @@ services:
     depends_on: [harnold]
     environment:
       HARNOLD_DOMAIN: ${HARNOLD_DOMAIN:-localhost}
-    command: caddy reverse-proxy --from ${HARNOLD_DOMAIN:-localhost} --to harnold:4317
+    # Harnold auf 443, die Vorschau laufender Dev-Server auf 8443 (eigene Origin, gleiches Zertifikat).
+    command:
+      - sh
+      - -c
+      - |
+        printf '%s {\n\treverse_proxy harnold:4317\n}\n%s:8443 {\n\treverse_proxy harnold:4318\n}\n' "$$HARNOLD_DOMAIN" "$$HARNOLD_DOMAIN" > /etc/caddy/Caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports:
       - "80:80"
       - "443:443"
+      - "8443:8443"
     volumes:
       - caddy-data:/data
 
 volumes:
+  harnold-docker:
   harnold-data:
   harnold-home:
   caddy-data:

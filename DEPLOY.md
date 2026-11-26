@@ -18,6 +18,27 @@ DNS: A-Record `harnold.deinedomain.de` → Server-IP. In der `.env` `HARNOLD_DOM
 `COMPOSE_PROFILES=proxy` in die `.env` und `docker compose up -d` (Ports 80/443 freigeben). Caddy holt das Zertifikat selbst. Der Installer erledigt das, wenn du eine Domain angibst.
 Ohne öffentliche Adresse: Tailscale oder Cloudflare Tunnel davorsetzen.
 
+## Laufende Apps ansehen (Workspace → App)
+Startet der Agent einen Dev-Server (`npm run dev`, Vite, Next …), erscheint er im Workspace unter **App** und lässt sich dort
+oder in einem eigenen Tab öffnen, inklusive Hot Reload. Harnold leitet dafür über einen eigenen Port weiter (eigene Origin, damit
+die App Harnolds Zugang nicht lesen kann): mit Domain `https://<domain>:8443` (Port 8443 in der Firewall freigeben),
+ohne Domain `127.0.0.1:4318` (SSH-Tunnel: `ssh -L 4317:localhost:4317 -L 4318:localhost:4318 <server>`).
+Hinter eigenem Reverse-Proxy: `127.0.0.1:4318` unter einer zweiten Adresse veröffentlichen (WebSockets durchlassen) und diese
+als `HARNOLD_PREVIEW_PUBLIC_URL` in die `.env` schreiben. Es gilt immer die zuletzt geöffnete App je Browser.
+
+## Ordner des Servers einbinden
+Harnold sieht im Container nur seine Volumes. Weitere Ordner: `HARNOLD_HOST_FOLDERS="/srv/projekte /home/ich/code"` in der `.env`
+und `install.sh` erneut ausführen (oder die Frage beim ersten Lauf beantworten). Die Ordner erscheinen im Container unter demselben
+Pfad (über `docker-compose.override.yml`). Harnold schreibt als Nutzer 10001, also Schreibrechte geben, z. B.
+`sudo setfacl -R -m u:10001:rwX -m d:u:10001:rwX /srv/projekte`. Danach in Harnold ein Projekt mit diesem Pfad anlegen.
+
+## Docker für den Agenten
+`HARNOLD_DOCKER=true` in der `.env` und `install.sh` erneut ausführen (oder beim ersten Lauf mit „j“ antworten). Dann läuft ein
+eigener Docker-Dienst (Docker-in-Docker, privilegiert) neben Harnold, und der Agent kann `docker` und `docker compose` nutzen, z. B.
+für Datenbanken. Er sieht die Container des Servers nicht. Veröffentlichte Container-Ports erreicht er unter `docker:PORT` statt
+`localhost:PORT`, und sie erscheinen unter Workspace → App. Bind-Mounts funktionieren für Projekte unter `/data`, `/home/harnold`
+und die eingebundenen Server-Ordner. Images und Container liegen im Volume `harnold-docker`.
+
 ## Lokalen Workspace umziehen
 
 In der Desktop-App: Einstellungen → Allgemein → „Auf Server umziehen“. Server-Adresse und Token eintragen, „Zum Server übertragen“ klicken. Übertragen werden Projekte (auch Ordner außerhalb von `~/.harnold`, ohne `node_modules`), Chats, Memory, Einstellungen, Konten und Schlüssel. Der Server startet neu und ersetzt seine Daten (Backup unter `.import/backup-…` im Daten-Volume). Claude-/Codex-Anmeldungen und Agent-Sitzungsverläufe der Agent-Programme selbst werden nicht mitgenommen; dort neu anmelden. Hinter eigenem Reverse Proxy darf das Upload-Limit nicht klein sein (nginx: `client_max_body_size 0;`).

@@ -16,6 +16,7 @@ import { defaultAgentBackendId, normalizeBackendId, type AgentBackendId } from "
 import { agentRoleSettings, defaultAgentRole, type AgentRole } from "./agent-roles.ts";
 import { secretInput } from "./secret-input.ts";
 import { t } from "./i18n.ts";
+import { devServerInstructions } from "./dev-servers.ts";
 
 /** Chat folders plus the project's folder context (memory levels) – every agent program gets access to them. */
 const sessionDirectories = (session: Session): string[] => [...new Set([...session.directories, ...folderStore.pathsForProject(session.projectId)])];
@@ -59,6 +60,8 @@ ${workspaceInstructions}
 ${memoryInstructions}
 
 ${mediaInstructions}
+
+${devServerInstructions()}
 `.trim();
 
 type PendingPermission = {

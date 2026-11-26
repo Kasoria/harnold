@@ -8,7 +8,8 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/core/package.json packages/core/
 COPY apps/ui/package.json apps/ui/
 COPY apps/desktop/package.json apps/desktop/
-RUN pnpm install --frozen-lockfile --filter "@harnold/core..." --filter "@harnold/ui..."
+# Nur die UI: der Core (mit node-pty) wird erst im Laufzeit-Image installiert, dort gibt es Compiler.
+RUN pnpm install --frozen-lockfile --filter "@harnold/ui..."
 COPY apps/ui apps/ui
 # Die UI liest ihre Version aus der Desktop-Konfiguration.
 COPY apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/tauri.conf.json
@@ -19,10 +20,16 @@ FROM node:26-bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/Kasoria/harnold"
 # Zusätzliche Systempakete (.env: HARNOLD_APT_PACKAGES), werden beim Build ins Image installiert.
 ARG HARNOLD_APT_PACKAGES=""
-# Werkzeugkasten wie auf einem normalen Linux-Server: Compiler, Python, sudo für apt zur Laufzeit.
+# Werkzeugkasten wie auf einem normalen Linux-Server: Compiler, Python, sudo für apt zur Laufzeit,
+# Docker-CLI (spricht den optionalen Docker-Dienst aus der Compose-Datei an, DOCKER_HOST).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates curl openssh-client ripgrep \
       sudo build-essential python3 python3-pip python3-venv jq unzip wget procps ${HARNOLD_APT_PACKAGES} \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+ && echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g pnpm@12.15.0 tsx@4.23.15 playwright \
  && playwright install-deps chromium \
@@ -46,6 +53,7 @@ USER harnold
 # Nutzer-Installationen (npm -g, pip --user, Playwright-Browser) landen im Home und überleben Updates.
 ENV HARNOLD_HOST=0.0.0.0 \
     HARNOLD_PORT=4317 \
+    HARNOLD_PREVIEW_PORT=4318 \
     HARNOLD_DATA_DIR=/data \
     HARNOLD_UI_DIR=/app/apps/ui/dist \
     NODE_ENV=production \
@@ -55,7 +63,7 @@ ENV HARNOLD_HOST=0.0.0.0 \
     PATH=/home/harnold/.npm-global/bin:/home/harnold/.local/bin:$PATH
 # /data = Projekte + SQLite; /home/harnold = Logins (.claude, .codex), Tools, Caches
 VOLUME ["/data", "/home/harnold"]
-EXPOSE 4317
+EXPOSE 4317 4318
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD curl -fsS http://127.0.0.1:4317/ >/dev/null || exit 1
 WORKDIR /app/packages/core

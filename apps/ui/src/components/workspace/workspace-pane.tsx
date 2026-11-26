@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, Loader2, PanelLeft, RotateCw, Save, Wand2, X } from "lucide-react";
+import { ChevronRight, ExternalLink, Loader2, PanelLeft, RotateCw, Save, SquareTerminal, Wand2, X } from "lucide-react";
 import { api } from "@/api";
 import type { FileNode, Project } from "@/types";
 import { cn } from "@/lib/utils";
@@ -7,14 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SegmentedControl } from "@/components/segmented-control";
 import { FileTree } from "./file-tree";
+import { AppPreview, belongsToProject, useDevServers } from "./app-preview";
+import { GitView } from "./git-view";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
 import { t } from "@/lib/i18n";
 import { toast } from "@/lib/toast";
 
 /** Monaco is large; it arrives with the first file the user opens in the code view. */
 const CodeEditor = lazy(() => import("./code-editor"));
+/** xterm.js only loads once a terminal is opened. */
+const TerminalPanel = lazy(() => import("./terminal-panel").then((terminalModule) => ({ default: terminalModule.TerminalPanel })));
 
-type WorkspaceView = "canvas" | "preview" | "code";
+type WorkspaceView = "canvas" | "preview" | "code" | "app" | "git";
 
 type WorkspacePaneProps = {
   project: Project;
@@ -66,6 +71,31 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
 
   const { project, onError } = props;
+  const devServers = useDevServers(activeView === "app" ? 4000 : 15_000);
+  const projectHasRunningServer = devServers.some((devServer) => belongsToProject(devServer, project));
+  const [gitChangeCount, setGitChangeCount] = useState(0);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+
+  // Ctrl+` like in editors.
+  useEffect(() => {
+    const toggleTerminal = (keyboardEvent: KeyboardEvent) => {
+      if (keyboardEvent.ctrlKey && keyboardEvent.key === "`") {
+        keyboardEvent.preventDefault();
+        setTerminalOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", toggleTerminal);
+    return () => window.removeEventListener("keydown", toggleTerminal);
+  }, []);
+
+  // Number of uncommitted changes for the Git tab (the view itself refreshes while open).
+  useEffect(() => {
+    if (activeView === "git") return;
+    api
+      .gitStatus(project.id)
+      .then((gitStatus) => setGitChangeCount(gitStatus.isRepository ? gitStatus.files.length : 0))
+      .catch(() => setGitChangeCount(0));
+  }, [project.id, props.fileChangeCounter, activeView]);
   const editorIsDirty = editorContent !== savedContent;
 
   useEffect(() => {
@@ -120,63 +150,12 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   const breadcrumbSegments =
     activeView === "canvas"
       ? [project.name, "Canvas"]
+      : activeView === "app" || activeView === "git"
+        ? [project.name, activeView === "app" ? t("App") : "Git"]
       : [project.name, ...(selectedPath?.split("/") ?? [])];
   const isDesignFile = selectedPath ? selectedPath.startsWith("design/") : false;
 
-  return (
-    <section className="flex h-full min-w-0 flex-col bg-canvas">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
-        <IconAction label={filePanelOpen ? t("Dateien ausblenden") : t("Dateien einblenden")} onClick={() => setFilePanelOpen((open) => !open)}>
-          <PanelLeft className="size-4" />
-        </IconAction>
-        <nav className="flex min-w-0 items-center gap-1 text-[13px]">
-          {breadcrumbSegments.map((segment, segmentIndex) => (
-            <span key={`${segment}-${segmentIndex}`} className="flex min-w-0 items-center gap-1">
-              {segmentIndex > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
-              <span className={cn("truncate", segmentIndex === breadcrumbSegments.length - 1 ? "font-medium" : "text-muted-foreground")}>
-                {segment}
-              </span>
-            </span>
-          ))}
-        </nav>
-
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <SegmentedControl
-              className="mr-1 w-56"
-              value={activeView}
-              onValueChange={setActiveView}
-              options={[
-                { value: "canvas", label: t("Canvas") },
-                { value: "preview", label: t("Preview") },
-                { value: "code", label: editorIsDirty ? "Code •" : "Code" },
-              ]}
-            />
-          {isDesignFile && selectedPath && (activeView === "preview" || activeView === "code") && (
-            <Button size="sm" variant="secondary" className="h-7 text-[12px]" onClick={() => props.onImplementDesign(selectedPath)}>
-              <Wand2 className="size-3.5" /> {t("In Code übernehmen")}
-            </Button>
-          )}
-          {activeView === "code" && editorIsDirty && (
-            <IconAction label={t("Speichern (⌘S)")} onClick={saveFile}>
-              {savingFile ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            </IconAction>
-          )}
-          {activeView === "preview" && selectedPath && (
-            <>
-              <IconAction label={t("Neu laden")} onClick={() => setPreviewReloadKey((previous) => previous + 1)}>
-                <RotateCw className="size-4" />
-              </IconAction>
-              <IconAction label={t("Extern öffnen")} href={api.previewUrl(project.id, selectedPath)}>
-                <ExternalLink className="size-4" />
-              </IconAction>
-            </>
-          )}
-          <IconAction label={t("Workspace schließen")} onClick={props.onClose}>
-            <X className="size-4" />
-          </IconAction>
-        </div>
-      </header>
-
+  const workspaceBody = (
       <div className="flex min-h-0 flex-1">
         <nav
           className={cn(
@@ -206,6 +185,10 @@ export function WorkspacePane(props: WorkspacePaneProps) {
               onSendToAgent={props.onInsertIntoComposer}
               onError={onError}
             />
+          ) : activeView === "git" ? (
+            <GitView project={project} fileChangeCounter={props.fileChangeCounter} onAskAgent={props.onInsertIntoComposer} onStatusChange={setGitChangeCount} />
+          ) : activeView === "app" ? (
+            <AppPreview project={project} devServers={devServers} />
           ) : !selectedPath ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-muted-foreground">
               {t("Datei wählen. Neue Entwürfe des Agents erscheinen hier automatisch.")}
@@ -243,6 +226,98 @@ export function WorkspacePane(props: WorkspacePaneProps) {
           )}
         </div>
       </div>
+  );
+
+  return (
+    <section className="flex h-full min-w-0 flex-col bg-canvas">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3">
+        <IconAction label={filePanelOpen ? t("Dateien ausblenden") : t("Dateien einblenden")} onClick={() => setFilePanelOpen((open) => !open)}>
+          <PanelLeft className="size-4" />
+        </IconAction>
+        <nav className="flex min-w-0 items-center gap-1 text-[13px]">
+          {breadcrumbSegments.map((segment, segmentIndex) => (
+            <span key={`${segment}-${segmentIndex}`} className="flex min-w-0 items-center gap-1">
+              {segmentIndex > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
+              <span className={cn("truncate", segmentIndex === breadcrumbSegments.length - 1 ? "font-medium" : "text-muted-foreground")}>
+                {segment}
+              </span>
+            </span>
+          ))}
+        </nav>
+
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <SegmentedControl
+              className="mr-1 w-88"
+              value={activeView}
+              onValueChange={setActiveView}
+              options={[
+                { value: "canvas", label: t("Canvas") },
+                { value: "preview", label: t("Preview") },
+                { value: "code", label: editorIsDirty ? "Code •" : "Code" },
+                {
+                  value: "app",
+                  label: (
+                    <span className="inline-flex items-center gap-1">
+                      {t("App")}
+                      {projectHasRunningServer && <span className="size-1.5 rounded-full bg-emerald-500" aria-label={t("Server läuft")} />}
+                    </span>
+                  ),
+                },
+                {
+                  value: "git",
+                  label: (
+                    <span className="inline-flex items-center gap-1">
+                      Git
+                      {gitChangeCount > 0 && <span className="text-[10.5px] text-muted-foreground tabular-nums">{gitChangeCount}</span>}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          {isDesignFile && selectedPath && (activeView === "preview" || activeView === "code") && (
+            <Button size="sm" variant="secondary" className="h-7 text-[12px]" onClick={() => props.onImplementDesign(selectedPath)}>
+              <Wand2 className="size-3.5" /> {t("In Code übernehmen")}
+            </Button>
+          )}
+          {activeView === "code" && editorIsDirty && (
+            <IconAction label={t("Speichern (⌘S)")} onClick={saveFile}>
+              {savingFile ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            </IconAction>
+          )}
+          {activeView === "preview" && selectedPath && (
+            <>
+              <IconAction label={t("Neu laden")} onClick={() => setPreviewReloadKey((previous) => previous + 1)}>
+                <RotateCw className="size-4" />
+              </IconAction>
+              <IconAction label={t("Extern öffnen")} href={api.previewUrl(project.id, selectedPath)}>
+                <ExternalLink className="size-4" />
+              </IconAction>
+            </>
+          )}
+          <IconAction label={terminalOpen ? t("Terminal ausblenden (Ctrl+`)") : t("Terminal (Ctrl+`)")} onClick={() => setTerminalOpen((open) => !open)}>
+            <SquareTerminal className={cn("size-4", terminalOpen && "text-foreground")} />
+          </IconAction>
+          <IconAction label={t("Workspace schließen")} onClick={props.onClose}>
+            <X className="size-4" />
+          </IconAction>
+        </div>
+      </header>
+
+      <ResizablePanelGroup id="harnold-workspace" orientation="vertical" className="min-h-0 flex-1">
+        <ResizablePanel id="workspace-view" minSize={120} className="flex min-h-0">
+          {workspaceBody}
+        </ResizablePanel>
+        {terminalOpen && (
+          <>
+            <ResizableHandle />
+            <ResizablePanel id="workspace-terminal" defaultSize="35" minSize={100}>
+              <Suspense fallback={<div className="h-full bg-background" />}>
+                <TerminalPanel project={project} theme={props.resolvedTheme} onClose={() => setTerminalOpen(false)} />
+              </Suspense>
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
     </section>
   );
 }

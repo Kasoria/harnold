@@ -39,6 +39,18 @@ export type ChatItem = { id: string; sessionId: string; createdAt: number } & (
 
 /** Work that outlives a turn: Bash in the background, background subagents. */
 export type BackgroundTask = { id: string; description: string; taskType: string };
+/** A listening server (npm run dev …) the user can open in Workspace → App. */
+export type DevServer = { port: number; targetHost: string; processName?: string; workingDirectory?: string; container?: string };
+export type TerminalInfo = { id: string; projectId: string; title: string; createdAt: number; exited: boolean };
+export type GitFileChange = { path: string; originalPath?: string; staged: string; unstaged: string };
+export type GitStatus =
+  | { isRepository: false; gitAvailable: boolean }
+  | { isRepository: true; branch: string | null; upstream: string | null; ahead: number; behind: number; files: GitFileChange[]; operationInProgress: string | null };
+export type GitCommit = { hash: string; subject: string; author: string; date: number };
+export type PreviewOpening =
+  | { mode: "direct"; url: string }
+  | { mode: "proxy"; url?: string; path: string; publicPort: number }
+  | { mode: "unavailable"; reason: string };
 
 /** Sent while a turn ran; starts once it is done. */
 export type QueuedMessage = { id: string; createdAt: string; text: string; permissionMode: PermissionMode; model?: string; attachments?: Attachment[] };

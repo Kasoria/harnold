@@ -65,6 +65,13 @@ Ein Fenster, drei Spalten, alle in der Breite verstellbar, rechte Spalte schlie�
 - **Canvas:** grauer Hintergrund, benannte Gruppen (Frames) mit Screens/Artifacts als Thumbnails, Zoom/Pan. Schwebende Werkzeugleiste unten: Auswahl, Hand, Text, Frame, Notiz, Stift, Rechteck.
 - Doppelklick auf Thumbnail → Preview; Kommentar an Element → Aufgabe im Chat.
 
+## Mobil (< 768px)
+
+- Eine Spalte. Sidebar ist ein Slide-in-Drawer von links (fast volle Breite), geöffnet über ☰ im Kopf jedes Screens; schließt sich nach jeder Auswahl. Bereiche dort als 5er-Icon-Raster, damit Projekte/Chats oben bleiben.
+- Chat-Kopf: ☰, Titel + Projektname, Status-Punkt, „Neue Session“, Menü, Workspace. Workspace öffnet als Vollbild-Ebene, Dateibaum darin als Overlay.
+- Master-Detail: erst Liste, dann Detail; ☰ wird zum Zurück-Pfeil. Einstellungen ebenso (Abschnittsliste → Abschnitt).
+- Touch: Zeilen ≥ 40px, Hover-Aktionen immer sichtbar, Eingaben ≥ 16px (kein iOS-Zoom), Enter = Zeilenumbruch (Senden per Button), Safe-Areas beachten.
+
 ## Stil
 
 - Neutrales Grau, weiße Flächen, feine Rahmen (1px, sehr hell), Radius 8–10px.

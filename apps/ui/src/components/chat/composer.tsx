@@ -15,6 +15,9 @@ import { permissionModeOptions } from "@/components/form-field";
 import { getAgentModels, ModelEffortPicker, useAgentModels, type InheritedModel } from "@/components/model-select";
 import { t } from "@/lib/i18n";
 
+/** Phones/tablets (no hover, coarse pointer): on-screen keyboard. */
+const touchKeyboardQuery = window.matchMedia("(hover: none) and (pointer: coarse)");
+
 /** Window event: the agent changed the permission mode of the open session (detail = new mode). */
 export const permissionModeChangedEvent = "harnold:permission-mode-changed";
 
@@ -457,7 +460,7 @@ export function Composer(props: ComposerProps) {
   };
 
   return (
-    <div className="shrink-0 px-4 pt-2 pb-6">
+    <div className="shrink-0 px-4 pt-2 pb-6 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div
         className={cn(
           "relative rounded-xl border bg-card shadow-xs transition-shadow duration-150 focus-within:shadow-sm focus-within:ring-1 focus-within:ring-ring/40",
@@ -565,7 +568,7 @@ export function Composer(props: ComposerProps) {
           {props.onAddDirectory ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label={t("Hinzufügen")}>
+                <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full max-md:size-9 text-muted-foreground" aria-label={t("Hinzufügen")}>
                   <Paperclip className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -584,7 +587,7 @@ export function Composer(props: ComposerProps) {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" aria-label={t("Datei anhängen")} onClick={() => fileInputRef.current?.click()}>
+            <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full max-md:size-9 text-muted-foreground" aria-label={t("Datei anhängen")} onClick={() => fileInputRef.current?.click()}>
               <Paperclip className="size-4" />
             </Button>
           )}
@@ -649,12 +652,13 @@ export function Composer(props: ComposerProps) {
                   return;
                 }
               }
-              if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
+              // Touch keyboards: Enter is a line break, sending goes through the button.
+              if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey && !touchKeyboardQuery.matches) {
                 keyboardEvent.preventDefault();
                 if (isActionEnter(keyboardEvent)) submit();
               }
             }}
-            className="max-h-60 min-h-8 flex-1 resize-none bg-transparent [field-sizing:content] py-1.5 text-[14px] outline-none placeholder:text-muted-foreground"
+            className="max-h-60 min-h-8 flex-1 resize-none bg-transparent [field-sizing:content] py-1.5 text-[14px] outline-none placeholder:text-muted-foreground max-md:max-h-40 max-md:text-base"
           />
 
           {listening && (
@@ -670,7 +674,7 @@ export function Composer(props: ComposerProps) {
           {listening && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full text-muted-foreground" onClick={discardListening} aria-label={t("Aufnahme verwerfen")}>
+                <Button size="icon" variant="ghost" className="size-8 shrink-0 rounded-full max-md:size-9 text-muted-foreground" onClick={discardListening} aria-label={t("Aufnahme verwerfen")}>
                   <X className="size-4" />
                 </Button>
               </TooltipTrigger>
@@ -682,7 +686,7 @@ export function Composer(props: ComposerProps) {
               <Button
                 size="icon"
                 variant={listening ? "secondary" : "ghost"}
-                className={cn("size-8 shrink-0 rounded-full", listening ? "text-destructive" : "text-muted-foreground")}
+                className={cn("size-8 shrink-0 rounded-full max-md:size-9", listening ? "text-destructive" : "text-muted-foreground")}
                 disabled={transcribing}
                 onClick={() => (listening ? void stopListening() : void startListening())}
                 aria-label={listening ? t("Zuhören beenden") : t("Diktieren")}
@@ -697,7 +701,7 @@ export function Composer(props: ComposerProps) {
           {props.running && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full" onClick={props.onInterrupt} aria-label={t("Stopp")}>
+                <Button size="icon" variant="secondary" className="size-8 shrink-0 rounded-full max-md:size-9" onClick={props.onInterrupt} aria-label={t("Stopp")}>
                   <Square className="size-3 fill-current" />
                 </Button>
               </TooltipTrigger>
@@ -708,7 +712,7 @@ export function Composer(props: ComposerProps) {
             canSend && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button size="icon" className="size-8 shrink-0 rounded-full" onClick={submit} aria-label={props.canSteer ? t("Nachschieben") : t("Einreihen")}>
+                  <Button size="icon" className="size-8 shrink-0 rounded-full max-md:size-9" onClick={submit} aria-label={props.canSteer ? t("Nachschieben") : t("Einreihen")}>
                     <ArrowUp className="size-4" />
                   </Button>
                 </TooltipTrigger>
@@ -718,7 +722,7 @@ export function Composer(props: ComposerProps) {
           ) : (
             <Button
               size="icon"
-              className={cn("size-8 shrink-0 rounded-full transition-opacity duration-150", !canSend && "opacity-30")}
+              className={cn("size-8 shrink-0 rounded-full max-md:size-9 transition-opacity duration-150", !canSend && "opacity-30")}
               disabled={!canSend}
               onClick={submit}
               aria-label={t("Senden")}
@@ -728,7 +732,7 @@ export function Composer(props: ComposerProps) {
           )}
         </div>
       </div>
-      <div className="mt-2 flex items-center justify-end gap-2">
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 max-md:mt-1.5 max-md:gap-x-1">
         {props.footerStart && <div className="mr-auto min-w-0">{props.footerStart}</div>}
         {props.ttsReady && (
           <Tooltip>
@@ -741,7 +745,7 @@ export function Composer(props: ComposerProps) {
                 onClick={() => props.onReadAloudChange(!props.readAloud)}
               >
                 {props.readAloud ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-                {t("Vorlesen")}
+                <span className="max-md:sr-only">{t("Vorlesen")}</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t("Antworten automatisch vorlesen")}</TooltipContent>

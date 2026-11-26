@@ -11,7 +11,7 @@ import { OptionSelect } from "@/components/option-select";
 import { formatRelativeTime } from "@/components/form-field";
 import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
-import { EmptyState, ScreenLayout } from "./screen-layout";
+import { EmptyState, MasterDetail, ScreenLayout } from "./screen-layout";
 import { t } from "@/lib/i18n";
 import { Combobox } from "@/components/ui/combobox";
 
@@ -375,15 +375,12 @@ export function FilesScreen(props: FilesScreenProps) {
         />
       }
       actions={
-        <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" disabled={loading} onClick={reload}>
-          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} /> {t("Aktualisieren")}
+        <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" disabled={loading} aria-label={t("Aktualisieren")} onClick={reload}>
+          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} /> <span className="max-md:hidden">{t("Aktualisieren")}</span>
         </Button>
       }
     >
-      <div className="flex h-full min-h-0">
-        <div className="w-96 shrink-0 border-r">{list}</div>
-        <div className="min-w-0 flex-1">{detail}</div>
-      </div>
+      <MasterDetail list={list} detail={detail} listClassName="w-96 overflow-hidden p-0" detailOpen={Boolean(selectedFile)} onBack={() => setSelectedFileId(null)} />
     </ScreenLayout>
   );
 }

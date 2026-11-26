@@ -1076,4 +1076,7 @@ export const englishTexts: Record<string, string> = {
   "Datei wählen …": "Choose file …",
   "Lass dieses Fenster bis zum Ende geöffnet.": "Keep this window open until it's done.",
   "Auswählen …": "Choose …",
+  "Navigation öffnen": "Open navigation",
+  "Navigation schließen": "Close navigation",
+  "Projekte, Chats und Bereiche": "Projects, chats and sections",
 };

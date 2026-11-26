@@ -14,6 +14,7 @@ import { GitView } from "./git-view";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ProjectCanvas } from "@/components/canvas/project-canvas";
 import { t } from "@/lib/i18n";
+import { useIsMobile } from "@/lib/mobile";
 import { toast } from "@/lib/toast";
 
 /** Monaco is large; it arrives with the first file the user opens in the code view. */
@@ -59,7 +60,7 @@ const viewChoiceOf = (view: WorkspaceView): ViewChoice => (view === "preview" ||
 
 function IconAction(props: { label: string; onClick?: () => void; href?: string; children: React.ReactNode }) {
   const button = (
-    <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={props.onClick} asChild={Boolean(props.href)} aria-label={props.label}>
+    <Button variant="ghost" size="icon" className="size-7 text-muted-foreground max-md:size-9" onClick={props.onClick} asChild={Boolean(props.href)} aria-label={props.label}>
       {props.href ? (
         <a href={props.href} target="_blank" rel="noreferrer">
           {props.children}
@@ -79,6 +80,7 @@ function IconAction(props: { label: string; onClick?: () => void; href?: string;
 
 export function WorkspacePane(props: WorkspacePaneProps) {
   const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const isMobile = useIsMobile();
   const [selection, setSelection] = useState<FileSelection | null>(null);
   const [fileTreeReloadKey, setFileTreeReloadKey] = useState(0);
   const [activeView, setActiveView] = useState<WorkspaceView>("canvas");
@@ -158,6 +160,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   }, [project.id, selection?.root, selectedPath, activeView, previewReloadKey]);
 
   const selectFile = (nextSelection: FileSelection) => {
+    if (isMobile) setFilePanelOpen(false);
     setSelection(nextSelection);
     setActiveView(nextSelection.root === project.path && previewableExtensions.test(nextSelection.path) ? "preview" : "code");
   };
@@ -209,14 +212,17 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   };
 
   const workspaceBody = (
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <nav
           className={cn(
             "shrink-0 overflow-hidden border-r bg-background transition-[width,opacity] duration-200 ease-out",
             filePanelOpen ? "w-64 opacity-100" : "w-0 border-r-0 opacity-0",
+            // Mobile: the file tree covers the view instead of squeezing it.
+            "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-20",
+            filePanelOpen && "max-md:w-full max-md:border-r-0",
           )}
         >
-          <div className="h-full w-64 overflow-y-auto p-1.5">
+          <div className="h-full w-64 overflow-y-auto p-1.5 max-md:w-full">
             {filePanelOpen && (
               <ProjectFiles project={project} roots={roots} codeRoot={codeRoot} selected={selection} refreshKey={fileTreeReloadKey} onSelect={selectFile} onReference={referenceFile} />
             )}
@@ -293,7 +299,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
         <IconAction label={filePanelOpen ? t("Dateien ausblenden") : t("Dateien einblenden")} onClick={() => setFilePanelOpen((open) => !open)}>
           <PanelLeft className="size-4" />
         </IconAction>
-        <nav className="flex min-w-0 items-center gap-1 text-[13px]">
+        <nav className="flex min-w-0 items-center gap-1 text-[13px] max-md:hidden">
           {breadcrumbSegments.map((segment, segmentIndex) => (
             <span key={`${segment}-${segmentIndex}`} className="flex min-w-0 items-center gap-1">
               {segmentIndex > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
@@ -304,10 +310,10 @@ export function WorkspacePane(props: WorkspacePaneProps) {
           ))}
         </nav>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1 max-md:min-w-0 max-md:shrink max-md:overflow-x-auto max-md:[scrollbar-width:none]">
           {activeView !== "canvas" && activeView !== "app" && activeView !== "git" && selectedPath && selectionInProjectFolder && previewableExtensions.test(selectedPath) && (
             <SegmentedControl
-              className="mr-1 w-40"
+              className="mr-1 w-40 max-md:w-32"
               value={activeView}
               onValueChange={setActiveView}
               options={[
@@ -320,7 +326,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="mr-1 h-7 gap-1.5 px-2 text-[12.5px] font-medium">
                 <CurrentViewIcon className="size-3.5 text-muted-foreground" />
-                {currentViewChoice.label}
+                <span className="max-md:max-w-24 max-md:truncate">{currentViewChoice.label}</span>
                 {viewIndicator(currentViewChoice.value)}
                 <ChevronDown className="size-3.5 text-muted-foreground" />
               </Button>
@@ -342,8 +348,8 @@ export function WorkspacePane(props: WorkspacePaneProps) {
             </DropdownMenuContent>
           </DropdownMenu>
           {isDesignFile && selectedPath && (activeView === "preview" || activeView === "code") && (
-            <Button size="sm" variant="secondary" className="h-7 text-[12px]" onClick={() => props.onImplementDesign(selectedPath)}>
-              <Wand2 className="size-3.5" /> {t("In Code übernehmen")}
+            <Button size="sm" variant="secondary" className="h-7 text-[12px]" aria-label={t("In Code übernehmen")} onClick={() => props.onImplementDesign(selectedPath)}>
+              <Wand2 className="size-3.5" /> <span className="max-md:hidden">{t("In Code übernehmen")}</span>
             </Button>
           )}
           {activeView === "code" && editorIsDirty && (
@@ -364,10 +370,12 @@ export function WorkspacePane(props: WorkspacePaneProps) {
           <IconAction label={terminalOpen ? t("Terminal ausblenden (Ctrl+`)") : t("Terminal (Ctrl+`)")} onClick={() => setTerminalOpen((open) => !open)}>
             <SquareTerminal className={cn("size-4", terminalOpen && "text-foreground")} />
           </IconAction>
+        </div>
+        <span className="-ml-1 shrink-0">
           <IconAction label={t("Workspace schließen")} onClick={props.onClose}>
             <X className="size-4" />
           </IconAction>
-        </div>
+        </span>
       </header>
 
       <ResizablePanelGroup id="harnold-workspace" orientation="vertical" className="min-h-0 flex-1">

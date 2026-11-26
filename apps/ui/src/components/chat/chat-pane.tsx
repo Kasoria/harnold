@@ -3,7 +3,8 @@ import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card
 import { SecretInputCard, isSecretInputRequest } from "@/components/chat/secret-input-card";
 import { PermissionCard } from "@/components/chat/permission-card";
 import { BackgroundTasksBar, TodoPanel, todosFromChat } from "@/components/chat/agent-progress";
-import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, Square, Trash2, Users, Volume2 } from "lucide-react";
+import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, Square, SquarePen, Trash2, Users, Volume2 } from "lucide-react";
+import { MobileNavButton } from "@/lib/mobile";
 import type { BackgroundTask, EffortLevel, TeamAgent, Attachment, ChatItem, QueuedMessage, Environment, PermissionAnswer, PermissionMode, PermissionRequest, Project, Session } from "@/types";
 import { cn, isActionEnter } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -351,7 +352,8 @@ export function ChatPane(props: ChatPaneProps) {
           <span className="text-[12px] font-normal text-muted-foreground">{t("Bilder, PDFs, Text- und Office-Dateien")}</span>
         </div>
       )}
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 max-md:px-3">
+        <MobileNavButton className="-ml-1" />
         {titleDraft !== null ? (
           <input
             autoFocus
@@ -366,22 +368,27 @@ export function ChatPane(props: ChatPaneProps) {
             aria-label={t("Session-Titel")}
           />
         ) : (
-          <h1 className="truncate text-[14px] font-semibold" onDoubleClick={() => props.session && setTitleDraft(props.session.title)}>
-            {props.session?.title ?? props.project?.name ?? t("Harnold")}
-          </h1>
+          <div className="min-w-0 max-md:flex-1">
+            <h1 className="truncate text-[14px] font-semibold max-md:text-[15px] max-md:leading-tight" onDoubleClick={() => props.session && setTitleDraft(props.session.title)}>
+              {props.session?.title ?? props.project?.name ?? t("Harnold")}
+            </h1>
+            {props.session && props.project && props.project.kind !== "quick" && (
+              <p className="truncate text-[11.5px] leading-tight text-muted-foreground md:hidden">{props.project.name}</p>
+            )}
+          </div>
         )}
         {props.session && (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground max-md:bg-transparent max-md:px-1" title={statusLabels[props.status]}>
             <StatusDot status={props.status} />
-            {statusLabels[props.status]}
+            <span className="max-md:sr-only">{statusLabels[props.status]}</span>
           </span>
         )}
         {props.session && props.teamAgents.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" aria-label={t("Agent dieser Session")}>
+              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground max-md:size-9 max-md:px-0" aria-label={t("Agent dieser Session")}>
                 <Users className="size-3.5" />
-                {props.teamAgents.find((agent) => agent.id === props.session?.agentId)?.name ?? t("Harnold")}
+                <span className="max-md:hidden">{props.teamAgents.find((agent) => agent.id === props.session?.agentId)?.name ?? t("Harnold")}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-52">
@@ -397,11 +404,16 @@ export function ChatPane(props: ChatPaneProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {props.project && (
+            <Button variant="ghost" size="icon" className="size-9 text-muted-foreground md:hidden" onClick={props.onNewSession} aria-label={t("Neue Session")}>
+              <SquarePen className="size-[18px]" />
+            </Button>
+          )}
           {props.session && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={t("Session-Menü")}>
+                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground max-md:size-9" aria-label={t("Session-Menü")}>
                   <MoreHorizontal className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -443,7 +455,7 @@ export function ChatPane(props: ChatPaneProps) {
           {!props.workspaceOpen && props.project && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={props.onOpenWorkspace} aria-label={t("Workspace öffnen")}>
+                <Button variant="ghost" size="icon" className="size-7 text-muted-foreground max-md:size-9" onClick={props.onOpenWorkspace} aria-label={t("Workspace öffnen")}>
                   <PanelRight className="size-4" />
                 </Button>
               </TooltipTrigger>
@@ -455,7 +467,7 @@ export function ChatPane(props: ChatPaneProps) {
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={scrollContainerRef} onScroll={trackScrollPosition} className="flex-1 overflow-y-auto">
-          <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed">
+          <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-5 text-[14px] leading-relaxed max-md:px-4 max-md:text-[15px]">
           {!props.project && <p className="text-muted-foreground">{t("Lege links ein Projekt an, um zu starten.")}</p>}
 
           {renderBlocks.map((renderBlock, blockIndex) => {

@@ -59,6 +59,8 @@ export function EnvironmentsScreen(props: EnvironmentsScreenProps) {
       }
     >
       <MasterDetail
+        detailOpen={props.selection === "new" || Boolean(selectedEnvironment)}
+        onBack={() => props.onSelect(null)}
         list={
           props.environments.length === 0 ? (
             <p className="p-3 text-[12.5px] text-muted-foreground">{t("Noch keine Umgebungen.")}</p>
@@ -310,7 +312,7 @@ function EnvironmentEditor(props: {
 
         <section className="grid gap-4">
           <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">{t("Git")}</h3>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FormField label={t("Name")} htmlFor="environment-git-name">
               <Input id="environment-git-name" value={draft.gitName} placeholder={t("Commit-Autor")} onChange={(changeEvent) => update({ gitName: changeEvent.target.value })} />
             </FormField>
@@ -443,7 +445,7 @@ function AiSection(props: {
       <h3 className="text-[12px] font-medium text-muted-foreground uppercase tracking-wide">KI</h3>
       <FormField label={t("KI-Zugang")}>
         <Select value={props.claudeMode} onValueChange={(claudeMode) => props.onChange({ claudeMode: claudeMode as EnvironmentClaudeMode })}>
-          <SelectTrigger className="w-72">
+          <SelectTrigger className="w-72 max-w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

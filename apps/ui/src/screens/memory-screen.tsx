@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SegmentedControl } from "@/components/segmented-control";
 import { OptionSelect } from "@/components/option-select";
 import { formatRelativeTime } from "@/components/form-field";
-import { EmptyState, ScreenLayout } from "./screen-layout";
+import { EmptyState, MasterDetail, ScreenLayout } from "./screen-layout";
 import { confirmAction } from "@/components/confirm-dialog";
 import { fileIconFor, formatFileSize, isImagePath } from "@/components/chat/attachment-views";
 import { t } from "@/lib/i18n";
@@ -437,7 +437,7 @@ export function MemoryScreen(props: MemoryScreenProps) {
     />
   ) : (
     <div key={editor.noteRef ? `${editor.noteRef.scope}:${editor.noteRef.path}` : "new"} className="flex h-full animate-in flex-col fade-in duration-200">
-      <div className="flex items-center gap-2 border-b px-4 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
         {editor.noteRef ? (
           <>
             <span className="truncate font-mono text-[12.5px]">{editor.noteRef.path}</span>
@@ -486,12 +486,12 @@ export function MemoryScreen(props: MemoryScreenProps) {
               void saveNote();
             }
           }}
-          className="mx-auto w-full max-w-3xl flex-1 animate-in resize-none bg-transparent px-6 py-5 font-mono text-[13px] leading-relaxed outline-none fade-in duration-150"
+          className="mx-auto w-full max-w-3xl flex-1 animate-in resize-none bg-transparent px-4 py-4 md:px-6 md:py-5 font-mono text-[13px] leading-relaxed outline-none fade-in duration-150"
           spellCheck={false}
         />
       ) : (
         <div key="preview" className="flex-1 animate-in overflow-y-auto fade-in duration-150">
-          <div className="chat-markdown mx-auto max-w-3xl px-6 py-5 text-[14px] leading-relaxed">
+          <div className="chat-markdown mx-auto max-w-3xl px-4 py-4 md:px-6 md:py-5 text-[14px] leading-relaxed">
             <ReactMarkdown>{editor.content}</ReactMarkdown>
           </div>
         </div>
@@ -530,8 +530,8 @@ export function MemoryScreen(props: MemoryScreenProps) {
       }
       actions={
         <>
-          <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={props.onOpenSettings}>
-            <Settings2 className="size-3.5" /> {t("Einstellungen")}
+          <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" aria-label={t("Einstellungen")} onClick={props.onOpenSettings}>
+            <Settings2 className="size-3.5" /> <span className="max-md:hidden">{t("Einstellungen")}</span>
           </Button>
           <input
             ref={fileInputRef}
@@ -549,12 +549,13 @@ export function MemoryScreen(props: MemoryScreenProps) {
             className="gap-1.5 text-muted-foreground"
             disabled={uploading}
             title={t("Landet im Gedächtnis: {0}", scopeLabelOf(uploadScope))}
+            aria-label={t("Datei hinzufügen")}
             onClick={() => fileInputRef.current?.click()}
           >
-            <Paperclip className="size-3.5" /> {uploading ? t("Lädt hoch …") : t("Datei hinzufügen")}
+            <Paperclip className="size-3.5" /> <span className="max-md:hidden">{uploading ? t("Lädt hoch …") : t("Datei hinzufügen")}</span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => selectNote("new")}>
-            <Plus className="size-3.5" /> {t("Neue Notiz")}
+          <Button size="sm" variant="secondary" aria-label={t("Neue Notiz")} onClick={() => selectNote("new")}>
+            <Plus className="size-3.5" /> <span className="max-md:hidden">{t("Neue Notiz")}</span>
           </Button>
         </>
       }
@@ -576,8 +577,15 @@ export function MemoryScreen(props: MemoryScreenProps) {
           void uploadFiles([...dragEvent.dataTransfer.files]);
         }}
       >
-        <div className="w-80 shrink-0 border-r">{list}</div>
-        <div className="min-w-0 flex-1">{detail}</div>
+        <div className="min-w-0 flex-1">
+          <MasterDetail
+            list={list}
+            detail={detail}
+            listClassName="overflow-hidden p-0"
+            detailOpen={Boolean(openedFile) || props.selection !== null}
+            onBack={() => (openedFile ? setOpenedFile(null) : void selectNote(null))}
+          />
+        </div>
         {dragActive && (
           <div className="pointer-events-none absolute inset-2 z-30 flex animate-in flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-primary bg-primary/10 fade-in duration-150">
             <Paperclip className="size-6 text-primary" />

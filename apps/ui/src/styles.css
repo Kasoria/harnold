@@ -172,3 +172,15 @@
 @media (prefers-reduced-motion: reduce) {
   .text-shimmer { animation: none; color: var(--muted-foreground); background: none; }
 }
+
+/* Touch (no hover): actions that otherwise appear on hover stay visible. */
+@media (hover: none) {
+  .opacity-0[class*="group-hover"] { opacity: 1; }
+}
+
+/* Mobile: no rubber-band of the whole app, no tap flash; text inputs ≥16px so iOS doesn't zoom in. */
+@media (max-width: 767px) {
+  html, body { overscroll-behavior: none; }
+  body { -webkit-tap-highlight-color: transparent; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select { font-size: max(16px, 1em); }
+}

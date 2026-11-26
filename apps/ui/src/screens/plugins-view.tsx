@@ -135,6 +135,8 @@ export function PluginsView(props: PluginsViewProps) {
 
   return (
     <MasterDetail
+      detailOpen={props.selectedItemId === "new" || Boolean(selectedPlugin)}
+      onBack={() => props.onSelect(null)}
       list={
         plugins.length === 0 ? (
           <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Keine Plugins.")}</p>

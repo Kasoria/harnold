@@ -82,7 +82,7 @@ function TeamAgentEditor(props: {
 
   return (
     <div className="grid gap-4 py-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label={t("Name")}>
           <Input value={agentInput.name} placeholder={t("z. B. Designerin")} onChange={(changeEvent) => updateInput({ name: changeEvent.target.value })} />
         </FormField>
@@ -186,6 +186,8 @@ export function TeamScreen(props: TeamScreenProps) {
       }
     >
       <MasterDetail
+        detailOpen={props.selection === "new" || Boolean(selectedAgent)}
+        onBack={() => props.onSelect(null)}
         list={
           props.agents.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-[12.5px] text-muted-foreground">

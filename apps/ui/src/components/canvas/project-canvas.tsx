@@ -194,6 +194,103 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
     return () => container.removeEventListener("wheel", handleWheel);
   }, []);
 
+  // --- Pinch zoom: two fingers zoom and pan (touch); trackpad pinch in WebKit arrives as gesture events ---
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    type Pinch = { startDistance: number; startZoom: number; worldX: number; worldY: number };
+    let activePinch: Pinch | null = null;
+    let gestureStartZoom: number | null = null;
+
+    const touchMidpoint = (touches: TouchList) => {
+      const containerRect = container.getBoundingClientRect();
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2 - containerRect.left,
+        y: (touches[0].clientY + touches[1].clientY) / 2 - containerRect.top,
+      };
+    };
+    const touchDistance = (touches: TouchList) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+
+    /** The first finger may already have started something (pan, move, drawing, new shape): undo it, the gesture is a pinch. */
+    const cancelSingleFingerInteraction = () => {
+      const interaction = interactionRef.current;
+      interactionRef.current = null;
+      setInteractionKind(null);
+      if (!interaction) return;
+      if (interaction.kind === "create" || interaction.kind === "draw") {
+        setElements((previous) => previous.filter((element) => element.id !== interaction.elementId));
+        setSelectedElementId(null);
+      } else if (interaction.kind === "move") {
+        setElements((previous) =>
+          previous.map((element) => {
+            const originalPosition = interaction.originalPositions.get(element.id);
+            return originalPosition ? { ...element, ...originalPosition } : element;
+          }),
+        );
+      }
+    };
+
+    const handleTouchStart = (touchEvent: TouchEvent) => {
+      if (touchEvent.touches.length !== 2) return;
+      touchEvent.preventDefault();
+      cancelSingleFingerInteraction();
+      const { panX, panY, zoom } = viewportRef.current;
+      const midpoint = touchMidpoint(touchEvent.touches);
+      activePinch = { startDistance: Math.max(1, touchDistance(touchEvent.touches)), startZoom: zoom, worldX: (midpoint.x - panX) / zoom, worldY: (midpoint.y - panY) / zoom };
+    };
+    const handleTouchMove = (touchEvent: TouchEvent) => {
+      if (!activePinch || touchEvent.touches.length < 2) return;
+      touchEvent.preventDefault();
+      // Pointer moves of both fingers must not pan on top of the pinch.
+      interactionRef.current = null;
+      const nextZoom = clampZoom((activePinch.startZoom * touchDistance(touchEvent.touches)) / activePinch.startDistance);
+      const midpoint = touchMidpoint(touchEvent.touches);
+      // The world point that started under the fingers stays under them (zoom + two-finger pan in one).
+      setViewport({ zoom: nextZoom, panX: midpoint.x - activePinch.worldX * nextZoom, panY: midpoint.y - activePinch.worldY * nextZoom });
+    };
+    const handleTouchEnd = (touchEvent: TouchEvent) => {
+      if (activePinch && touchEvent.touches.length < 2) {
+        activePinch = null;
+        interactionRef.current = null;
+        setInteractionKind(null);
+      }
+    };
+
+    type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number };
+    const handleGestureStart = (gestureEvent: Event) => {
+      gestureEvent.preventDefault();
+      gestureStartZoom = activePinch ? null : viewportRef.current.zoom;
+    };
+    const handleGestureChange = (gestureEvent: Event) => {
+      gestureEvent.preventDefault();
+      if (gestureStartZoom === null || activePinch) return;
+      const { scale, clientX, clientY } = gestureEvent as GestureEvent;
+      const containerRect = container.getBoundingClientRect();
+      zoomAround(clampZoom(gestureStartZoom * scale) / viewportRef.current.zoom, clientX - containerRect.left, clientY - containerRect.top);
+    };
+    const handleGestureEnd = (gestureEvent: Event) => {
+      gestureEvent.preventDefault();
+      gestureStartZoom = null;
+    };
+
+    container.addEventListener("touchstart", handleTouchStart, { passive: false, capture: true });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true });
+    container.addEventListener("touchend", handleTouchEnd, { capture: true });
+    container.addEventListener("touchcancel", handleTouchEnd, { capture: true });
+    container.addEventListener("gesturestart", handleGestureStart);
+    container.addEventListener("gesturechange", handleGestureChange);
+    container.addEventListener("gestureend", handleGestureEnd);
+    return () => {
+      container.removeEventListener("touchstart", handleTouchStart, { capture: true });
+      container.removeEventListener("touchmove", handleTouchMove, { capture: true });
+      container.removeEventListener("touchend", handleTouchEnd, { capture: true });
+      container.removeEventListener("touchcancel", handleTouchEnd, { capture: true });
+      container.removeEventListener("gesturestart", handleGestureStart);
+      container.removeEventListener("gesturechange", handleGestureChange);
+      container.removeEventListener("gestureend", handleGestureEnd);
+    };
+  }, []);
+
   // --- Keyboard ---
   useEffect(() => {
     const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
@@ -243,6 +340,8 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   const panning = activeTool === "hand" || spaceHeld;
 
   const handleBackgroundPointerDown = (pointerEvent: React.PointerEvent) => {
+    // A second finger is a pinch (handled by the touch listeners), not a new interaction.
+    if (!pointerEvent.isPrimary) return;
     if (pointerEvent.button !== 0 && pointerEvent.button !== 1) return;
     setEditingElementId(null);
     if (panning || pointerEvent.button === 1) {
@@ -290,7 +389,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   };
 
   const handleElementPointerDown = (pointerEvent: React.PointerEvent, element: CanvasElement) => {
-    if (activeTool !== "select" || panning || pointerEvent.button !== 0) return;
+    if (activeTool !== "select" || panning || pointerEvent.button !== 0 || !pointerEvent.isPrimary) return;
     pointerEvent.stopPropagation();
     if (editingElementId === element.id) return;
     setEditingElementId(null);
@@ -308,6 +407,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
 
   const handleResizePointerDown = (pointerEvent: React.PointerEvent, element: CanvasElement) => {
     pointerEvent.stopPropagation();
+    if (!pointerEvent.isPrimary) return;
     beginInteraction(
       { kind: "resize", elementId: element.id, startPoint: toWorldPoint(pointerEvent.clientX, pointerEvent.clientY), startWidth: element.width, startHeight: element.height },
       pointerEvent,

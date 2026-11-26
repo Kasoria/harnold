@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, Mail, MessageSquare, MessageSquarePlus, MessagesSquare, Moon, Palette, PanelLeftClose, PanelLeftOpen, Play, Plus, Search, Settings, Sun, Users } from "lucide-react";
+import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, Mail, MessageSquare, MessageSquarePlus, MessagesSquare, Moon, Palette, PanelLeftClose, PanelLeftOpen, Play, Plus, Search, Settings, Sun, Users, X } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
 import { Switch } from "@/components/ui/switch";
 import type { Environment, Project, Session, Task } from "@/types";
@@ -48,6 +48,8 @@ type AppSidebarProps = {
   onActiveEnvironmentChange: (environmentId: string | null) => void;
   /** Narrow icon rail instead of the full sidebar. */
   collapsed: boolean;
+  /** Slide-in drawer on phones: close button instead of the collapse toggle, no shortcut hints. */
+  mobile?: boolean;
   onToggleCollapsed: () => void;
   toggleShortcut?: string;
 };
@@ -68,7 +70,7 @@ export const featureScreens: { screen: ScreenName; label: string; icon: React.Co
 const activeRowClassName = "bg-foreground/[0.07] font-medium";
 
 const rowClassName =
-  "group/row flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors duration-150 hover:bg-foreground/5";
+  "group/row flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors duration-150 hover:bg-foreground/5 max-md:h-10 max-md:gap-2.5 max-md:text-[15px]";
 
 function HoverAction(props: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -88,7 +90,7 @@ function HoverAction(props: { label: string; onClick: () => void; children: Reac
               props.onClick();
             }
           }}
-          className="flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100"
+          className="flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 max-md:size-8"
         >
           {props.children}
         </span>
@@ -235,7 +237,7 @@ function SectionHeader(props: { label: string; actionLabel: string; onAction: ()
       {props.label}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button aria-label={props.actionLabel} onClick={props.onAction} className="flex size-5 items-center justify-center rounded transition-colors hover:bg-foreground/10 hover:text-foreground">
+          <button aria-label={props.actionLabel} onClick={props.onAction} className="flex size-5 items-center justify-center rounded transition-colors hover:bg-foreground/10 hover:text-foreground max-md:size-8">
             <Plus className="size-3.5" />
           </button>
         </TooltipTrigger>
@@ -276,35 +278,77 @@ export function AppSidebar(props: AppSidebarProps) {
       <div className="flex h-12 shrink-0 items-center pr-2 pl-4">
         <HarnoldLogo className="h-[18px]" />
         <span className="ml-auto">
-          <CollapseToggle collapsed={false} onToggle={props.onToggleCollapsed} shortcut={props.toggleShortcut} />
+          {props.mobile ? (
+            <button aria-label={t("Navigation schließen")} onClick={props.onToggleCollapsed} className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground">
+              <X className="size-5" />
+            </button>
+          ) : (
+            <CollapseToggle collapsed={false} onToggle={props.onToggleCollapsed} shortcut={props.toggleShortcut} />
+          )}
         </span>
       </div>
 
-      <nav className="space-y-0.5 px-2 pb-2">
-        <button
-          className="mb-1.5 flex h-8 w-full items-center gap-2 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground shadow-xs transition-colors duration-150 hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-          onClick={props.onNewQuickChat}
-        >
-          <MessageSquarePlus className="size-4" />
-          {t("Quick Chat")}
-        </button>
-        <button className={cn(rowClassName, "mb-1 text-muted-foreground")} onClick={props.onOpenSearch}>
-          <Search className="size-4" />
-          {t("Suchen")}
-          <kbd className="ml-auto font-sans text-[11.5px]">{formatCombo(shortcutBindings.search)}</kbd>
-        </button>
-        {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
-          <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>
-            <ScreenIcon className="size-4 text-muted-foreground" />
-            {label}
-            {screen === "today" && props.waitingCount > 0 && (
-              <span className="ml-auto rounded-full bg-status-waiting px-1.5 text-[11px] leading-4 font-medium text-white tabular-nums">{props.waitingCount}</span>
-            )}
-            {screen === "tasks" && props.taskCount > 0 && <span className="ml-auto text-[11.5px] text-muted-foreground tabular-nums">{props.taskCount}</span>}
-            {screen === "channels" && props.channelsStatus && <StatusDot status={props.channelsStatus} className="mr-1 ml-auto" />}
+      {props.mobile ? (
+        <nav className="grid gap-2 px-2 pb-2">
+          <div className="flex gap-2">
+            <button
+              className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg bg-primary px-3 text-[15px] font-medium text-primary-foreground shadow-xs transition-colors duration-150 active:bg-primary/90"
+              onClick={props.onNewQuickChat}
+            >
+              <MessageSquarePlus className="size-4" />
+              {t("Quick Chat")}
+            </button>
+            <button aria-label={t("Suchen")} className="flex size-11 shrink-0 items-center justify-center rounded-lg border bg-background text-muted-foreground active:bg-foreground/5" onClick={props.onOpenSearch}>
+              <Search className="size-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-5 gap-1">
+            {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
+              <button
+                key={screen}
+                className={cn(
+                  "relative flex min-w-0 flex-col items-center gap-1 rounded-lg px-0.5 pt-2 pb-1.5 text-[10.5px] leading-tight text-muted-foreground transition-colors active:bg-foreground/5",
+                  props.activeScreen === screen && "bg-foreground/[0.07] font-medium text-foreground",
+                )}
+                onClick={() => props.onOpenScreen(screen)}
+              >
+                <ScreenIcon className="size-5" />
+                <span className="line-clamp-2 w-full text-center break-words">{label}</span>
+                {screen === "today" && props.waitingCount > 0 && (
+                  <span className="absolute top-1 right-2 rounded-full bg-status-waiting px-1 text-[10px] leading-3.5 font-medium text-white tabular-nums">{props.waitingCount}</span>
+                )}
+                {screen === "channels" && props.channelsStatus && <StatusDot status={props.channelsStatus} className="absolute top-2 right-3" />}
+              </button>
+            ))}
+          </div>
+        </nav>
+      ) : (
+        <nav className="space-y-0.5 px-2 pb-2">
+          <button
+            className="mb-1.5 flex h-8 w-full items-center gap-2 rounded-md bg-primary px-2.5 text-[13px] font-medium max-md:h-11 max-md:text-[15px] text-primary-foreground shadow-xs transition-colors duration-150 hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            onClick={props.onNewQuickChat}
+          >
+            <MessageSquarePlus className="size-4" />
+            {t("Quick Chat")}
           </button>
-        ))}
-      </nav>
+          <button className={cn(rowClassName, "mb-1 text-muted-foreground")} onClick={props.onOpenSearch}>
+            <Search className="size-4" />
+            {t("Suchen")}
+            {!props.mobile && <kbd className="ml-auto font-sans text-[11.5px]">{formatCombo(shortcutBindings.search)}</kbd>}
+          </button>
+          {featureScreens.map(({ screen, label, icon: ScreenIcon }) => (
+            <button key={screen} className={cn(rowClassName, props.activeScreen === screen && activeRowClassName)} onClick={() => props.onOpenScreen(screen)}>
+              <ScreenIcon className="size-4 text-muted-foreground" />
+              {label}
+              {screen === "today" && props.waitingCount > 0 && (
+                <span className="ml-auto rounded-full bg-status-waiting px-1.5 text-[11px] leading-4 font-medium text-white tabular-nums">{props.waitingCount}</span>
+              )}
+              {screen === "tasks" && props.taskCount > 0 && <span className="ml-auto text-[11.5px] text-muted-foreground tabular-nums">{props.taskCount}</span>}
+              {screen === "channels" && props.channelsStatus && <StatusDot status={props.channelsStatus} className="mr-1 ml-auto" />}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">
         {props.environments.length > 0 && (

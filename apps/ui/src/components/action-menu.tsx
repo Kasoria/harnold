@@ -91,7 +91,7 @@ export function ActionMenuButton(props: { actions: MenuAction[]; label: string; 
           title={props.label}
           onClick={(clickEvent) => clickEvent.stopPropagation()}
           className={cn(
-            "flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100",
+            "flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 max-md:size-8",
             props.className,
           )}
         >

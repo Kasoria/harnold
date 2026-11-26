@@ -113,7 +113,7 @@ function MailInboxEditor(props: {
       <p className="-mt-1 text-[12px] leading-snug text-muted-foreground">
         {t("Ein Postfach wird an einen Agenten gebunden, der es im Namen des Users bearbeitet – lesen, zusammenfassen, sortieren und (je nach Stufe) beantworten.")}
       </p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label={t("Name")}>
           <Input value={input.name} placeholder={t("z. B. Kontakt")} onChange={(event) => updateInput({ name: event.target.value })} />
         </FormField>
@@ -129,7 +129,7 @@ function MailInboxEditor(props: {
           />
         </FormField>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {mailboxFields.map((field) => (
           <div key={field.key} className={cn(field.secret && "col-span-2")}>
             <FormField label={field.label}>
@@ -148,7 +148,7 @@ function MailInboxEditor(props: {
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label={t("Agent")} hint={t("Wer das Postfach bearbeitet.")}>
           <Combobox
             value={input.agentId ?? defaultAgentValue}
@@ -194,7 +194,7 @@ function MailInboxEditor(props: {
             onChange={(event) => updateInput({ instructions: event.target.value })}
           />
         </FormField>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label={t("Anrede, Ton, Sprache")} hint={t("z. B. „Sie, sachlich und kurz, Deutsch“")}>
             <Input value={input.tone} placeholder={t("Sie, freundlich, Deutsch")} onChange={(event) => updateInput({ tone: event.target.value })} />
           </FormField>
@@ -210,7 +210,7 @@ function MailInboxEditor(props: {
             onChange={(event) => updateInput({ context: event.target.value })}
           />
         </FormField>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <FormField label={t("Nur von")} hint={t("Leer = alle Absender. Muster mit * erlaubt.")}>
             <Input value={input.includeSenders} placeholder="*@kunde.de" onChange={(event) => updateInput({ includeSenders: event.target.value })} />
           </FormField>
@@ -444,6 +444,8 @@ export function MailScreen(props: MailScreenProps) {
       }
     >
       <MasterDetail
+        detailOpen={props.selectedInboxId === "new" || Boolean(selectedInbox)}
+        onBack={() => props.onSelectInbox(null)}
         list={
           props.inboxes.length === 0 ? (
             <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Noch keine Postfächer.")}</p>

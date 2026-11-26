@@ -415,6 +415,8 @@ function McpServersView(props: { project: Project | null; selectedItemId: string
 
   return (
     <MasterDetail
+      detailOpen={props.selectedItemId === "new" || Boolean(selectedServer)}
+      onBack={() => props.onSelect(null)}
       list={
         <>
         {visibleServers.length === 0 ? (
@@ -506,7 +508,7 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
     props.selectedItemId === "new" ? (
       <DetailPane detailKey="new" title={t("Skill anlegen")} subtitle={t("Format wie Claude Code (SKILL.md) – nutzbar in Harnold und Claude Code.")}>
         <div className="grid gap-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FormField label={t("Name")}>
               <Input value={newSkill.name} placeholder="release-notes" onChange={(changeEvent) => setNewSkill((previous) => ({ ...previous, name: changeEvent.target.value.toLowerCase() }))} />
             </FormField>
@@ -582,6 +584,8 @@ function SkillsView(props: { project: Project | null; selectedItemId: string | n
 
   return (
     <MasterDetail
+      detailOpen={props.selectedItemId === "new" || Boolean(selectedSkill)}
+      onBack={() => props.onSelect(null)}
       list={
         skills.length === 0 ? (
           <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Keine Skills.")}</p>
@@ -613,7 +617,7 @@ export function IntegrationsScreen(props: IntegrationsScreenProps) {
       title={t("Integrationen")}
       tabs={
         <SegmentedControl
-          className="w-72"
+          className="w-72 max-md:w-full"
           options={[
             { value: "mcp", label: t("MCP-Server") },
             { value: "skills", label: t("Skills") },

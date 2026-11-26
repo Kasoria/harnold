@@ -4,7 +4,7 @@ import { api, coreBaseUrl } from "@/api";
 import { Brain, Image as ImageIcon, Keyboard, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { AgentConnection } from "@/components/agent-connection";
 import { cn } from "@/lib/utils";
-import { ScreenLayout } from "./screen-layout";
+import { MasterDetail, ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
 import { QuickChatAutoDeleteSetting } from "./settings/quick-chat-settings";
 import { ShortcutsSection } from "./settings/shortcuts-section";
@@ -25,7 +25,10 @@ export const settingsSectionNames: SettingsSection[] = ["claude", "general", "sh
 
 type SettingsScreenProps = {
   section: SettingsSection;
-  onSectionChange: (section: SettingsSection) => void;
+  /** null = back to the section list (mobile). */
+  onSectionChange: (section: SettingsSection | null) => void;
+  /** A section is in the route (mobile shows it instead of the list). */
+  sectionChosen: boolean;
   themePreference: ThemePreference;
   onThemePreferenceChange: (themePreference: ThemePreference) => void;
   voiceSettings: VoiceSettingsView | null;
@@ -218,14 +221,16 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
   return (
     <ScreenLayout title={t("Einstellungen")}>
-      <div className="flex h-full min-h-0">
-        <nav className="w-56 shrink-0 space-y-0.5 border-r p-2">
-          {settingsSections.map((sectionEntry) => (
+      <MasterDetail
+        listClassName="w-56 space-y-0.5"
+        detailOpen={props.sectionChosen}
+        onBack={() => props.onSectionChange(null)}
+        list={settingsSections.map((sectionEntry) => (
             <button
               key={sectionEntry.value}
               onClick={() => props.onSectionChange(sectionEntry.value)}
               className={cn(
-                "flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] transition-colors duration-150",
+                "flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] transition-colors duration-150 max-md:h-11 max-md:text-[14px]",
                 sectionEntry.value === activeSection.value ? "bg-foreground/[0.07] font-medium" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
               )}
             >
@@ -233,9 +238,8 @@ export function SettingsScreen(props: SettingsScreenProps) {
               {sectionEntry.label}
             </button>
           ))}
-        </nav>
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <div key={activeSection.value} className="mx-auto max-w-xl animate-in px-6 py-6 fade-in duration-200">
+        detail={
+          <div key={activeSection.value} className="mx-auto max-w-xl animate-in px-4 py-5 fade-in duration-200 md:px-6 md:py-6">
             <h2 className="mb-5 text-[15px] font-semibold">{activeSection.label}</h2>
             {activeSection.value === "claude" ? (
               <div className="grid gap-6">
@@ -348,7 +352,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
           </div>
             ) : activeSection.value === "voice" ? (
           <div key="voice" className="grid animate-in gap-4 fade-in duration-200">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <FormField label={t("Spracherkennung")}>
                 <Select value={voiceDraft.sttProvider} onValueChange={(value) => setVoiceDraft((previous) => ({ ...previous, sttProvider: value as SttProvider }))}>
                   <SelectTrigger className="w-full">
@@ -414,8 +418,8 @@ export function SettingsScreen(props: SettingsScreenProps) {
               <MemorySettingsSection onError={props.onError} />
             )}
           </div>
-        </div>
-      </div>
+        }
+      />
     </ScreenLayout>
   );
 }

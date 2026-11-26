@@ -9,6 +9,7 @@ import { formatRelativeTime } from "@/components/form-field";
 import { summarizeToolInput } from "@/components/chat/tool-group";
 import { InlineMarkdown } from "@/components/inline-markdown";
 import { locale, t } from "@/lib/i18n";
+import { MobileNavButton } from "@/lib/mobile";
 
 type TodayScreenProps = {
   projects: Project[];
@@ -48,9 +49,9 @@ function SessionRow(props: {
   onOpen: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-3 px-3 py-2.5">
+    <div className="group flex items-center gap-3 px-3 py-2.5 max-md:flex-wrap">
       <div className="shrink-0">{props.leading}</div>
-      <button className="min-w-0 flex-1 text-left" onClick={props.onOpen}>
+      <button className="min-w-0 flex-1 basis-40 text-left" onClick={props.onOpen}>
         <div className="flex items-center gap-2">
           <span className="truncate text-[13px] font-medium">{props.reference.sessionTitle}</span>
           {props.showProject !== false && (
@@ -139,13 +140,16 @@ export function TodayScreen(props: TodayScreenProps) {
 
   return (
     <section className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto grid w-full max-w-2xl min-w-0 animate-in grid-cols-[minmax(0,1fr)] gap-8 px-6 py-10 fade-in duration-200">
-        <header>
-          <h1 className="text-[20px] font-semibold">{t("Heute")}</h1>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">
-            {new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })}
-            {overview && nothingPending && t(" · Nichts wartet auf dich.")}
-          </p>
+      <div className="mx-auto grid w-full max-w-2xl min-w-0 animate-in grid-cols-[minmax(0,1fr)] gap-8 px-4 pt-3 pb-[max(2.5rem,env(safe-area-inset-bottom))] fade-in duration-200 md:px-6 md:py-10">
+        <header className="flex items-start gap-2">
+          <MobileNavButton className="ml-[-0.5rem] mt-0.5" />
+          <div className="min-w-0">
+            <h1 className="text-[20px] font-semibold">{t("Heute")}</h1>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
+              {new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })}
+              {overview && nothingPending && t(" · Nichts wartet auf dich.")}
+            </p>
+          </div>
         </header>
 
         {waiting.length > 0 && (

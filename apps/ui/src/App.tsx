@@ -7,6 +7,8 @@ import { safeStorage } from "@/lib/storage";
 import { useTheme } from "@/hooks/use-theme";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { MobileNavContext, useIsMobile } from "@/lib/mobile";
 import { AppSidebar, featureScreens } from "@/components/app-sidebar";
 import { CommandPalette, type PaletteCommand } from "@/components/command-palette";
 import { ChatPane } from "@/components/chat/chat-pane";
@@ -106,6 +108,14 @@ export function App() {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: "harnold-shell-v2", storage: safeStorage });
   const { defaultLayout: mainDefaultLayout, onLayoutChanged: onMainLayoutChanged } = useDefaultLayout({ id: "harnold-main", storage: safeStorage });
   const { route, navigate } = useHashRoute();
+  const isMobile = useIsMobile();
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
+  const mobileNavigation = useMemo(() => ({ openNavigation: () => setMobileNavOpen(true) }), []);
+  // Back/forward or a link changed the screen: the drawer has done its job.
+  useEffect(() => setMobileNavOpen(false), [route]);
 
   const workspaceOpenRef = useRef(true);
   const openWorkspaceRef = useRef<() => void>(() => undefined);
@@ -290,7 +300,7 @@ export function App() {
             if (serverEvent.projectId !== currentProjectId) return;
             setLastChangedPaths(serverEvent.paths);
             // The agent built something visible (design draft, generated image): open the canvas so it shows up.
-            if (!workspaceOpenRef.current && serverEvent.paths.some((changedPath) => /(^|\/)(design\/.+\.html?|assets\/generated\/.+)$/i.test(changedPath))) openWorkspaceRef.current();
+            if (!workspaceOpenRef.current && !isMobileRef.current && serverEvent.paths.some((changedPath) => /(^|\/)(design\/.+\.html?|assets\/generated\/.+)$/i.test(changedPath))) openWorkspaceRef.current();
             setFileChangeCounter((previous) => previous + 1);
             return;
           case "sessions_changed":
@@ -457,10 +467,12 @@ export function App() {
   };
 
   const setWorkspaceVisibility = (visible: boolean) => {
+    if (isMobileRef.current) return setMobileWorkspaceOpen(visible);
     animatePanels();
     requestAnimationFrame(() => (visible ? workspacePanelRef.current?.expand() : workspacePanelRef.current?.collapse()));
   };
   const toggleSidebar = () => {
+    if (isMobileRef.current) return setMobileNavOpen((open) => !open);
     animatePanels();
     requestAnimationFrame(() => (sidebarCollapsed ? sidebarPanelRef.current?.expand() : sidebarPanelRef.current?.collapse()));
   };
@@ -728,7 +740,7 @@ export function App() {
   const toggleTheme = () => setThemePreference(resolvedTheme === "dark" ? "light" : "dark");
   const toggleWorkspace = () => {
     if (route.screen !== "workspace") return navigate("/");
-    setWorkspaceVisibility(!workspaceOpenRef.current);
+    setWorkspaceVisibility(isMobileRef.current ? !mobileWorkspaceOpen : !workspaceOpenRef.current);
   };
   /** Jumps to the previous/next conversation of the active project (sidebar order). */
   const stepSession = (step: 1 | -1) => {
@@ -946,6 +958,7 @@ export function App() {
             onAgentRolesChange={setAgentRoles}
             onClaudeStatusChange={setClaudeStatus}
             onSectionChange={(section) => navigate(routePath("settings", section))}
+            sectionChosen={Boolean(route.section)}
             themePreference={themePreference}
             onThemePreferenceChange={setThemePreference}
             voiceSettings={voiceSettings}
@@ -958,6 +971,179 @@ export function App() {
     }
   };
 
+  const sidebarProps: Omit<React.ComponentProps<typeof AppSidebar>, "collapsed" | "onToggleCollapsed"> = {
+    toggleShortcut: shortcutHint("toggleSidebar"),
+    projects: projects,
+    sessionsByProjectId: sessionsByProjectId,
+    expandedProjectIds: expandedProjectIds,
+    onToggleProject: (projectId, expanded) => {
+      setExpandedProjectIds((previous) => {
+        const next = new Set(previous);
+        if (expanded) next.add(projectId);
+        else next.delete(projectId);
+        return next;
+      });
+      if (expanded && projectId !== activeProjectId) {
+        setActiveProjectId(projectId);
+        setActiveSessionId(null);
+      }
+    },
+    activeSessionId: activeSessionId,
+    sessionStatusFor: sessionStatusFor,
+    onSelectSession: (projectId, sessionId) => {
+      setActiveProjectId(projectId);
+      setActiveSessionId(latestVersionId(sessionId, sessionsByProjectId[projectId] ?? []));
+      navigate("/");
+    },
+    onCreateSession: (projectId) => {
+      navigate("/");
+      void createSession(projectId);
+    },
+    sessionActions: sessionActions,
+    projectActions: projectActions,
+    tasks: tasks,
+    onOpenTask: (taskId) => navigate(routePath("tasks", taskId)),
+    onRunTask: (taskId) => void api.runTask(taskId).catch(reportError),
+    onNewProject: () => setNewProjectDialogOpen(true),
+    onNewQuickChat: () => void createQuickChat(),
+    onOpenSearch: () => setCommandPaletteOpen(true),
+    activeScreen: route.screen,
+    onOpenScreen: (screen) => navigate(screen === "workspace" ? "/" : routePath(screen)),
+    darkMode: resolvedTheme === "dark",
+    onDarkModeChange: (darkMode) => setThemePreference(darkMode ? "dark" : "light"),
+    environments: environments,
+    activeEnvironmentId: activeEnvironmentId,
+    onActiveEnvironmentChange: switchEnvironment,
+    taskCount: tasks.length,
+    waitingCount: permissionRequests.length,
+    channelsStatus: channels.length === 0
+        ? null
+        : channels.some((channel) => channel.status.state === "error")
+          ? "error"
+          : channels.some((channel) => channel.status.state === "connected")
+            ? "running"
+            : channelStatusDot(channels[0]),
+  };
+
+  const chatPane = (
+    <ChatPane
+      teamAgents={teamForProject(activeProjectId)}
+      onSetAgent={(agentId) => activeSessionId && api.setSessionAgent(activeSessionId, agentId).catch(reportError)}
+      project={activeProject}
+      session={activeSession}
+      status={activeSessionId ? sessionStatusFor(activeSessionId) : "idle"}
+      chatItems={chatItems}
+      streamingDraft={streamingDraft}
+      streamingThinking={streamingThinking}
+      projects={projects}
+      environments={environments}
+      onNewSession={() => activeProjectId && void createSession(activeProjectId)}
+      onRenameSession={(title) => activeSessionId && api.updateSession(activeSessionId, { title }).catch(reportError)}
+      onMoveSession={(projectId) =>
+        activeSessionId &&
+        api
+          .updateSession(activeSessionId, { projectId })
+          .then((moveResult) => moveResult.deferred && toast.info(t("Wird nach diesem Durchlauf verschoben")))
+          .catch(reportError)
+      }
+      onSetProjectEnvironment={(environmentId) =>
+        activeProjectId && api.setProjectEnvironment(activeProjectId, environmentId).then(() => refreshEnvironments()).catch(reportError)
+      }
+      onClearSession={() => activeSessionId && api.clearSession(activeSessionId).catch(reportError)}
+      permissionRequests={permissionRequests.filter((request) => request.sessionId === activeSessionId)}
+      composerInsertion={composerInsertion}
+      workspaceOpen={isMobile ? false : workspaceOpen}
+      onOpenWorkspace={() => setWorkspaceVisibility(true)}
+      onSend={sendToAgent}
+      onSubmitSecret={(requestId, value) => api.submitSecretInput(requestId, value).catch(reportError)}
+      onSessionModelChange={(model) => activeSessionId && api.updateSession(activeSessionId, { model: model || null }).catch(reportError)}
+      inheritedModel={inheritedModelFor(activeProjectId)}
+      onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
+      onAnswerPermission={(requestId, answer) => api.answerPermission(requestId, answer).catch(reportError)}
+      onDeleteSession={() => activeSession && void deleteSession(activeSession)}
+      projectSessions={activeProjectId ? (sessionsByProjectId[activeProjectId] ?? []) : []}
+      onOpenVersion={setActiveSessionId}
+      onEditMessage={(itemId, text) => void editMessage(itemId, text)}
+      sttMode={voiceSettings?.sttProvider === "system" ? (systemSpeechAvailable() ? "system" : "off") : voiceSettings?.sttReady ? "server" : "off"}
+      sttLanguage={voiceSettings?.language ?? "de"}
+      ttsReady={voiceSettings?.ttsReady ?? false}
+      onError={reportError}
+      queuedMessages={queuedMessages}
+      onSendQueuedNow={(queuedMessageId) => activeSessionId && api.sendQueuedNow(activeSessionId, queuedMessageId).catch(reportError)}
+      onRemoveQueued={(queuedMessageId) => activeSessionId && api.removeQueued(activeSessionId, queuedMessageId).catch(reportError)}
+      liveContextTokens={liveContextTokens}
+      agentStatus={agentStatus}
+      backgroundTasks={backgroundTasks}
+      onStopBackgroundTask={(taskId) => activeSessionId && api.stopBackgroundTask(activeSessionId, taskId).catch(reportError)}
+    />
+  );
+
+  const workspacePane = activeProject ? (
+      <WorkspacePane
+        key={activeProject.id}
+        project={activeProject}
+        resolvedTheme={resolvedTheme}
+        fileChangeCounter={fileChangeCounter}
+        lastChangedPaths={lastChangedPaths}
+        onReferenceFile={(filePath) => setComposerInsertion({ text: `@${filePath} `, nonce: Date.now() })}
+        onInsertIntoComposer={(text) => setComposerInsertion({ text, nonce: Date.now() })}
+        onImplementDesign={(filePath) =>
+          sendToAgent(t("Setze den Entwurf @{0} im Projekt-Code um. Nutze vorhandene Struktur und das Design System.", filePath), "acceptEdits")
+        }
+        onClose={() => setWorkspaceVisibility(false)}
+        onError={reportError}
+      />
+    ) : (
+      <div className="h-full bg-canvas" />
+    );
+
+  /** Mobile: the sidebar closes as soon as something in it is chosen. */
+  const closingMobileNav = <Arguments extends unknown[]>(handler: (...handlerArguments: Arguments) => void) => (...handlerArguments: Arguments) => {
+    setMobileNavOpen(false);
+    setMobileWorkspaceOpen(false);
+    handler(...handlerArguments);
+  };
+
+  const mobileShell = (
+    <MobileNavContext.Provider value={mobileNavigation}>
+      <div className="relative h-dvh overflow-hidden pt-[env(safe-area-inset-top)]">
+        {/* Chat stays mounted (scroll position, composer draft) while a feature screen covers it. */}
+        <div className={cn("h-full", route.screen !== "workspace" && "invisible")} aria-hidden={route.screen !== "workspace"}>
+          {chatPane}
+        </div>
+        {route.screen !== "workspace" && <div className="absolute inset-0 z-10 pt-[env(safe-area-inset-top)]">{renderFeatureScreen()}</div>}
+        {mobileWorkspaceOpen && activeProject && route.screen === "workspace" && (
+          <div className="fixed inset-0 z-40 flex animate-in flex-col bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] fade-in slide-in-from-bottom-4 duration-200">
+            {workspacePane}
+          </div>
+        )}
+      </div>
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="w-[min(100vw,420px)] gap-0 border-r-0 p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] data-[state=closed]:duration-200 data-[state=open]:duration-300 sm:max-w-none"
+        >
+          <SheetTitle className="sr-only">{t("Navigation")}</SheetTitle>
+          <SheetDescription className="sr-only">{t("Projekte, Chats und Bereiche")}</SheetDescription>
+          <AppSidebar
+            {...sidebarProps}
+            collapsed={false}
+            mobile
+            onToggleCollapsed={() => setMobileNavOpen(false)}
+            onSelectSession={closingMobileNav(sidebarProps.onSelectSession)}
+            onCreateSession={closingMobileNav(sidebarProps.onCreateSession)}
+            onOpenTask={closingMobileNav(sidebarProps.onOpenTask)}
+            onNewProject={closingMobileNav(sidebarProps.onNewProject)}
+            onNewQuickChat={closingMobileNav(sidebarProps.onNewQuickChat)}
+            onOpenSearch={closingMobileNav(sidebarProps.onOpenSearch)}
+            onOpenScreen={closingMobileNav(sidebarProps.onOpenScreen)}
+          />
+        </SheetContent>
+      </Sheet>
+    </MobileNavContext.Provider>
+  );
+
   return (
     <TooltipProvider delayDuration={400}>
       <div className={cn("h-full", panelsAnimating && "panels-animating")}>
@@ -966,6 +1152,7 @@ export function App() {
             {t("Live-Verbindung getrennt – verbinde neu …")}
           </div>
         )}
+        {isMobile ? mobileShell : (
         <ResizablePanelGroup id="harnold-shell" orientation="horizontal" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
           <ResizablePanel
             id="sidebar"
@@ -977,63 +1164,7 @@ export function App() {
             collapsedSize={52}
             onResize={(panelSize) => setSidebarCollapsed(panelSize.inPixels < 120)}
           >
-            <AppSidebar
-              collapsed={sidebarCollapsed}
-              onToggleCollapsed={toggleSidebar}
-              toggleShortcut={shortcutHint("toggleSidebar")}
-              projects={projects}
-              sessionsByProjectId={sessionsByProjectId}
-              expandedProjectIds={expandedProjectIds}
-              onToggleProject={(projectId, expanded) => {
-                setExpandedProjectIds((previous) => {
-                  const next = new Set(previous);
-                  if (expanded) next.add(projectId);
-                  else next.delete(projectId);
-                  return next;
-                });
-                if (expanded && projectId !== activeProjectId) {
-                  setActiveProjectId(projectId);
-                  setActiveSessionId(null);
-                }
-              }}
-              activeSessionId={activeSessionId}
-              sessionStatusFor={sessionStatusFor}
-              onSelectSession={(projectId, sessionId) => {
-                setActiveProjectId(projectId);
-                setActiveSessionId(latestVersionId(sessionId, sessionsByProjectId[projectId] ?? []));
-                navigate("/");
-              }}
-              onCreateSession={(projectId) => {
-                navigate("/");
-                void createSession(projectId);
-              }}
-              sessionActions={sessionActions}
-              projectActions={projectActions}
-              tasks={tasks}
-              onOpenTask={(taskId) => navigate(routePath("tasks", taskId))}
-              onRunTask={(taskId) => void api.runTask(taskId).catch(reportError)}
-              onNewProject={() => setNewProjectDialogOpen(true)}
-              onNewQuickChat={() => void createQuickChat()}
-              onOpenSearch={() => setCommandPaletteOpen(true)}
-              activeScreen={route.screen}
-              onOpenScreen={(screen) => navigate(screen === "workspace" ? "/" : routePath(screen))}
-              darkMode={resolvedTheme === "dark"}
-              onDarkModeChange={(darkMode) => setThemePreference(darkMode ? "dark" : "light")}
-              environments={environments}
-              activeEnvironmentId={activeEnvironmentId}
-              onActiveEnvironmentChange={switchEnvironment}
-              taskCount={tasks.length}
-              waitingCount={permissionRequests.length}
-              channelsStatus={
-                channels.length === 0
-                  ? null
-                  : channels.some((channel) => channel.status.state === "error")
-                    ? "error"
-                    : channels.some((channel) => channel.status.state === "connected")
-                      ? "running"
-                      : channelStatusDot(channels[0])
-              }
-            />
+            <AppSidebar {...sidebarProps} collapsed={sidebarCollapsed} onToggleCollapsed={toggleSidebar} />
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel id="main" minSize={480}>
@@ -1042,56 +1173,7 @@ export function App() {
               <div className={cn("h-full", route.screen !== "workspace" && "invisible")} aria-hidden={route.screen !== "workspace"}>
                 <ResizablePanelGroup id="harnold-main" orientation="horizontal" defaultLayout={mainDefaultLayout} onLayoutChanged={onMainLayoutChanged}>
           <ResizablePanel id="chat" defaultSize="42" minSize={360} className="relative">
-            <ChatPane
-              teamAgents={teamForProject(activeProjectId)}
-              onSetAgent={(agentId) => activeSessionId && api.setSessionAgent(activeSessionId, agentId).catch(reportError)}
-              project={activeProject}
-              session={activeSession}
-              status={activeSessionId ? sessionStatusFor(activeSessionId) : "idle"}
-              chatItems={chatItems}
-              streamingDraft={streamingDraft}
-              streamingThinking={streamingThinking}
-              projects={projects}
-              environments={environments}
-              onNewSession={() => activeProjectId && void createSession(activeProjectId)}
-              onRenameSession={(title) => activeSessionId && api.updateSession(activeSessionId, { title }).catch(reportError)}
-              onMoveSession={(projectId) =>
-                activeSessionId &&
-                api
-                  .updateSession(activeSessionId, { projectId })
-                  .then((moveResult) => moveResult.deferred && toast.info(t("Wird nach diesem Durchlauf verschoben")))
-                  .catch(reportError)
-              }
-              onSetProjectEnvironment={(environmentId) =>
-                activeProjectId && api.setProjectEnvironment(activeProjectId, environmentId).then(() => refreshEnvironments()).catch(reportError)
-              }
-              onClearSession={() => activeSessionId && api.clearSession(activeSessionId).catch(reportError)}
-              permissionRequests={permissionRequests.filter((request) => request.sessionId === activeSessionId)}
-              composerInsertion={composerInsertion}
-              workspaceOpen={workspaceOpen}
-              onOpenWorkspace={() => setWorkspaceVisibility(true)}
-              onSend={sendToAgent}
-              onSubmitSecret={(requestId, value) => api.submitSecretInput(requestId, value).catch(reportError)}
-              onSessionModelChange={(model) => activeSessionId && api.updateSession(activeSessionId, { model: model || null }).catch(reportError)}
-              inheritedModel={inheritedModelFor(activeProjectId)}
-              onInterrupt={() => activeSessionId && api.interrupt(activeSessionId).catch(reportError)}
-              onAnswerPermission={(requestId, answer) => api.answerPermission(requestId, answer).catch(reportError)}
-              onDeleteSession={() => activeSession && void deleteSession(activeSession)}
-              projectSessions={activeProjectId ? (sessionsByProjectId[activeProjectId] ?? []) : []}
-              onOpenVersion={setActiveSessionId}
-              onEditMessage={(itemId, text) => void editMessage(itemId, text)}
-              sttMode={voiceSettings?.sttProvider === "system" ? (systemSpeechAvailable() ? "system" : "off") : voiceSettings?.sttReady ? "server" : "off"}
-              sttLanguage={voiceSettings?.language ?? "de"}
-              ttsReady={voiceSettings?.ttsReady ?? false}
-              onError={reportError}
-              queuedMessages={queuedMessages}
-              onSendQueuedNow={(queuedMessageId) => activeSessionId && api.sendQueuedNow(activeSessionId, queuedMessageId).catch(reportError)}
-              onRemoveQueued={(queuedMessageId) => activeSessionId && api.removeQueued(activeSessionId, queuedMessageId).catch(reportError)}
-              liveContextTokens={liveContextTokens}
-              agentStatus={agentStatus}
-              backgroundTasks={backgroundTasks}
-              onStopBackgroundTask={(taskId) => activeSessionId && api.stopBackgroundTask(activeSessionId, taskId).catch(reportError)}
-            />
+            {chatPane}
             <AppVersionBadge onOpenSettings={() => navigate(routePath("settings"))} />
           </ResizablePanel>
           <ResizableHandle />
@@ -1103,24 +1185,7 @@ export function App() {
             collapsedSize={0}
             onResize={(panelSize) => setWorkspaceOpen(panelSize.inPixels > 0)}
           >
-            {activeProject ? (
-              <WorkspacePane
-                key={activeProject.id}
-                project={activeProject}
-                resolvedTheme={resolvedTheme}
-                fileChangeCounter={fileChangeCounter}
-                lastChangedPaths={lastChangedPaths}
-                onReferenceFile={(filePath) => setComposerInsertion({ text: `@${filePath} `, nonce: Date.now() })}
-                onInsertIntoComposer={(text) => setComposerInsertion({ text, nonce: Date.now() })}
-                onImplementDesign={(filePath) =>
-                  sendToAgent(t("Setze den Entwurf @{0} im Projekt-Code um. Nutze vorhandene Struktur und das Design System.", filePath), "acceptEdits")
-                }
-                onClose={() => setWorkspaceVisibility(false)}
-                onError={reportError}
-              />
-            ) : (
-              <div className="h-full bg-canvas" />
-            )}
+            {workspacePane}
           </ResizablePanel>
                 </ResizablePanelGroup>
               </div>
@@ -1133,6 +1198,7 @@ export function App() {
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
+        )}
       </div>
 
       {onboardingVisible && (

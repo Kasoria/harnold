@@ -152,7 +152,7 @@ function ChannelEditor(props: {
         </FormField>
       )}
       <p className="-mt-1 text-[12px] leading-snug text-muted-foreground">{typeDefinition.hint}</p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label={t("Name")}>
           <Input value={channelInput.name} onChange={(event) => updateInput({ name: event.target.value })} />
         </FormField>
@@ -168,7 +168,7 @@ function ChannelEditor(props: {
           />
         </FormField>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {typeDefinition.fields.map((field) => (
           <div key={field.key} className={cn(field.secret && "col-span-2")}>
             <FormField label={field.label}>
@@ -341,6 +341,8 @@ export function ChannelsScreen(props: ChannelsScreenProps) {
       }
     >
       <MasterDetail
+        detailOpen={props.selectedChannelId === "new" || Boolean(selectedChannel)}
+        onBack={() => props.onSelectChannel(null)}
         list={
           props.channels.length === 0 ? (
             <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Noch keine Channels.")}</p>

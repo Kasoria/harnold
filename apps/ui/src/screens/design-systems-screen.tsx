@@ -71,6 +71,8 @@ export function DesignSystemsScreen(props: DesignSystemsScreenProps) {
       }
     >
       <MasterDetail
+        detailOpen={Boolean(props.selection)}
+        onBack={() => props.onSelect(null)}
         list={
           designSystems.length === 0 ? (
             <p className="p-3 text-[12.5px] text-muted-foreground">{t("Noch keine Design Systems.")}</p>
@@ -280,7 +282,7 @@ function DesignSystemDetailView(props: {
   const agentTarget = designSystem.links[0] ?? null;
 
   return (
-    <div className="mx-auto max-w-4xl animate-in px-6 py-5 fade-in duration-200">
+    <div className="mx-auto max-w-4xl animate-in px-4 py-4 md:px-6 md:py-5 fade-in duration-200">
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={nameDraft}

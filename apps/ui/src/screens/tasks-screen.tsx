@@ -169,7 +169,7 @@ function TaskEditor(props: {
           onValueChange={(value) => updateInput({ agentId: value === "default" ? null : value })}
         />
       </FormField>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label={t("Rechte")}>
           <Select value={taskInput.permissionMode} onValueChange={(value) => updateInput({ permissionMode: value as TaskInput["permissionMode"] })}>
             <SelectTrigger className="w-full">
@@ -411,6 +411,8 @@ export function TasksScreen(props: TasksScreenProps) {
       }
     >
       <MasterDetail
+        detailOpen={creatingTask || Boolean(selectedTask)}
+        onBack={() => props.onSelectTask(null)}
         list={
           props.tasks.length === 0 ? (
             <p className="px-2 py-6 text-center text-[12.5px] text-muted-foreground">{t("Noch keine Tasks.")}</p>

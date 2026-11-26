@@ -27,7 +27,7 @@ export function CopyButton({ readText, className, label }: { readText: () => str
 function CodeBlock(props: React.ComponentProps<"pre">) {
   const preRef = useRef<HTMLPreElement>(null);
   return (
-    <div className="group/code relative">
+    <div className="group/code relative my-2">
       <pre ref={preRef} {...props} />
       <CopyButton
         readText={() => preRef.current?.innerText.replace(/\n$/, "") ?? ""}

@@ -69,3 +69,23 @@ Hinweis: Das fertige Image aus der Registry enthält diese Extras nicht, nach `-
 
 ## Sichern
 Volumes `harnold-data` (Projekte, Datenbank) und `harnold-home` (Logins, Tools) regelmäßig sichern.
+
+## Release aus der Cloud (ohne lokalen Mac)
+
+Der Workflow `.github/workflows/desktop-release.yml` baut, signiert und notarisiert die macOS-App auf einem GitHub-macOS-Runner, veröffentlicht das Release, pusht den Versions-Commit und baut danach das Server-Image.
+
+Start (vom Server oder überall mit `gh`): `gh workflow run desktop-release.yml -f version=0.20.1 -f notes="Was ist neu"`
+
+Einmalig als Repo-Secrets (`gh secret set <NAME> --repo Kasoria/harnold`):
+
+| Secret | Inhalt |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | Inhalt von `~/.tauri/harnold.key` (Updater-Key; muss derselbe bleiben, sonst nehmen Apps keine Updates an) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Passwort des Keys (leer, falls keins) |
+| `APPLE_CERTIFICATE` | Developer-ID-Zertifikat als `.p12`, base64 (`base64 -i cert.p12`) |
+| `APPLE_CERTIFICATE_PASSWORD` | Passwort der `.p12` |
+| `APPLE_API_KEY` | Key-ID des App-Store-Connect-API-Keys |
+| `APPLE_API_ISSUER` | Issuer-ID |
+| `APPLE_API_KEY_P8` | Inhalt der `.p8`-Datei |
+
+Die Werte stehen auf dem bisherigen Mac (`~/.tauri/harnold.key`, `~/.tauri/harnold-notary.env`, Developer-ID-Zertifikat im Schlüsselbund → Schlüsselbundverwaltung → Exportieren als `.p12`).

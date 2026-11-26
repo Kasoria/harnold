@@ -1,0 +1,89 @@
+# Baut, signiert und notarisiert die macOS-App und veröffentlicht sie als GitHub Release (Auto-Update der Desktop-App).
+# Start (z. B. vom Server aus): gh workflow run desktop-release.yml -f version=0.20.1 -f notes="Was ist neu"
+# Danach wird das Server-Image gebaut (docker-image.yml). Benötigte Secrets: siehe DEPLOY.md → „Release aus der Cloud“.
+name: Desktop-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Neue Version (SemVer, z. B. 0.20.1)"
+        required: true
+      notes:
+        description: "Release-Notes (kurz, Deutsch)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency: desktop-release
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.13.1
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+
+      # Developer-ID-Zertifikat in einen temporären Schlüsselbund, damit signing.ts es per `security find-identity` findet.
+      - name: Signatur-Zertifikat einrichten
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/build.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      - name: Notarisierungs-Key ablegen
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          echo "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/notary-key.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary-key.p8" >> "$GITHUB_ENV"
+
+      - name: Release bauen und veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: pnpm --filter @harnold/desktop release "$RELEASE_VERSION" "$RELEASE_NOTES"
+
+      - name: Versions-Commit
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "Christian Wenterodt"
+          git config user.email "kontakt@kasoria.com"
+          git add -A apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock
+          git commit -m "Version $RELEASE_VERSION"
+          git push origin main
+
+      # Mit GITHUB_TOKEN veröffentlichte Releases lösen keine anderen Workflows aus – das Server-Image darum ausdrücklich bauen.
+      - name: Server-Image bauen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: gh workflow run docker-image.yml -f version="$RELEASE_VERSION"

@@ -285,6 +285,20 @@ export function ChatPane(props: ChatPaneProps) {
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
   }, [props.chatItems.length, props.streamingDraft, props.streamingThinking, props.permissionRequests.length, props.queuedMessages.length]);
 
+  // A new approval always scrolls into view – otherwise it waits unseen above and the agent looks stuck.
+  const previousPermissionCountRef = useRef(0);
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (props.permissionRequests.length > previousPermissionCountRef.current && scrollContainer) {
+      stickToBottomRef.current = true;
+      setShowJumpToBottom(false);
+      requestAnimationFrame(() => {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      });
+    }
+    previousPermissionCountRef.current = props.permissionRequests.length;
+  }, [props.permissionRequests.length]);
+
   // A session always opens at its last message.
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;

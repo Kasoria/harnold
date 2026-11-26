@@ -148,6 +148,18 @@ export function App() {
     else safeStorage.removeItem(activeEnvironmentStorageKey);
   }, [activeEnvironmentId]);
 
+  /** Replaces the open approvals with what the server has waiting (events missed while offline, e.g. phone locked, would otherwise leave cards missing or stale). */
+  const syncPermissionRequests = useCallback(
+    () =>
+      api
+        .readToday()
+        .then((overview) =>
+          setPermissionRequests(overview.waiting.map(({ requestId, sessionId, toolName, input, alwaysAllowLabel }) => ({ requestId, sessionId, toolName, input, alwaysAllowLabel }))),
+        )
+        .catch(() => undefined),
+    [],
+  );
+
   useEffect(() => {
     void refreshTasks();
     void refreshChannels();
@@ -155,17 +167,7 @@ export function App() {
     void refreshEnvironments();
     void refreshTeam();
     // Approvals that were already waiting before this window opened.
-    api
-      .readToday()
-      .then((overview) =>
-        setPermissionRequests((previous) => [
-          ...previous,
-          ...overview.waiting
-            .filter((waiting) => !previous.some((request) => request.requestId === waiting.requestId))
-            .map(({ requestId, sessionId, toolName, input }) => ({ requestId, sessionId, toolName, input })),
-        ]),
-      )
-      .catch(reportError);
+    void syncPermissionRequests();
     api.readDefaultModel().then((modelSettings) => setDefaultModel(modelSettings.defaultModel)).catch(reportError);
     api.readAgentRoles().then(setAgentRoles).catch(() => undefined);
     api.readProviders().then(setProviders).catch(reportError);
@@ -281,7 +283,7 @@ export function App() {
             if (serverEvent.sessionId === currentSessionId) setLiveContextTokens(serverEvent.tokens);
             return;
           case "permission_request":
-            setPermissionRequests((previous) => [...previous, serverEvent]);
+            setPermissionRequests((previous) => (previous.some((request) => request.requestId === serverEvent.requestId) ? previous : [...previous, serverEvent]));
             return;
           case "permission_resolved":
             setPermissionRequests((previous) => previous.filter((request) => request.requestId !== serverEvent.requestId));
@@ -379,6 +381,7 @@ export function App() {
         }
         setStreamingDraft("");
         setStreamingThinking("");
+        void syncPermissionRequests();
         if (currentProjectId) void refreshSessions(currentProjectId);
         api.listProjects().then(setProjects).catch(() => undefined);
         void refreshTasks();
@@ -388,7 +391,7 @@ export function App() {
         setTodayReloadCounter((previous) => previous + 1);
         setFileChangeCounter((previous) => previous + 1);
       }),
-    [refreshSessions, refreshTasks, refreshChannels, refreshMail, refreshEnvironments, navigate],
+    [refreshSessions, refreshTasks, refreshChannels, refreshMail, refreshEnvironments, syncPermissionRequests, navigate],
   );
 
   // The model pickers list the models of the active provider.

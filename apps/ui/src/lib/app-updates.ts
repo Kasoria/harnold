@@ -3,24 +3,33 @@ import { accessToken, coreBaseUrl } from "@/api";
 
 /** App version and updates: desktop (Tauri commands in updates.rs) installs itself, a Docker server only reports a newer release. */
 type TauriInternals = { invoke: <Result>(command: string, args?: Record<string, unknown>) => Promise<Result> };
-export type AvailableUpdate = { version: string; notes: string | null };
+/** imageReady = false: released, but the Docker image is still being built – not installable yet. */
+export type AvailableUpdate = { version: string; notes: string | null; imageReady: boolean };
 
 const tauriInternals = () => (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
 
 export const appVersion = __HARNOLD_VERSION__;
 /** Desktop app: updates install themselves. Docker server: the UI only reports; the update runs on the server. */
 export type UpdateMode = "desktop" | "docker";
-type ServerUpdateInfo = { deployment: string; latest: { version: string; notes: string | null; url: string } | null; canInstall?: boolean };
+type ServerUpdateInfo = { deployment: string; latest: { version: string; notes: string | null; url: string } | null; imageReady?: boolean; canInstall?: boolean };
 
 export const updatesSupported = () => Boolean(tauriInternals());
 
 let serverInfoRequest: Promise<ServerUpdateInfo | null> | null = null;
+/** Background: one shared request, failures count as "nothing known". Forced (button): always live, failures are thrown. */
 function loadServerInfo(forceRefresh = false): Promise<ServerUpdateInfo | null> {
-  if (forceRefresh || !serverInfoRequest) {
-    serverInfoRequest = fetch(`${coreBaseUrl}/api/update-check${forceRefresh ? "?fresh=1" : ""}`, { headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} })
-      .then((response) => (response.ok ? (response.json() as Promise<ServerUpdateInfo>) : null))
-      .catch(() => null);
+  if (forceRefresh) {
+    const freshRequest = fetch(`${coreBaseUrl}/api/update-check?fresh=1&at=${Date.now()}`, { cache: "no-store", headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} }).then(async (response) => {
+      const body = (await response.json().catch(() => null)) as (ServerUpdateInfo & { error?: string }) | null;
+      if (!response.ok || !body) throw new Error(body?.error ?? `HTTP ${response.status}`);
+      return body;
+    });
+    serverInfoRequest = freshRequest.catch(() => null);
+    return freshRequest;
   }
+  serverInfoRequest ??= fetch(`${coreBaseUrl}/api/update-check`, { cache: "no-store", headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} })
+    .then((response) => (response.ok ? (response.json() as Promise<ServerUpdateInfo>) : null))
+    .catch(() => null);
   return serverInfoRequest;
 }
 
@@ -37,10 +46,13 @@ const isNewerVersion = (candidate: string, current: string): boolean => {
 
 export async function checkForUpdate(): Promise<AvailableUpdate | null> {
   const internals = tauriInternals();
-  if (internals) return internals.invoke<AvailableUpdate | null>("check_for_update");
+  if (internals) {
+    const desktopUpdate = await internals.invoke<Omit<AvailableUpdate, "imageReady"> | null>("check_for_update");
+    return desktopUpdate ? { ...desktopUpdate, imageReady: true } : null;
+  }
   const info = await loadServerInfo(true);
   if (info?.deployment !== "docker" || !info.latest || !isNewerVersion(info.latest.version, appVersion)) return null;
-  return { version: info.latest.version, notes: info.latest.notes };
+  return { version: info.latest.version, notes: info.latest.notes, imageReady: info.imageReady !== false };
 }
 
 /** Docker server with an update service: the "Update" button works there, otherwise the UI shows the command. */
@@ -99,7 +111,10 @@ let backgroundCheck: Promise<AvailableUpdate | null> | null = null;
 export function useAvailableUpdate(): AvailableUpdate | null {
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   useEffect(() => {
-    backgroundCheck ??= checkForUpdate().catch(() => null);
+    // Only announce what can be installed (a Docker image still being built is not).
+    backgroundCheck ??= checkForUpdate()
+      .then((update) => (update?.imageReady ? update : null))
+      .catch(() => null);
     let active = true;
     void backgroundCheck.then((update) => active && setAvailableUpdate(update));
     return () => {

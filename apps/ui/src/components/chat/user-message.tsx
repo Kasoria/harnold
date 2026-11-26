@@ -4,11 +4,13 @@ import { Button } from "@/components/ui/button";
 import { cn, isActionEnter } from "@/lib/utils";
 import { CopyButton } from "./chat-markdown";
 import { SentAttachments } from "./attachment-views";
+import { MessageTimestamp } from "./message-timestamp";
 import type { Attachment } from "@/types";
 import { t } from "@/lib/i18n";
 
 type UserMessageProps = {
   text: string;
+  createdAt: number;
   projectId: string | null;
   attachments: Attachment[];
   /** Versions of this message (original + edits); null when there is only one. */
@@ -104,6 +106,7 @@ export function UserMessage(props: UserMessageProps) {
         </div>
       )}
       <div className="mt-0.5 flex items-center gap-0.5">
+        <MessageTimestamp createdAt={props.createdAt} className="group-hover/user:opacity-100" />
         <CopyButton readText={() => props.text} label={t("Kopieren")} className={hoverActionClassName} />
         {props.canEdit && (
           <Button variant="ghost" size="sm" className={cn(hoverActionClassName, "gap-1")} onClick={() => setEditDraft(props.text)}>

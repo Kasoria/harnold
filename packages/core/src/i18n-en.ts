@@ -3,6 +3,7 @@ export const englishTexts: Record<string, string> = {
   "Server-Adresse fehlt": "Server address missing",
   "Kein Archiv übertragen": "No archive received",
   "Ungültiges Archiv": "Invalid archive",
+  "GitHub ist nicht erreichbar ({0})": "GitHub is not reachable ({0})",
   "Nur auf einem Docker-Server möglich": "Only possible on a Docker server",
   "Keine Verbindung zu {0}": "Cannot connect to {0}",
   "Das Zugriffstoken stimmt nicht.": "The access token is wrong.",

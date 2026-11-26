@@ -21,7 +21,7 @@ export function AppVersionSetting() {
       const update = await checkForUpdate();
       setUpdateState(update ? { phase: "available", update } : { phase: "current" });
     } catch (checkError) {
-      setUpdateState({ phase: "error", message: String(checkError) });
+      setUpdateState({ phase: "error", message: checkError instanceof Error ? checkError.message : String(checkError) });
     }
   };
   const install = async () => {
@@ -40,7 +40,7 @@ export function AppVersionSetting() {
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground tabular-nums">{appVersion}</span>
           {updateMode &&
-            (shownState.phase === "available" && installsItself ? (
+            (shownState.phase === "available" && shownState.update.imageReady && installsItself ? (
               <Button size="sm" onClick={() => void install()}>
                 {t("Auf {0} aktualisieren", shownState.update.version)}
               </Button>
@@ -53,8 +53,11 @@ export function AppVersionSetting() {
         </div>
       </div>
       {shownState.phase === "current" && <p className="text-right text-[12px] text-muted-foreground">{t("Harnold ist aktuell.")}</p>}
-      {shownState.phase === "available" && installsItself && <p className="text-right text-[12px] text-muted-foreground">{updateMode === "docker" ? t("Lädt das neue Image und startet den Server neu. Laufende Sitzungen werden unterbrochen.") : t("Lädt das Update, installiert es und startet Harnold neu.")}</p>}
-      {shownState.phase === "available" && updateMode === "docker" && !canInstallOnServer && (
+      {shownState.phase === "available" && !shownState.update.imageReady && (
+        <p className="text-right text-[12px] text-muted-foreground">{t("Version {0} ist veröffentlicht, das Server-Image wird noch gebaut (meist rund 10 Minuten). Danach erneut prüfen.", shownState.update.version)}</p>
+      )}
+      {shownState.phase === "available" && shownState.update.imageReady && installsItself && <p className="text-right text-[12px] text-muted-foreground">{updateMode === "docker" ? t("Lädt das neue Image und startet den Server neu. Laufende Sitzungen werden unterbrochen.") : t("Lädt das Update, installiert es und startet Harnold neu.")}</p>}
+      {shownState.phase === "available" && shownState.update.imageReady && updateMode === "docker" && !canInstallOnServer && (
         <div className="grid gap-1 text-right text-[12px] text-muted-foreground">
           <span>{t("Version {0} ist verfügbar. Auf dem Server ausführen:", shownState.update.version)}</span>
           <code className="ml-auto rounded bg-muted px-2 py-1 font-mono text-[11px] text-foreground select-all">docker compose pull && docker compose up -d</code>

@@ -30,6 +30,7 @@ import { useSpeechPlayback } from "@/hooks/use-speech-playback";
 import { WorkGroup, type ToolResultItem, type ToolUseItem, type WorkStep } from "./tool-group";
 import { Composer } from "./composer";
 import { UserMessage } from "./user-message";
+import { MessageTimestamp } from "./message-timestamp";
 import { ImageGallery, imagePathsIn } from "./attachment-views";
 import { WorktreeControl } from "./worktree-control";
 import { ProjectQuickSelect } from "./project-quick-select";
@@ -479,6 +480,7 @@ export function ChatPane(props: ChatPaneProps) {
                   <UserMessage
                     key={chatItem.id}
                     text={chatItem.text}
+                    createdAt={chatItem.createdAt}
                     projectId={props.project?.id ?? null}
                     attachments={chatItem.attachments ?? []}
                     versions={versions && versions.versionSessionIds.length > 1 ? { currentIndex: versions.currentIndex, total: versions.versionSessionIds.length } : null}
@@ -524,6 +526,7 @@ export function ChatPane(props: ChatPaneProps) {
                         {speechPlayback.speakingKey === chatItem.id ? t("Stopp") : t("Vorlesen")}
                       </Button>
                     )}
+                    <MessageTimestamp createdAt={chatItem.createdAt} className="group-hover/answer:opacity-100" />
                     </div>
                   </div>
                 );

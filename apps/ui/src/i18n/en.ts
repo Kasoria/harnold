@@ -481,6 +481,7 @@ export const englishTexts: Record<string, string> = {
   "Workspace auf den Server übertragen?": "Transfer workspace to the server?",
   "Claude- und Codex-Konfiguration": "Claude and Codex configuration",
   "Weniger anzeigen": "Show less",
+  "Version {0} ist veröffentlicht, das Server-Image wird noch gebaut (meist rund 10 Minuten). Danach erneut prüfen.": "Version {0} is released, the server image is still being built (usually about 10 minutes). Check again afterwards.",
   "Ganze Nachricht anzeigen ({0} Zeilen)": "Show full message ({0} lines)",
   "Als Text einfügen": "Insert as text",
   "Eingefügter Text {0}.txt": "Pasted text {0}.txt",

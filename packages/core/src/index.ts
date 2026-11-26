@@ -160,10 +160,17 @@ app.get("/api/auth/check", (context) => context.json({ ok: true, tokenRequired: 
 
 /** Server mode: tells the UI whether a newer release exists (and, for Docker, whether its image is already published). */
 app.get("/api/update-check", async (context) => {
+  // Never cached by the browser or a proxy: "Nach Updates suchen" must always see the current state.
+  context.header("cache-control", "no-store");
   const deployment = process.env.HARNOLD_DEPLOYMENT ?? "local";
-  let latest = await latestRelease(context.req.query("fresh") === "1");
-  if (latest && deployment === "docker" && !(await imagePublished(latest.version))) latest = null;
-  return context.json({ deployment, latest, canInstall: Boolean(process.env.HARNOLD_UPDATER_URL) });
+  try {
+    const latest = await latestRelease(context.req.query("fresh") === "1");
+    // Docker: a release is installable only once its image is in the registry (built a few minutes after the release).
+    const imageReady = latest && deployment === "docker" ? await imagePublished(latest.version) : true;
+    return context.json({ deployment, latest, imageReady, canInstall: Boolean(process.env.HARNOLD_UPDATER_URL) });
+  } catch (checkError) {
+    return context.json({ error: checkError instanceof Error ? checkError.message : String(checkError) }, 502);
+  }
 });
 
 /** Docker server: the update sidecar pulls the new image and restarts this container. */

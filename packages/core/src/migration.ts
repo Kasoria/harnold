@@ -10,6 +10,8 @@ import { config } from "./config.ts";
 import { database } from "./db.ts";
 import { memoryConfig } from "./memory.ts";
 import { importFolderName, type ImportManifest } from "./import-apply.ts";
+import { settingsStore } from "./settings.ts";
+import { stageAgentHomes, type AgentTransferOptions } from "./agent-homes.ts";
 import { t } from "./i18n.ts";
 
 const run = promisify(execFile);
@@ -27,8 +29,11 @@ function copyFiltered(sourcePath: string, targetPath: string): void {
 
 const isInside = (parent: string, candidate: string) => candidate === parent || candidate.startsWith(parent + path.sep);
 
-/** Packs databases, secrets key, memory, design systems and all project folders into one archive. Returns its path. */
-async function createExportArchive(): Promise<string> {
+/**
+ * Packs databases, secrets key, memory, design systems, all project folders and (optionally) the Claude Code / Codex
+ * configuration and transcripts into one archive. Returns its path.
+ */
+async function createExportArchive(agentOptions: AgentTransferOptions): Promise<string> {
   const stagingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "harnold-export-"));
   try {
     // A consistent snapshot of the running database.
@@ -49,6 +54,7 @@ async function createExportArchive(): Promise<string> {
       }
     }
     candidates.add(memoryConfig.workspaceDirectory());
+    for (const pluginFolder of settingsStore.read<string[]>("plugins.folders", [])) candidates.add(pluginFolder);
     // Only top-level folders are copied; a folder inside another one travels with it (and is mapped by prefix).
     // A folder that contains the data directory would pull in the whole workspace, so it is left out.
     const externalSources = [...candidates].filter(
@@ -64,6 +70,7 @@ async function createExportArchive(): Promise<string> {
       copyFiltered(sourcePath, path.join(stagingDirectory, "external", folder));
       manifest.external.push({ originalPath: sourcePath, folder });
     }
+    manifest.agentHomes = stageAgentHomes(stagingDirectory, [config.dataDirectory, ...manifest.external.map((external) => external.originalPath)], agentOptions);
     fs.writeFileSync(path.join(stagingDirectory, "manifest.json"), JSON.stringify(manifest));
     const archivePath = path.join(os.tmpdir(), `harnold-export-${randomUUID()}.tgz`);
     await run("tar", ["-czf", archivePath, "-C", stagingDirectory, "."], { maxBuffer: 1024 * 1024 });
@@ -80,7 +87,7 @@ const normalizeServerUrl = (rawUrl: string): string => {
 };
 
 /** Sends this workspace to another Harnold core (server). The server swaps it in on its next start. */
-export async function pushWorkspaceToServer(serverUrl: string, token: string): Promise<{ sizeBytes: number }> {
+export async function pushWorkspaceToServer(serverUrl: string, token: string, agentOptions: AgentTransferOptions): Promise<{ sizeBytes: number }> {
   const address = normalizeServerUrl(serverUrl);
   if (!address) throw new Error(t("Server-Adresse fehlt"));
   const headers = { ...(token ? { authorization: `Bearer ${token}` } : {}) };
@@ -92,7 +99,7 @@ export async function pushWorkspaceToServer(serverUrl: string, token: string): P
   }
   if (check.status === 401) throw new Error(t("Das Zugriffstoken stimmt nicht."));
   if (!check.ok) throw new Error(t("Der Server antwortet mit Fehler {0}. Läuft dort Harnold in der aktuellen Version?", check.status));
-  const archivePath = await createExportArchive();
+  const archivePath = await createExportArchive(agentOptions);
   try {
     const sizeBytes = fs.statSync(archivePath).size;
     const response = await fetch(`${address}/api/migration/import`, {

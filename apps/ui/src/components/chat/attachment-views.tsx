@@ -89,7 +89,19 @@ export function SentAttachments({ projectId, attachments }: { projectId: string;
   );
 }
 
-export function AttachmentChip(props: { name: string; mimeType: string; size?: number; previewUrl?: string; uploading?: boolean; failed?: boolean; onRemove?: () => void }) {
+export function AttachmentChip(props: {
+  name: string;
+  mimeType: string;
+  size?: number;
+  previewUrl?: string;
+  uploading?: boolean;
+  failed?: boolean;
+  onRemove?: () => void;
+  /** Replaces the subtitle (e.g. "120 Zeilen" for pasted text). */
+  detail?: string;
+  /** Pasted text turned into a file: put it back into the message instead. */
+  onInsertAsText?: () => void;
+}) {
   const TypeIcon = fileIconFor(props.mimeType, props.name);
   return (
     <span
@@ -107,7 +119,17 @@ export function AttachmentChip(props: { name: string; mimeType: string; size?: n
       )}
       <span className="min-w-0">
         <span className="block truncate font-medium">{props.name}</span>
-        <span className="block text-[10.5px] text-muted-foreground">{props.failed ? t("Fehlgeschlagen") : props.uploading ? t("Lädt hoch …") : props.size ? formatFileSize(props.size) : ""}</span>
+        <span className="block text-[10.5px] text-muted-foreground">
+          {props.failed ? t("Fehlgeschlagen") : props.uploading ? t("Lädt hoch …") : (props.detail ?? (props.size ? formatFileSize(props.size) : ""))}
+          {props.onInsertAsText && !props.uploading && (
+            <>
+              {" · "}
+              <button type="button" onClick={props.onInsertAsText} className="underline-offset-2 hover:text-foreground hover:underline">
+                {t("Als Text einfügen")}
+              </button>
+            </>
+          )}
+        </span>
       </span>
       {props.onRemove && (
         <button

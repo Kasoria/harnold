@@ -40,7 +40,8 @@ const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
 const rootQuery = (root?: string) => (root ? `?${new URLSearchParams({ root })}` : "");
 
 export const api = {
-  pushWorkspaceToServer: (serverUrl: string, token: string) => request<{ ok: true; sizeBytes: number }>("POST", "/api/migration/push", { serverUrl, token }),
+  pushWorkspaceToServer: (serverUrl: string, token: string, agentOptions: { includeAgentConfiguration: boolean; includeAgentTranscripts: boolean }) =>
+    request<{ ok: true; sizeBytes: number }>("POST", "/api/migration/push", { serverUrl, token, ...agentOptions }),
   updateSession: (sessionId: string, changes: { title?: string; projectId?: string; directories?: string[]; model?: string | null }) => request<{ ok: true; deferred: boolean }>("PATCH", `/api/sessions/${sessionId}`, changes),
   clearSession: (sessionId: string) => request<{ ok: true }>("POST", `/api/sessions/${sessionId}/clear`),
   listAgentCommands: (projectId: string) => request<AgentCommand[]>("GET", `/api/projects/${projectId}/commands`),

@@ -84,7 +84,22 @@ type ComposerProps = {
 };
 
 /** A file in the composer: uploads right away, is sent with the next message. */
-type PendingAttachment = { localId: string; name: string; mimeType: string; size: number; previewUrl?: string; status: "uploading" | "ready" | "failed"; attachment?: Attachment };
+type PendingAttachment = {
+  localId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  previewUrl?: string;
+  status: "uploading" | "ready" | "failed";
+  attachment?: Attachment;
+  /** Set when a long paste was turned into a text file; lets the user put it back inline. */
+  pastedText?: string;
+};
+
+/** Pastes from this size on become a .txt attachment (like Claude), so the message itself stays short. */
+const pastedTextAttachmentCharacterCount = 2500;
+const pastedTextAttachmentLineCount = 40;
+const lineCountOf = (text: string) => text.split("\n").length;
 
 function formatDuration(totalSeconds: number) {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
@@ -163,13 +178,13 @@ export function Composer(props: ComposerProps) {
   const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(0);
   const [mentionMenuDismissed, setMentionMenuDismissed] = useState(false);
 
-  const addFiles = (files: File[]) => {
+  const addFiles = (files: File[], pastedText?: string) => {
     for (const file of files) {
       const localId = crypto.randomUUID();
       const isImage = file.type.startsWith("image/");
       setPendingAttachments((previous) => [
         ...previous,
-        { localId, name: file.name || t("Einfügung.png"), mimeType: file.type, size: file.size, previewUrl: isImage ? URL.createObjectURL(file) : undefined, status: "uploading" },
+        { localId, name: file.name || t("Einfügung.png"), mimeType: file.type, size: file.size, previewUrl: isImage ? URL.createObjectURL(file) : undefined, status: "uploading", pastedText },
       ]);
       const namedFile = file.name ? file : new File([file], t("Einfügung-{0}.png", Date.now()), { type: file.type });
       api
@@ -183,6 +198,27 @@ export function Composer(props: ComposerProps) {
         });
     }
     textareaRef.current?.focus();
+  };
+
+  /** Inserts text at the caret (replacing a selection), as a normal paste would. */
+  const insertTextAtCaret = (insertedText: string) => {
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? composerText.length;
+    const selectionEnd = textarea?.selectionEnd ?? composerText.length;
+    const nextText = composerText.slice(0, selectionStart) + insertedText + composerText.slice(selectionEnd);
+    setComposerText(nextText);
+    const nextCaret = selectionStart + insertedText.length;
+    setCaretPosition(nextCaret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const attachPastedText = (pastedText: string) => {
+    const pastedNumber = pendingAttachments.filter((pending) => pending.pastedText !== undefined).length + 1;
+    const fileName = pastedNumber > 1 ? t("Eingefügter Text {0}.txt", pastedNumber) : t("Eingefügter Text.txt");
+    addFiles([new File([pastedText], fileName, { type: "text/plain" })], pastedText);
   };
 
   const removeAttachment = (localId: string) =>
@@ -454,6 +490,15 @@ export function Composer(props: ComposerProps) {
                 uploading={pending.status === "uploading"}
                 failed={pending.status === "failed"}
                 onRemove={() => removeAttachment(pending.localId)}
+                detail={pending.pastedText !== undefined ? t("{0} Zeilen", lineCountOf(pending.pastedText)) : undefined}
+                onInsertAsText={
+                  pending.pastedText !== undefined
+                    ? () => {
+                        removeAttachment(pending.localId);
+                        insertTextAtCaret(pending.pastedText!);
+                      }
+                    : undefined
+                }
               />
             ))}
           </div>
@@ -556,9 +601,16 @@ export function Composer(props: ComposerProps) {
             onSelect={(selectEvent) => setCaretPosition(selectEvent.currentTarget.selectionStart ?? 0)}
             onPaste={(clipboardEvent) => {
               const pastedFiles = [...clipboardEvent.clipboardData.files];
-              if (!pastedFiles.length) return;
-              clipboardEvent.preventDefault();
-              addFiles(pastedFiles);
+              if (pastedFiles.length) {
+                clipboardEvent.preventDefault();
+                addFiles(pastedFiles);
+                return;
+              }
+              const pastedText = clipboardEvent.clipboardData.getData("text/plain");
+              if (pastedText.length >= pastedTextAttachmentCharacterCount || lineCountOf(pastedText) >= pastedTextAttachmentLineCount) {
+                clipboardEvent.preventDefault();
+                attachPastedText(pastedText);
+              }
             }}
             onKeyDown={(keyboardEvent) => {
               if (mentionMenuOpen) {

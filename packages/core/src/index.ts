@@ -176,10 +176,12 @@ app.post("/api/update-install", async (context) => {
   }
 });
 
-/** Local core: sends this whole workspace (projects, chats, memory, settings, secrets) to a server core. */
+/** Local core: sends this whole workspace (projects, chats, memory, settings, secrets, agent configuration) to a server core. */
 app.post("/api/migration/push", async (context) => {
-  const { serverUrl, token } = z.object({ serverUrl: z.string().min(1), token: z.string().default("") }).parse(await context.req.json());
-  return context.json({ ok: true, ...(await pushWorkspaceToServer(serverUrl, token)) });
+  const { serverUrl, token, includeAgentConfiguration, includeAgentTranscripts } = z
+    .object({ serverUrl: z.string().min(1), token: z.string().default(""), includeAgentConfiguration: z.boolean().default(true), includeAgentTranscripts: z.boolean().default(true) })
+    .parse(await context.req.json());
+  return context.json({ ok: true, ...(await pushWorkspaceToServer(serverUrl, token, { includeConfiguration: includeAgentConfiguration, includeTranscripts: includeAgentTranscripts })) });
 });
 
 /** Server core: takes a workspace archive and restarts to swap it in (the old data is kept as a backup). */

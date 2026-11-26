@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { agentHomesFolderName, applyAgentHomes, createPathRewriter, repairEnvironmentClaudeDirectories, type AgentHomesManifest } from "./agent-homes.ts";
 
 /** Folder inside the data directory where an uploaded workspace waits for the next start. */
 export const importFolderName = ".import";
@@ -8,6 +9,8 @@ export type ImportManifest = {
   sourceDataDirectory: string;
   /** Project folders that lived outside the data directory; copied to `external/<folder>` in the archive. */
   external: { originalPath: string; folder: string }[];
+  /** Claude Code and Codex configuration and transcripts (archive folder `agent-homes`); missing in older archives. */
+  agentHomes?: AgentHomesManifest | null;
 };
 
 /**
@@ -28,7 +31,7 @@ export function applyPendingImport(dataDirectory: string, projectsDirectory: str
     };
     for (const databaseFile of ["harnold.db", "harnold.db-wal", "harnold.db-shm"]) moveAside(databaseFile);
     for (const entry of fs.readdirSync(stagedDirectory)) {
-      if (entry === "manifest.json" || entry === "external") continue;
+      if (entry === "manifest.json" || entry === "external" || entry === agentHomesFolderName) continue;
       moveAside(entry);
       fs.renameSync(path.join(stagedDirectory, entry), path.join(dataDirectory, entry));
     }
@@ -42,6 +45,14 @@ export function applyPendingImport(dataDirectory: string, projectsDirectory: str
       newPaths.set(external.originalPath, target);
     }
     rewritePaths(path.join(dataDirectory, "harnold.db"), manifest.sourceDataDirectory, dataDirectory, newPaths);
+    // The agents' own configuration and transcripts; a failure here must not undo the moved workspace.
+    const movedPathPairs: [string, string][] = [...newPaths, [manifest.sourceDataDirectory, dataDirectory]];
+    try {
+      if (manifest.agentHomes) applyAgentHomes(stagedDirectory, manifest.agentHomes, movedPathPairs, path.join(backupDirectory, "agent-homes"));
+      repairEnvironmentClaudeDirectories(dataDirectory, createPathRewriter(movedPathPairs, manifest.agentHomes?.caseInsensitivePaths ?? false));
+    } catch (agentHomesError) {
+      console.error("Übernahme der Agent-Konfiguration fehlgeschlagen:", agentHomesError);
+    }
   } catch (importError) {
     console.error("Import des Workspaces fehlgeschlagen:", importError);
   } finally {
@@ -78,6 +89,12 @@ function rewritePaths(databasePath: string, sourceDataDirectory: string, dataDir
     for (const row of database.prepare("SELECT id, directories FROM tasks WHERE directories IS NOT NULL").all()) {
       const mapped = (JSON.parse(String(row.directories)) as string[]).map(mapPath);
       database.prepare("UPDATE tasks SET directories = ? WHERE id = ?").run(JSON.stringify(mapped), String(row.id));
+    }
+    // Plugin folders added in Harnold.
+    const pluginFoldersRow = database.prepare("SELECT value FROM workspace_settings WHERE key = 'plugins.folders'").get();
+    if (pluginFoldersRow) {
+      const pluginFolders = (JSON.parse(String(pluginFoldersRow.value)) as string[]).map(mapPath);
+      database.prepare("UPDATE workspace_settings SET value = ? WHERE key = 'plugins.folders'").run(JSON.stringify(pluginFolders));
     }
     // A memory folder outside the data directory (e.g. an Obsidian vault) travelled along as an external folder.
     const memoryRow = database.prepare("SELECT value FROM workspace_settings WHERE key = 'memory'").get();

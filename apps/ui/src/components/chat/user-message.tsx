@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Pencil, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, isActionEnter } from "@/lib/utils";
 import { CopyButton } from "./chat-markdown";
@@ -22,10 +22,18 @@ type UserMessageProps = {
   onRewindFiles?: () => void;
 };
 
+/** Long messages (a pasted log, a long brief) start collapsed so the conversation stays readable. */
+const collapsibleCharacterCount = 900;
+const collapsibleLineCount = 14;
+const isLongMessage = (text: string) => text.length > collapsibleCharacterCount || text.split("\n").length > collapsibleLineCount;
+
 const hoverActionClassName = "h-6 px-1 text-[11.5px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/user:opacity-100 focus-visible:opacity-100";
 
 export function UserMessage(props: UserMessageProps) {
   const [editDraft, setEditDraft] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = isLongMessage(props.text);
+  const collapsed = collapsible && !expanded;
 
   if (editDraft !== null) {
     const submit = () => {
@@ -75,7 +83,26 @@ export function UserMessage(props: UserMessageProps) {
           <SentAttachments projectId={props.projectId} attachments={props.attachments} />
         </div>
       )}
-      {props.text && <div className="rounded-xl bg-muted px-3.5 py-2 whitespace-pre-wrap">{props.text}</div>}
+      {props.text && (
+        <div className="rounded-xl bg-muted px-3.5 py-2">
+          <div
+            className={cn("whitespace-pre-wrap", collapsed && "max-h-60 overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)]")}
+          >
+            {props.text}
+          </div>
+          {collapsible && (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((previous) => !previous)}
+              className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
+            >
+              <ChevronDown className={cn("size-3.5 transition-transform duration-150", expanded && "rotate-180")} />
+              {expanded ? t("Weniger anzeigen") : t("Ganze Nachricht anzeigen ({0} Zeilen)", props.text.split("\n").length)}
+            </button>
+          )}
+        </div>
+      )}
       <div className="mt-0.5 flex items-center gap-0.5">
         <CopyButton readText={() => props.text} label={t("Kopieren")} className={hoverActionClassName} />
         {props.canEdit && (

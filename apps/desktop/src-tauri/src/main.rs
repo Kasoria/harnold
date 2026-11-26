@@ -14,7 +14,8 @@ mod updates;
 
 /// Own port, so a dev Core on 4317 can run alongside.
 const CORE_PORT: u16 = 4327;
-const CORE_START_TIMEOUT: Duration = Duration::from_secs(60);
+/// Generous: an imported workspace is applied during the start. A core that crashes is noticed right away.
+const CORE_START_TIMEOUT: Duration = Duration::from_secs(600);
 const MAIN_WINDOW_LABEL: &str = "main";
 
 struct CoreProcess(Mutex<Option<Child>>);

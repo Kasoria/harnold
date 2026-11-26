@@ -11,6 +11,8 @@ COPY apps/desktop/package.json apps/desktop/
 # Nur die UI: der Core (mit node-pty) wird erst im Laufzeit-Image installiert, dort gibt es Compiler.
 RUN pnpm install --frozen-lockfile --filter "@harnold/ui..."
 COPY apps/ui apps/ui
+# Die Datei-Import-Logik teilen sich UI und Core.
+COPY packages/core/src/archive-transfer.ts packages/core/src/
 # Die UI liest ihre Version aus der Desktop-Konfiguration.
 COPY apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/tauri.conf.json
 ARG HARNOLD_VERSION=""

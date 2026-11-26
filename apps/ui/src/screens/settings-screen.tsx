@@ -8,7 +8,7 @@ import { ScreenLayout } from "./screen-layout";
 import { MemorySettingsSection } from "./settings/memory-settings-section";
 import { QuickChatAutoDeleteSetting } from "./settings/quick-chat-settings";
 import { ShortcutsSection } from "./settings/shortcuts-section";
-import { MigrateToServerSetting } from "./settings/migrate-to-server-setting";
+import { WorkspaceTransferSetting } from "./settings/workspace-transfer-setting";
 import { AgentRolesSection } from "./settings/agent-roles-section";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -294,7 +294,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
             <div>
               <Button size="sm" onClick={() => void saveWorkspaceConnection()}>{t("Verbinden")}</Button>
             </div>
-            {!coreBaseUrl && <MigrateToServerSetting onError={props.onError} />}
+            <WorkspaceTransferSetting canPush={!coreBaseUrl} onError={props.onError} />
           </div>
             ) : activeSection.value === "shortcuts" ? (
               <ShortcutsSection />

@@ -537,8 +537,17 @@ export type TeamAgentInput = {
 };
 export type TeamAgent = TeamAgentInput & { id: string; createdAt: number };
 
-/** State of a workspace move to a server (runs in the local Core). */
-export type WorkspacePushStatus = {
+/** What a move or export contains. */
+export type TransferSelection = {
+  scope: "workspace" | "agents";
+  excludedFolders: string[];
+  includeAgentConfiguration: boolean;
+  includeAgentTranscripts: boolean;
+};
+export type TransferFolders = { folders: { path: string; name: string; sizeBytes: number }[]; agentConfigurationBytes: number; agentTranscriptBytes: number };
+/** State of a move to a server or of an export (runs in the Core). */
+export type TransferJob = {
+  kind: "push" | "export";
   phase: "idle" | "packing" | "uploading" | "unpacking" | "restarting" | "done" | "failed" | "cancelled";
   sentBytes: number;
   totalBytes: number;
@@ -546,4 +555,5 @@ export type WorkspacePushStatus = {
   reconnecting: boolean;
   error: string | null;
   warning: string | null;
+  filePath: string | null;
 };

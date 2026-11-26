@@ -2,14 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { z } from "zod";
 import { config } from "./config.ts";
-import { cancelWorkspacePush, readWorkspacePush, startWorkspacePush } from "./migration-push.ts";
-import { appendChunk, completeUpload, createUpload, maximumReceivedChunkBytes, migrationProtocolVersion, readUploadStatus } from "./migration-receive.ts";
+import { cancelJob, exportedFile, readJob, revealExportedFile, startExport, startPush } from "./migration-job.ts";
+import { listTransferFolders } from "./migration-export.ts";
+import { completeUpload, createUpload, maximumReceivedChunkBytes, migrationProtocol, readUploadStatus, restartsItself, writeChunk } from "./migration-receive.ts";
 import { imagePublished, latestRelease, requestUpdateInstall } from "./update-check.ts";
 import { chatItemStore, projectStore, sessionStore } from "./db.ts";
 import { eventHub } from "./events.ts";
@@ -184,27 +186,43 @@ app.post("/api/update-install", async (context) => {
   }
 });
 
-/** Local core: sends this whole workspace (projects, chats, memory, settings, secrets, agent configuration) to a server core. */
-app.post("/api/migration/push", async (context) => {
-  const { serverUrl, token, includeAgentConfiguration, includeAgentTranscripts } = z
-    .object({ serverUrl: z.string().min(1), token: z.string().default(""), includeAgentConfiguration: z.boolean().default(true), includeAgentTranscripts: z.boolean().default(true) })
-    .parse(await context.req.json());
-  return context.json(await startWorkspacePush(serverUrl, token, { includeConfiguration: includeAgentConfiguration, includeTranscripts: includeAgentTranscripts }));
-});
-app.get("/api/migration/push", (context) => context.json(readWorkspacePush()));
-app.delete("/api/migration/push", (context) => context.json(cancelWorkspacePush()));
+// --- Moving to another Harnold: push to a server, export to a file, import ---
+const transferSelectionSchema = z
+  .object({
+    scope: z.enum(["workspace", "agents"]).default("workspace"),
+    excludedFolders: z.array(z.string()).default([]),
+    includeAgentConfiguration: z.boolean().default(true),
+    includeAgentTranscripts: z.boolean().default(true),
+  })
+  .refine((selection) => selection.scope === "workspace" || selection.includeAgentConfiguration || selection.includeAgentTranscripts, { message: "empty selection" });
 
-/** Server core: only where a supervisor restarts the core (Docker server); the desktop app's core would just end. */
-const acceptsImport = () => process.env.HARNOLD_DEPLOYMENT === "docker";
-app.get("/api/migration/status", (context) => context.json({ protocol: migrationProtocolVersion, canImport: acceptsImport() }));
-app.use("/api/migration/uploads/*", async (context, next) => {
-  if (!acceptsImport()) return context.json({ error: t("Nur auf einem Docker-Server möglich") }, 400);
-  await next();
+app.get("/api/migration/folders", async (context) => context.json(await listTransferFolders()));
+app.post("/api/migration/push", async (context) => {
+  const body = await context.req.json();
+  const { serverUrl, token } = z.object({ serverUrl: z.string().min(1), token: z.string().default("") }).parse(body);
+  return context.json(await startPush(serverUrl, token, transferSelectionSchema.parse(body)));
 });
+app.post("/api/migration/export", async (context) => context.json(startExport(transferSelectionSchema.parse(await context.req.json()))));
+app.get("/api/migration/job", (context) => context.json(readJob()));
+app.delete("/api/migration/job", (context) => context.json(cancelJob()));
+app.post("/api/migration/export/reveal", (context) => {
+  revealExportedFile();
+  return context.json({ ok: true });
+});
+app.get("/api/migration/export/file", (context) => {
+  const filePath = exportedFile();
+  if (!filePath) return context.json({ error: t("Die Exportdatei gibt es nicht mehr.") }, 404);
+  return new Response(Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream, {
+    headers: { "content-type": "application/gzip", "content-length": String(fs.statSync(filePath).size), "content-disposition": `attachment; filename="${path.basename(filePath)}"`, "cache-control": "no-store" },
+  });
+});
+
+/** Another core may move here only if this one restarts by itself afterwards (Docker server). */
+app.get("/api/migration/status", (context) => context.json({ ...migrationProtocol, canImport: restartsItself() }));
 const unknownUpload = () => ({ error: t("Der Server kennt diese Übertragung nicht mehr. Starte sie erneut.") });
 
 app.post("/api/migration/uploads", async (context) => {
-  const { sizeBytes, unpackedBytes } = z.object({ sizeBytes: z.number().int().positive(), unpackedBytes: z.number().int().nonnegative() }).parse(await context.req.json());
+  const { sizeBytes, unpackedBytes } = z.object({ sizeBytes: z.number().int().positive(), unpackedBytes: z.number().int().nonnegative().optional() }).parse(await context.req.json());
   return context.json(createUpload(sizeBytes, unpackedBytes));
 });
 
@@ -215,9 +233,8 @@ app.put("/api/migration/uploads/:uploadId/chunk", async (context) => {
   const chunk = Buffer.from(await context.req.arrayBuffer());
   // A connection cut off halfway: ask for the piece again.
   if (chunk.length !== declaredBytes) return context.json({ error: t("Kein Archiv übertragen") }, 408);
-  const result = appendChunk(context.req.param("uploadId"), offset, chunk);
-  if (!result) return context.json(unknownUpload(), 404);
-  return context.json({ receivedBytes: result.receivedBytes }, result.accepted ? 200 : 409);
+  const result = writeChunk(context.req.param("uploadId"), offset, chunk);
+  return result ? context.json(result) : context.json(unknownUpload(), 404);
 });
 
 app.post("/api/migration/uploads/:uploadId/complete", (context) => {

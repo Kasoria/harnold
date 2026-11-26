@@ -77,22 +77,59 @@ const copyIfPresent = async (sourcePath: string, targetPath: string, filtered: b
 };
 
 /**
- * Export side: copies the agent homes into `<staging>/agent-homes`. `movedPaths` are the folders that travel with
- * the workspace (projects, extra folders, data directory) – only transcripts recorded inside them are useful there.
+ * Skills, CLAUDE.md etc. are often links to folders that do not travel (e.g. ~/.agents/skills or a dotfiles repo).
+ * Replaces such links in the staged copy with what they point to; broken links are dropped. Relative links within the
+ * copied folder stay links.
  */
-export async function stageAgentHomes(stagingDirectory: string, movedPaths: string[], options: AgentTransferOptions): Promise<AgentHomesManifest | null> {
-  if (!options.includeConfiguration && !options.includeTranscripts) return null;
+async function resolveOutsideLinks(stagedPath: string, sourcePath: string, copiedRoot: string, followedTargets: string[] = []): Promise<void> {
+  const information = fs.lstatSync(stagedPath, { throwIfNoEntry: false });
+  if (information?.isDirectory()) {
+    for (const entryName of fs.readdirSync(stagedPath)) await resolveOutsideLinks(path.join(stagedPath, entryName), path.join(sourcePath, entryName), copiedRoot, followedTargets);
+    return;
+  }
+  if (!information?.isSymbolicLink()) return;
+  let target: string;
+  try {
+    target = fs.realpathSync(sourcePath);
+  } catch {
+    fs.rmSync(stagedPath);
+    return;
+  }
+  const isRelative = !path.isAbsolute(fs.readlinkSync(stagedPath));
+  if (isRelative && fs.existsSync(copiedRoot) && isInsideAny(target, [fs.realpathSync(copiedRoot)], false)) return;
+  fs.rmSync(stagedPath);
+  // A link to one of its own parent folders would copy forever.
+  const containsLink = isInsideAny(fs.realpathSync(path.dirname(sourcePath)), [target], false);
+  if (containsLink || followedTargets.includes(target)) return;
+  await fs.promises.cp(target, stagedPath, { recursive: true, verbatimSymlinks: true, filter: (candidate) => candidate === target || !skippedFolderNames.has(path.basename(candidate)) });
+  await resolveOutsideLinks(stagedPath, target, target, [...followedTargets, target]);
+}
+
+/** One entry of an agent's configuration folder, complete in itself. */
+async function stageConfigurationEntry(sourcePath: string, targetPath: string, filtered: boolean): Promise<void> {
+  if (!fs.existsSync(sourcePath)) return;
+  await copyIfPresent(sourcePath, targetPath, filtered);
+  await resolveOutsideLinks(targetPath, sourcePath, sourcePath);
+}
+
+type PlannedEntry = { sourcePath: string; /** Inside the archive folder. */ target: string; kind: "configuration" | "plugins" | "transcript" };
+
+/**
+ * Which files of the agent homes belong to a transfer. `movedPaths` are the folders the other side has (projects,
+ * extra folders, data directory) – only transcripts recorded inside them are useful there.
+ */
+function planAgentHomes(movedPaths: string[], options: AgentTransferOptions): { manifest: AgentHomesManifest; entries: PlannedEntry[]; claudeJson: string | null } {
   const caseInsensitivePaths = process.platform === "darwin" || process.platform === "win32";
-  const targetRoot = path.join(stagingDirectory, agentHomesFolderName);
   const manifest: AgentHomesManifest = { sourceHome: os.homedir(), caseInsensitivePaths, claudeDirectory: null, claudeJson: false, codexDirectory: null };
+  const entries: PlannedEntry[] = [];
+  let claudeJson: string | null = null;
+  if (!options.includeConfiguration && !options.includeTranscripts) return { manifest, entries, claudeJson };
   const wasMoved = (workingDirectory: string | null) => !!workingDirectory && isInsideAny(workingDirectory, movedPaths, caseInsensitivePaths);
 
   const claudeSource = claudeDirectory();
   if (fs.existsSync(claudeSource)) {
-    const claudeTarget = path.join(targetRoot, "claude");
-    fs.mkdirSync(claudeTarget, { recursive: true });
     if (options.includeConfiguration) {
-      for (const entryName of claudeConfigurationEntries) await copyIfPresent(path.join(claudeSource, entryName), path.join(claudeTarget, entryName), entryName !== "plugins");
+      for (const entryName of claudeConfigurationEntries) entries.push({ sourcePath: path.join(claudeSource, entryName), target: path.join("claude", entryName), kind: entryName === "plugins" ? "plugins" : "configuration" });
     }
     if (options.includeTranscripts) {
       // One folder per working directory: transcripts, subagent logs, tool results and Claude's auto-memory.
@@ -104,7 +141,7 @@ export async function stageAgentHomes(stagingDirectory: string, movedPaths: stri
         const workingDirectory = listFiles(folderPath, ".jsonl").map(recordedWorkingDirectory).find(Boolean) ?? null;
         // A folder with only auto-memory has no cwd to read: match its name against the moved folders.
         const matchesByName = !workingDirectory && movedEncodedNames.some((encodedName) => (caseInsensitivePaths ? folderName.toLowerCase().startsWith(encodedName.toLowerCase()) : folderName.startsWith(encodedName)));
-        if (wasMoved(workingDirectory) || matchesByName) await fs.promises.cp(folderPath, path.join(claudeTarget, "projects", folderName), { recursive: true, verbatimSymlinks: true });
+        if (wasMoved(workingDirectory) || matchesByName) entries.push({ sourcePath: folderPath, target: path.join("claude", "projects", folderName), kind: "transcript" });
       }
     }
     manifest.claudeDirectory = claudeSource;
@@ -112,11 +149,10 @@ export async function stageAgentHomes(stagingDirectory: string, movedPaths: stri
 
   if (options.includeConfiguration && fs.existsSync(claudeJsonPath())) {
     try {
-      const claudeJson = JSON.parse(fs.readFileSync(claudeJsonPath(), "utf8")) as { mcpServers?: unknown; projects?: Record<string, unknown> };
+      const parsed = JSON.parse(fs.readFileSync(claudeJsonPath(), "utf8")) as { mcpServers?: unknown; projects?: Record<string, unknown> };
       // Only MCP servers and the settings of moved projects; account state and onboarding stay on this machine.
-      const movedProjects = Object.fromEntries(Object.entries(claudeJson.projects ?? {}).filter(([projectPath]) => wasMoved(projectPath)));
-      fs.mkdirSync(targetRoot, { recursive: true });
-      fs.writeFileSync(path.join(targetRoot, "claude.json"), JSON.stringify({ mcpServers: claudeJson.mcpServers ?? {}, projects: movedProjects }));
+      const movedProjects = Object.fromEntries(Object.entries(parsed.projects ?? {}).filter(([projectPath]) => wasMoved(projectPath)));
+      claudeJson = JSON.stringify({ mcpServers: parsed.mcpServers ?? {}, projects: movedProjects });
       manifest.claudeJson = true;
     } catch {
       /* unreadable .claude.json: nothing to carry */
@@ -125,24 +161,68 @@ export async function stageAgentHomes(stagingDirectory: string, movedPaths: stri
 
   const codexSource = codexDirectory();
   if (fs.existsSync(codexSource)) {
-    const codexTarget = path.join(targetRoot, "codex");
-    fs.mkdirSync(codexTarget, { recursive: true });
     if (options.includeConfiguration) {
-      for (const entryName of codexConfigurationEntries) await copyIfPresent(path.join(codexSource, entryName), path.join(codexTarget, entryName), true);
+      for (const entryName of codexConfigurationEntries) entries.push({ sourcePath: path.join(codexSource, entryName), target: path.join("codex", entryName), kind: "configuration" });
     }
     if (options.includeTranscripts) {
       // Rollouts (sessions/YYYY/MM/DD/rollout-…-<thread id>.jsonl) are what `resumeThread` looks up.
       const sessionsSource = path.join(codexSource, "sessions");
       for (const rolloutPath of listFiles(sessionsSource, ".jsonl")) {
-        if (!wasMoved(recordedWorkingDirectory(rolloutPath))) continue;
-        const targetPath = path.join(codexTarget, "sessions", path.relative(sessionsSource, rolloutPath));
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.copyFileSync(rolloutPath, targetPath);
+        if (wasMoved(recordedWorkingDirectory(rolloutPath))) entries.push({ sourcePath: rolloutPath, target: path.join("codex", "sessions", path.relative(sessionsSource, rolloutPath)), kind: "transcript" });
       }
     }
     manifest.codexDirectory = codexSource;
   }
+  return { manifest, entries, claudeJson };
+}
+
+/** Export side: copies the planned parts of the agent homes into `<staging>/agent-homes`. */
+export async function stageAgentHomes(stagingDirectory: string, movedPaths: string[], options: AgentTransferOptions): Promise<AgentHomesManifest | null> {
+  if (!options.includeConfiguration && !options.includeTranscripts) return null;
+  const { manifest, entries, claudeJson } = planAgentHomes(movedPaths, options);
+  const targetRoot = path.join(stagingDirectory, agentHomesFolderName);
+  fs.mkdirSync(targetRoot, { recursive: true });
+  for (const entry of entries) {
+    const targetPath = path.join(targetRoot, entry.target);
+    if (entry.kind === "transcript") await copyIfPresent(entry.sourcePath, targetPath, false);
+    else await stageConfigurationEntry(entry.sourcePath, targetPath, entry.kind === "configuration");
+  }
+  if (claudeJson !== null) fs.writeFileSync(path.join(targetRoot, "claude.json"), claudeJson);
   return manifest;
+}
+
+/** Size of a file or folder, counting what links point to (the transfer copies it). */
+async function measureEntry(entryPath: string, visited: Set<string>): Promise<number> {
+  try {
+    const realPath = await fs.promises.realpath(entryPath);
+    // Like the copy, a link to one of its own parent folders counts nothing.
+    const isLink = (await fs.promises.lstat(entryPath)).isSymbolicLink();
+    if (isLink && isInsideAny(await fs.promises.realpath(path.dirname(entryPath)), [realPath], false)) return 0;
+    if (visited.has(realPath)) return 0;
+    visited.add(realPath);
+    const information = await fs.promises.stat(realPath);
+    if (!information.isDirectory()) return information.size;
+    let totalBytes = 0;
+    for (const entryName of await fs.promises.readdir(realPath)) {
+      if (!skippedFolderNames.has(entryName)) totalBytes += await measureEntry(path.join(realPath, entryName), visited);
+    }
+    return totalBytes;
+  } catch {
+    return 0;
+  }
+}
+
+export async function measureAgentHomes(movedPaths: string[]): Promise<{ agentConfigurationBytes: number; agentTranscriptBytes: number }> {
+  const { entries } = planAgentHomes(movedPaths, { includeConfiguration: true, includeTranscripts: true });
+  const visited = new Set<string>();
+  let agentConfigurationBytes = 0;
+  let agentTranscriptBytes = 0;
+  for (const entry of entries) {
+    const sizeBytes = await measureEntry(entry.sourcePath, visited);
+    if (entry.kind === "transcript") agentTranscriptBytes += sizeBytes;
+    else agentConfigurationBytes += sizeBytes;
+  }
+  return { agentConfigurationBytes, agentTranscriptBytes };
 }
 
 /** Rewrites old absolute paths in text (JSON, JSONL, TOML, Markdown) to their new places. */
@@ -221,46 +301,78 @@ const readJsonFile = (filePath: string): JsonValue | undefined => {
 /** Files merged as JSON instead of replaced, so settings made on the server survive. */
 const mergedJsonFiles = new Set(["settings.json", "keybindings.json", path.join("plugins", "installed_plugins.json"), path.join("plugins", "known_marketplaces.json")]);
 
+/** Copies a single file or link; links are recreated as they are, never followed. */
+function copyEntry(sourcePath: string, targetPath: string): void {
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  const information = fs.lstatSync(sourcePath);
+  if (information.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(sourcePath), targetPath);
+  else if (information.isDirectory()) {
+    fs.mkdirSync(targetPath, { recursive: true });
+    for (const entryName of fs.readdirSync(sourcePath)) copyEntry(path.join(sourcePath, entryName), path.join(targetPath, entryName));
+  } else if (information.isFile()) fs.copyFileSync(sourcePath, targetPath);
+}
+
+type MergeOptions = { /** Keep a transcript here that is at least as long as the uploaded one. */ keepLongerTranscripts?: boolean };
+
 /**
  * Copies `sourceDirectory` into `targetDirectory`: new files are added, existing ones are moved to `backupDirectory`
- * first (or merged, for the JSON settings above). Nothing on the server is deleted.
+ * first (or merged, for the JSON settings above). Nothing on the server is deleted. An entry that fails is noted in
+ * `problems` and does not stop the others.
  */
-function mergeDirectory(sourceDirectory: string, targetDirectory: string, backupDirectory: string, relativePath = ""): void {
+function mergeDirectory(sourceDirectory: string, targetDirectory: string, backupDirectory: string, problems: string[], options: MergeOptions, relativePath = ""): void {
   for (const entry of fs.readdirSync(path.join(sourceDirectory, relativePath), { withFileTypes: true })) {
     const entryRelativePath = path.join(relativePath, entry.name);
     const sourcePath = path.join(sourceDirectory, entryRelativePath);
     const targetPath = path.join(targetDirectory, entryRelativePath);
-    const existing = fs.lstatSync(targetPath, { throwIfNoEntry: false });
-    if (entry.isDirectory() && existing?.isDirectory()) {
-      mergeDirectory(sourceDirectory, targetDirectory, backupDirectory, entryRelativePath);
-      continue;
-    }
-    if (existing) {
-      const backupPath = path.join(backupDirectory, entryRelativePath);
-      fs.mkdirSync(path.dirname(backupPath), { recursive: true });
-      fs.cpSync(targetPath, backupPath, { recursive: true, verbatimSymlinks: true });
-      if (mergedJsonFiles.has(entryRelativePath) && existing.isFile()) {
-        const existingValue = readJsonFile(targetPath);
-        const incomingValue = readJsonFile(sourcePath);
-        if (existingValue !== undefined && incomingValue !== undefined) {
-          fs.writeFileSync(targetPath, JSON.stringify(mergeJson(existingValue, incomingValue), null, 2));
-          continue;
+    try {
+      const existing = fs.lstatSync(targetPath, { throwIfNoEntry: false });
+      if (entry.isDirectory()) {
+        if (existing && !existing.isDirectory()) {
+          copyEntry(targetPath, path.join(backupDirectory, entryRelativePath));
+          fs.rmSync(targetPath, { force: true });
         }
+        fs.mkdirSync(targetPath, { recursive: true });
+        mergeDirectory(sourceDirectory, targetDirectory, backupDirectory, problems, options, entryRelativePath);
+        continue;
       }
-      fs.rmSync(targetPath, { recursive: true, force: true });
+      // Transcripts only grow, so the longer one holds more of the chat.
+      const isTranscript = entry.name.endsWith(".jsonl") && /^(projects|sessions)[\\/]/.test(entryRelativePath);
+      if (options.keepLongerTranscripts && isTranscript && existing?.isFile() && existing.size >= fs.statSync(sourcePath).size) continue;
+      if (existing) {
+        copyEntry(targetPath, path.join(backupDirectory, entryRelativePath));
+        if (mergedJsonFiles.has(entryRelativePath) && existing.isFile()) {
+          const existingValue = readJsonFile(targetPath);
+          const incomingValue = readJsonFile(sourcePath);
+          if (existingValue !== undefined && incomingValue !== undefined) {
+            fs.writeFileSync(targetPath, JSON.stringify(mergeJson(existingValue, incomingValue), null, 2));
+            continue;
+          }
+        }
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
+      copyEntry(sourcePath, targetPath);
+    } catch (entryError) {
+      problems.push(entryError instanceof Error ? entryError.message : String(entryError));
     }
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.cpSync(sourcePath, targetPath, { recursive: true, verbatimSymlinks: true });
   }
 }
 
 /**
  * Import side: rewrites the paths in the uploaded agent homes and merges them into this machine's homes.
- * `movedPathPairs` = old → new for project folders and the data directory.
+ * `movedPathPairs` = old → new for project folders and the data directory. Returns what could not be applied.
  */
-export function applyAgentHomes(stagedDirectory: string, manifest: AgentHomesManifest, movedPathPairs: [string, string][], backupDirectory: string): void {
+export function applyAgentHomes(stagedDirectory: string, manifest: AgentHomesManifest, movedPathPairs: [string, string][], backupDirectory: string, options: MergeOptions = {}): string[] {
+  const problems: string[] = [];
   const uploadedRoot = path.join(stagedDirectory, agentHomesFolderName);
-  if (!fs.existsSync(uploadedRoot)) return;
+  if (!fs.existsSync(uploadedRoot)) return problems;
+  /** Claude, its MCP servers and Codex are independent: one failing must not cost the others. */
+  const attempt = (work: () => void) => {
+    try {
+      work();
+    } catch (sectionError) {
+      problems.push(sectionError instanceof Error ? sectionError.message : String(sectionError));
+    }
+  };
   const homePairs: [string, string][] = [
     ...(manifest.claudeDirectory ? [[manifest.claudeDirectory, claudeDirectory()] as [string, string]] : []),
     ...(manifest.codexDirectory ? [[manifest.codexDirectory, codexDirectory()] as [string, string]] : []),
@@ -269,18 +381,20 @@ export function applyAgentHomes(stagedDirectory: string, manifest: AgentHomesMan
   const transcriptRewriter = createPathRewriter([...movedPathPairs, ...homePairs], manifest.caseInsensitivePaths);
   const configurationRewriter = createPathRewriter([...movedPathPairs, ...homePairs, [manifest.sourceHome, os.homedir()]], manifest.caseInsensitivePaths);
 
-  const uploadedClaude = path.join(uploadedRoot, "claude");
-  if (fs.existsSync(uploadedClaude)) {
-    relocateClaudeTranscripts(uploadedClaude, transcriptRewriter);
+  attempt(() => {
+    const uploadedClaude = path.join(uploadedRoot, "claude");
+    if (!fs.existsSync(uploadedClaude)) return;
+    attempt(() => relocateClaudeTranscripts(uploadedClaude, transcriptRewriter));
     for (const fileName of ["settings.json", "keybindings.json", path.join("plugins", "installed_plugins.json"), path.join("plugins", "known_marketplaces.json")]) {
       rewriteFile(path.join(uploadedClaude, fileName), configurationRewriter);
     }
     fs.mkdirSync(claudeDirectory(), { recursive: true });
-    mergeDirectory(uploadedClaude, claudeDirectory(), path.join(backupDirectory, "claude"));
-  }
+    mergeDirectory(uploadedClaude, claudeDirectory(), path.join(backupDirectory, "claude"), problems, options);
+  });
 
-  const uploadedClaudeJson = readJsonFile(path.join(uploadedRoot, "claude.json"));
-  if (isPlainObject(uploadedClaudeJson)) {
+  attempt(() => {
+    const uploadedClaudeJson = readJsonFile(path.join(uploadedRoot, "claude.json"));
+    if (!isPlainObject(uploadedClaudeJson)) return;
     const projects = isPlainObject(uploadedClaudeJson.projects) ? uploadedClaudeJson.projects : {};
     const incoming: Record<string, JsonValue> = {
       mcpServers: JSON.parse(configurationRewriter.text(JSON.stringify(uploadedClaudeJson.mcpServers ?? {}))) as JsonValue,
@@ -293,21 +407,23 @@ export function applyAgentHomes(stagedDirectory: string, manifest: AgentHomesMan
     }
     fs.mkdirSync(path.dirname(claudeJsonPath()), { recursive: true });
     fs.writeFileSync(claudeJsonPath(), JSON.stringify(existing === undefined ? incoming : mergeJson(existing, incoming), null, 2));
-  }
+  });
 
-  const uploadedCodex = path.join(uploadedRoot, "codex");
-  if (fs.existsSync(uploadedCodex)) {
+  attempt(() => {
+    const uploadedCodex = path.join(uploadedRoot, "codex");
+    if (!fs.existsSync(uploadedCodex)) return;
     rewriteFile(path.join(uploadedCodex, "config.toml"), configurationRewriter);
     for (const rolloutPath of listFiles(path.join(uploadedCodex, "sessions"), ".jsonl")) rewriteFile(rolloutPath, transcriptRewriter);
     fs.mkdirSync(codexDirectory(), { recursive: true });
-    mergeDirectory(uploadedCodex, codexDirectory(), path.join(backupDirectory, "codex"));
-  }
+    mergeDirectory(uploadedCodex, codexDirectory(), path.join(backupDirectory, "codex"), problems, options);
+  });
+  return problems;
 }
 
 /**
  * Claude config dirs of environments (data directory/claude-accounts/<id>) came along with the data directory:
- * their links to the old ~/.claude point nowhere now (they are recreated on first use) and their transcripts
- * still carry the old paths.
+ * their links to the old ~/.claude point nowhere now (they are removed and recreated on first use) and their
+ * transcripts still carry the old paths.
  */
 export function repairEnvironmentClaudeDirectories(dataDirectory: string, rewriter: PathRewriter): void {
   const accountsDirectory = path.join(dataDirectory, "claude-accounts");
@@ -316,7 +432,8 @@ export function repairEnvironmentClaudeDirectories(dataDirectory: string, rewrit
     const accountDirectory = path.join(accountsDirectory, accountName);
     if (!fs.statSync(accountDirectory).isDirectory()) continue;
     for (const entry of fs.readdirSync(accountDirectory, { withFileTypes: true })) {
-      if (entry.isSymbolicLink()) fs.rmSync(path.join(accountDirectory, entry.name), { force: true });
+      const linkPath = path.join(accountDirectory, entry.name);
+      if (entry.isSymbolicLink() && !fs.existsSync(linkPath)) fs.rmSync(linkPath, { force: true });
     }
     relocateClaudeTranscripts(accountDirectory, rewriter);
   }

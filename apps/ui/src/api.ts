@@ -1,5 +1,5 @@
 import { currentLanguage, t } from "@/lib/i18n";
-import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, DevServer, PreviewOpening, GitStatus, GitCommit, GitBranches, TerminalInfo, ProjectRoot, DirectoryEntry, WorktreeStatus, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session, WorkspacePushStatus } from "./types.ts";
+import type { TeamAgent, TeamAgentInput, ExternalMcpServer, ManagedFile, Attachment, PluginInfo, QuickChatSettings, AgentCommand, TodayOverview, Environment, EnvironmentAccountChecks, EnvironmentProvider, EnvironmentInput, ImageRequest, ImageSettings, ImageSettingsView, AgentRuntimeStatus, AgentBackendId, AgentBackendsView, AgentRole, AgentRoleDefaults, AgentRoleSettings, CodexAuthMode, CodexStatus, ProviderInput, ProviderProtocol, ProvidersView, ClaudeAuthMode, ClaudeAuthStatus, DesignSystemDetail, DesignSystemLinkTarget, DesignSystemSummary, TokenTree, McpServer, McpServerInput, McpServerTestResult, Skill, SkillScope, MemoryFile, MemoryNoteRef, MemoryNoteSummary, MemoryScope, MemorySearchHit, MemorySettings, MemorySettingsView, VoiceSecretKey, VoiceSettings, VoiceSettingsView, CanvasDocument, Channel, ChannelInput, MailActivity, MailInbox, MailInboxInput, Task, TaskInput, TaskRun, ContextFolder, ContextFolders, ChatItem, ContextBreakdown, QueuedMessage, FileNode, BackgroundTask, DevServer, PreviewOpening, GitStatus, GitCommit, GitBranches, TerminalInfo, ProjectRoot, DirectoryEntry, WorktreeStatus, EffortLevel, RewindResult, PermissionAnswer, PermissionMode, Project, ServerEvent, Session, TransferFolders, TransferJob, TransferSelection } from "./types.ts";
 
 /** Core address: same origin by default (dev proxy / server mode), overridable for remote workspaces. */
 export const coreBaseUrl = localStorageSafeGet("harnold.coreUrl") ?? "";
@@ -40,10 +40,13 @@ const memoryNoteQuery = (noteRef: MemoryNoteRef) =>
 const rootQuery = (root?: string) => (root ? `?${new URLSearchParams({ root })}` : "");
 
 export const api = {
-  pushWorkspaceToServer: (serverUrl: string, token: string, agentOptions: { includeAgentConfiguration: boolean; includeAgentTranscripts: boolean }) =>
-    request<WorkspacePushStatus>("POST", "/api/migration/push", { serverUrl, token, ...agentOptions }),
-  readWorkspacePush: () => request<WorkspacePushStatus>("GET", "/api/migration/push"),
-  cancelWorkspacePush: () => request<WorkspacePushStatus>("DELETE", "/api/migration/push"),
+  listTransferFolders: () => request<TransferFolders>("GET", "/api/migration/folders"),
+  startPush: (serverUrl: string, token: string, selection: TransferSelection) => request<TransferJob>("POST", "/api/migration/push", { serverUrl, token, ...selection }),
+  startExport: (selection: TransferSelection) => request<TransferJob>("POST", "/api/migration/export", selection),
+  readTransferJob: () => request<TransferJob>("GET", "/api/migration/job"),
+  cancelTransferJob: () => request<TransferJob>("DELETE", "/api/migration/job"),
+  revealExport: () => request<{ ok: true }>("POST", "/api/migration/export/reveal"),
+  exportFileUrl: () => `${coreBaseUrl}/api/migration/export/file${accessToken ? `?token=${encodeURIComponent(accessToken)}` : ""}`,
   updateSession: (sessionId: string, changes: { title?: string; projectId?: string; directories?: string[]; model?: string | null }) => request<{ ok: true; deferred: boolean }>("PATCH", `/api/sessions/${sessionId}`, changes),
   clearSession: (sessionId: string) => request<{ ok: true }>("POST", `/api/sessions/${sessionId}/clear`),
   listAgentCommands: (projectId: string) => request<AgentCommand[]>("GET", `/api/projects/${projectId}/commands`),

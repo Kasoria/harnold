@@ -39,11 +39,19 @@ für Datenbanken. Er sieht die Container des Servers nicht. Veröffentlichte Con
 `localhost:PORT`, und sie erscheinen unter Workspace → App. Bind-Mounts funktionieren für Projekte unter `/data`, `/home/harnold`
 und die eingebundenen Server-Ordner. Images und Container liegen im Volume `harnold-docker`.
 
-## Lokalen Workspace umziehen
+## Umzug & Backup
 
-In der Desktop-App: Einstellungen → Allgemein → „Auf Server umziehen“. Server-Adresse und Token eintragen, „Zum Server übertragen“ klicken; die App bis zum Ende geöffnet lassen. Übertragen werden Projekte (auch Ordner außerhalb von `~/.harnold`; ohne `node_modules` und Build-Caches wie Rusts `target`), Chats, Memory, Einstellungen, Konten und Schlüssel, auf Wunsch Claude-/Codex-Konfiguration und Chat-Verläufe. Anmeldungen bei Claude/Codex auf dem Server neu vornehmen.
+Einstellungen → Allgemein → „Umzug & Backup“:
 
-Der Upload läuft in kleinen Stücken und setzt nach Verbindungsabbrüchen fort; ein eigener Reverse Proxy braucht keine besonderen Limits. Der Server muss Harnold in derselben aktuellen Version laufen haben. Er startet am Ende neu; die ersetzten Daten bleiben unter `.import/backup-…` im Daten-Volume (bei Bedarf selbst löschen).
+- **Auf Server übertragen** (Desktop-App): Server-Adresse und Token eintragen; die App bis zum Ende geöffnet lassen. Der Upload läuft parallel in kleinen Stücken und setzt nach Verbindungsabbrüchen fort; ein eigener Reverse Proxy braucht keine besonderen Limits. Der Server muss eine aktuelle Version laufen haben.
+- **Als Datei exportieren** (Desktop: Ordner „Downloads“; Server: Download im Browser) und **Datei importieren**. Ein Server startet danach selbst neu, sonst Harnold beenden und neu öffnen. Die Datei enthält Konten und Schlüssel.
+
+Umfang:
+
+- **Ganzer Workspace:** Projekte (auch Ordner außerhalb von `~/.harnold`; ohne `node_modules` und Build-Caches wie Rusts `target`), Chats, Memory, Einstellungen, Konten und Schlüssel, auf Wunsch Claude-/Codex-Konfiguration und Chat-Verläufe. Einzelne Ordner lassen sich abwählen (sie kommen leer an). Die ersetzten Daten bleiben unter `.import/backup-…` im Datenordner (bei Bedarf selbst löschen).
+- **Nur Agent-Konfiguration:** ergänzt Claude-/Codex-Konfiguration und Chat-Verläufe; der Workspace dort bleibt. Längere Verläufe auf der Zielseite bleiben erhalten.
+
+Verknüpfte Skills und Dateien (z. B. aus `~/.agents/skills`) werden mitkopiert. Anmeldungen bei Claude/Codex auf der Zielseite neu vornehmen.
 
 ## Updates
 - Eine neue Version erscheint in der UI unten und unter Einstellungen als „Update auf x“. Ein Klick auf **Auf x aktualisieren** holt das neue Image und startet Harnold neu (laufende Sitzungen werden unterbrochen). Die Seite lädt danach von selbst neu.

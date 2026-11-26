@@ -4,6 +4,7 @@ import type { ChatItem } from "@/types";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { t } from "@/lib/i18n";
+import { ToolResultImages, ToolResultView } from "./tool-result-view";
 
 export type ToolUseItem = Extract<ChatItem, { kind: "tool_use" }>;
 export type ToolResultItem = Extract<ChatItem, { kind: "tool_result" }>;
@@ -59,16 +60,7 @@ function ToolCallRow({ toolUse, toolResult }: { toolUse: ToolUseItem; toolResult
           <pre className="max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap">
             {JSON.stringify(toolUse.input, null, 2)}
           </pre>
-          {toolResult && (
-            <pre
-              className={cn(
-                "max-h-64 overflow-auto rounded-md bg-muted p-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground",
-                toolResult.isError && "text-destructive",
-              )}
-            >
-              {toolResult.content || t("(keine Ausgabe)")}
-            </pre>
-          )}
+          {toolResult && <ToolResultView toolName={toolUse.toolName} toolResult={toolResult} />}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -127,6 +119,15 @@ export function WorkGroup(props: { steps: WorkStep[]; toolResultsByToolUseId: Ma
           )}
         </div>
       </CollapsibleContent>
+      {!open &&
+        toolUses.map((toolUse) => {
+          const toolResult = toolUse.toolName.startsWith("mcp__") ? props.toolResultsByToolUseId.get(toolUse.toolUseId) : undefined;
+          return toolResult?.images?.length ? (
+            <div key={toolUse.id} className="mt-2">
+              <ToolResultImages toolResult={toolResult} />
+            </div>
+          ) : null;
+        })}
     </Collapsible>
   );
 }

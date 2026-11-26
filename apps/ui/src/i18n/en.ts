@@ -892,6 +892,8 @@ export const englishTexts: Record<string, string> = {
   "Anders machen …": "Do it differently …",
   "Aufgaben": "Tasks",
   "Hintergrund-Aufgabe": "Background task",
+  "{0} weitere Einträge": "{0} more entries",
+  "Feld": "Field",
   "Stoppen": "Stop",
   "Nachgedacht": "Thought",
   "{0} fehlgeschlagen": "{0} failed",

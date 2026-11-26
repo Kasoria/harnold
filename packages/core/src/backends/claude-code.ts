@@ -11,12 +11,25 @@ import { agentPluginOptions } from "../plugins.ts";
 import { recordClaudeMcpServers } from "../mcp-discovery.ts";
 import { createHarnoldToolServers, harnoldAutoAllowedToolNames } from "../harnold-tools.ts";
 import { t } from "../i18n.ts";
+import { shortTaskName } from "../task-names.ts";
 import type { AgentBackend, BackgroundTask, EffortLevel, BackgroundTurnHandler, SessionEventHandler, SteerInput, ContextBreakdown, PermissionMode, PermissionSuggestion, TurnContext, TurnEvent, TurnInput } from "./types.ts";
+
+/** Image blocks of an MCP result (base64), so the chat can show them instead of a placeholder. */
+const imagesOfToolResult = (content: unknown): { mediaType: string; data: string }[] | undefined => {
+  if (!Array.isArray(content)) return undefined;
+  const images = content.flatMap((block) => {
+    const source = block && typeof block === "object" && block.type === "image" ? (block as { source?: { type?: string; media_type?: string; data?: string } }).source : undefined;
+    return source?.type === "base64" && source.data && source.media_type?.startsWith("image/") ? [{ mediaType: source.media_type, data: source.data }] : [];
+  });
+  return images.length ? images.slice(0, 6) : undefined;
+};
 
 const stringifyToolResultContent = (content: unknown): string => {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((block) => (block && typeof block === "object" && "text" in block ? String(block.text) : "[nicht-Text-Inhalt]")).join("\n");
+    return content.map((block) => (block && typeof block === "object" && "text" in block ? String(block.text) : block && typeof block === "object" && block.type === "image" ? "" : "[nicht-Text-Inhalt]"))
+      .filter(Boolean)
+      .join("\n");
   }
   return JSON.stringify(content);
 };
@@ -65,13 +78,13 @@ function* eventsFor(projectId: string, agentMessage: SDKMessage, turnTracking: T
           text: t("API antwortet nicht{0} – neuer Versuch {1}/{2} in {3} s", agentMessage.error_status ? ` (${agentMessage.error_status})` : "", agentMessage.attempt, agentMessage.max_retries, retrySeconds),
         };
       } else if (agentMessage.subtype === "task_started" && !agentMessage.skip_transcript) {
-        yield { type: "status", text: agentMessage.description };
+        yield { type: "status", text: shortTaskName(agentMessage.description) };
       } else if (agentMessage.subtype === "task_progress") {
-        const progressParts = [agentMessage.description, agentMessage.summary ?? agentMessage.last_tool_name].filter(Boolean);
+        const progressParts = [shortTaskName(agentMessage.description), agentMessage.summary ? shortTaskName(agentMessage.summary) : agentMessage.last_tool_name].filter(Boolean);
         yield { type: "status", text: progressParts.join(" · ") };
       } else if (agentMessage.subtype === "task_notification" && !agentMessage.skip_transcript && !agentMessage.ambient) {
         const statusText = agentMessage.status === "completed" ? t("Hintergrund-Aufgabe fertig") : agentMessage.status === "failed" ? t("Hintergrund-Aufgabe fehlgeschlagen") : t("Hintergrund-Aufgabe gestoppt");
-        yield { type: "item", payload: { kind: "notice", text: `${statusText}${agentMessage.summary ? `: ${agentMessage.summary.slice(0, 300)}` : ""}` } };
+        yield { type: "item", payload: { kind: "notice", text: `${statusText}${agentMessage.summary ? `: ${shortTaskName(agentMessage.summary)}` : ""}` } };
       }
       return;
     case "rate_limit_event": {
@@ -120,7 +133,13 @@ function* eventsFor(projectId: string, agentMessage: SDKMessage, turnTracking: T
         if (contentBlock.type === "tool_result") {
           yield {
             type: "item",
-            payload: { kind: "tool_result", toolUseId: contentBlock.tool_use_id, content: stringifyToolResultContent(contentBlock.content).slice(0, 20_000), isError: Boolean(contentBlock.is_error) },
+            payload: {
+              kind: "tool_result",
+              toolUseId: contentBlock.tool_use_id,
+              content: stringifyToolResultContent(contentBlock.content).slice(0, 20_000),
+              isError: Boolean(contentBlock.is_error),
+              images: imagesOfToolResult(contentBlock.content),
+            },
           };
         }
       }
@@ -329,7 +348,7 @@ function routeMessage(liveSession: LiveSession, agentMessage: SDKMessage): void 
     liveSession.backgroundTaskIds = new Set(agentMessage.tasks.map((backgroundTask) => backgroundTask.task_id));
     const visibleTasks: BackgroundTask[] = agentMessage.tasks
       .filter((backgroundTask) => !backgroundTask.ambient)
-      .map((backgroundTask) => ({ id: backgroundTask.task_id, description: backgroundTask.description, taskType: backgroundTask.task_type }));
+      .map((backgroundTask) => ({ id: backgroundTask.task_id, description: shortTaskName(backgroundTask.description), taskType: backgroundTask.task_type }));
     sessionEventHandler?.(liveSession.sessionId, { type: "background_tasks", tasks: visibleTasks });
     scheduleIdleClose(liveSession);
   }

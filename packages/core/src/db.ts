@@ -117,7 +117,7 @@ export type ChatItemPayload =
   /** Harnold's own markers in the timeline (context cleared/compacted, session moved). */
   | { kind: "notice"; text: string }
   | { kind: "tool_use"; toolUseId: string; toolName: string; input: unknown }
-  | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean }
+  | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean; images?: { mediaType: string; data: string }[] }
   | {
       kind: "turn_result";
       success: boolean;

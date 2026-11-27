@@ -1081,4 +1081,13 @@ export const englishTexts: Record<string, string> = {
   "Navigation öffnen": "Open navigation",
   "Navigation schließen": "Close navigation",
   "Projekte, Chats und Bereiche": "Projects, chats and sections",
+  "Aktuelle Sitzung": "Current session",
+  "Diese Woche": "This week",
+  "Woche · Opus": "Week · Opus",
+  "Woche · Sonnet": "Week · Sonnet",
+  "Wird um {0} zurückgesetzt": "Resets at {0}",
+  "Zurücksetzung am {0}, {1}": "Resets on {0}, {1}",
+  "{0} % verwendet": "{0} % used",
+  "Nutzungslimits": "Usage limits",
+  "Keine Abo-Limits – nur mit Claude- oder ChatGPT-Anmeldung.": "No subscription limits – only with a Claude or ChatGPT login.",
 };

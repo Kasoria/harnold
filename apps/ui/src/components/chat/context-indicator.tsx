@@ -6,6 +6,7 @@ import type { ContextBreakdown } from "@/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { locale, t } from "@/lib/i18n";
+import { ProviderLimitsList, RefreshLimitsButton, useProviderLimits } from "@/components/provider-limits";
 
 const categoryLabels: Record<string, string> = {
   system_prompt: "System-Prompt",
@@ -54,6 +55,10 @@ export function ContextIndicator(props: {
   contextWindow: number | null;
   running: boolean;
   onCompact: () => void;
+  /** Project whose environment decides which login the limits belong to. */
+  projectId: string;
+  /** False for agents that cannot measure the context by category (Codex …): only tokens and limits are shown. */
+  hasBreakdown: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [breakdown, setBreakdown] = useState<ContextBreakdown | null>(null);
@@ -65,8 +70,10 @@ export function ContextIndicator(props: {
     setLoadError(null);
   }, [props.sessionId]);
 
+  const limits = useProviderLimits({ projectId: props.projectId || null }, open);
+
   const measure = () => {
-    if (!props.sessionId) return;
+    if (!props.sessionId || !props.hasBreakdown) return;
     setLoading(true);
     setLoadError(null);
     api
@@ -118,13 +125,18 @@ export function ContextIndicator(props: {
         >
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-[13px] font-medium">{t("Kontextfenster")}</span>
-            <button type="button" className="text-muted-foreground hover:text-foreground disabled:opacity-50" onClick={measure} disabled={loading} aria-label={t("Neu messen")}>
+            <button type="button" className="text-muted-foreground hover:text-foreground disabled:opacity-50" onClick={() => {
+                measure();
+                limits.reload();
+              }}
+              disabled={loading || limits.loading}
+              aria-label={t("Neu messen")}>
               {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
             </button>
           </div>
           <div className="mt-1 text-[12px] text-muted-foreground">
             {breakdown
-              ? t("{0} von {1} Tokens · {2}", formatTokens(breakdown.totalTokens), formatTokens(breakdown.maxTokens), breakdown.model)
+              ? t("{0} von {1} Tokens · {2}", formatTokens(breakdown.totalTokens), formatTokens(windowTokens ?? breakdown.maxTokens), breakdown.model)
               : usedTokens !== null && windowTokens
                 ? t("{0} von {1} Tokens", formatTokens(usedTokens), formatTokens(windowTokens))
                 : t("Noch nicht gemessen")}
@@ -158,6 +170,7 @@ export function ContextIndicator(props: {
           {loading && !breakdown && <div className="mt-3 text-[12px] text-muted-foreground">{t("Wird gemessen …")}</div>}
           {loadError && <div className="mt-3 text-[12px] text-destructive">{loadError}</div>}
 
+          {props.hasBreakdown && (
           <div className="mt-4 flex items-center justify-between gap-2 border-t pt-3">
             <span className="text-[11.5px] text-muted-foreground">{t("Komprimieren fasst den Verlauf zusammen.")}</span>
             <Button
@@ -172,6 +185,15 @@ export function ContextIndicator(props: {
             >
               {t("Komprimieren")}
             </Button>
+          </div>
+          )}
+
+          <div className="mt-4 grid gap-3 border-t pt-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[13px] font-medium">{t("Nutzungslimits")}</span>
+              <RefreshLimitsButton loading={limits.loading} onClick={limits.reload} />
+            </div>
+            <ProviderLimitsList view={limits.view} loading={limits.loading} />
           </div>
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

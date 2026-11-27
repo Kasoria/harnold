@@ -557,3 +557,8 @@ export type TransferJob = {
   warning: string | null;
   filePath: string | null;
 };
+
+/** Subscription usage of one provider (5-hour session, week, …). */
+export type LimitWindow = { id: string; label: string; usedPercent: number; resetsAt: number | null };
+export type ProviderLimits = { id: string; label: string; plan?: string; windows: LimitWindow[]; error?: string };
+export type LimitsView = { providers: ProviderLimits[]; fetchedAt: number };

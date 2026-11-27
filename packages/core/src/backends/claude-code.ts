@@ -12,6 +12,7 @@ import { recordClaudeMcpServers } from "../mcp-discovery.ts";
 import { createHarnoldToolServers, harnoldAutoAllowedToolNames } from "../harnold-tools.ts";
 import { t } from "../i18n.ts";
 import { shortTaskName } from "../task-names.ts";
+import { customAutoCompactWindow } from "./auto-compact-window.ts";
 import type { AgentBackend, BackgroundTask, EffortLevel, BackgroundTurnHandler, SessionEventHandler, SteerInput, ContextBreakdown, PermissionMode, PermissionSuggestion, TurnContext, TurnEvent, TurnInput } from "./types.ts";
 
 /** Image blocks of an MCP result (base64), so the chat can show them instead of a placeholder. */
@@ -51,6 +52,10 @@ function contextWindowOf(modelUsage: Record<string, ModelUsage> | undefined, mod
   return mainEntry?.[1].contextWindow ?? (usageEntries.length ? Math.max(...usageEntries.map(([, usage]) => usage.contextWindow)) : undefined);
 }
 
+/** The ring is "full" when Claude compacts: a custom auto-compact window below the model's maximum counts. */
+const effectiveContextWindow = (modelWindow: number | undefined, customWindow: number | undefined) =>
+  customWindow !== undefined ? (modelWindow !== undefined ? Math.min(modelWindow, customWindow) : customWindow) : modelWindow;
+
 const toContextBreakdown = (usage: SDKControlGetContextUsageResponse): ContextBreakdown => ({
   model: usage.model,
   totalTokens: usage.totalTokens,
@@ -60,7 +65,7 @@ const toContextBreakdown = (usage: SDKControlGetContextUsageResponse): ContextBr
 });
 
 /** Per-turn bookkeeping: the last main-thread transcript entry is the fork point for edits of later messages. */
-type TurnTracking = { lastChainUuid?: string; contextTokens?: number; model?: string };
+type TurnTracking = { lastChainUuid?: string; contextTokens?: number; model?: string; autoCompactWindow?: (model: string | undefined) => number | undefined };
 
 /** Maps one SDK message onto provider-independent turn events. */
 function* eventsFor(projectId: string, agentMessage: SDKMessage, turnTracking: TurnTracking): Generator<TurnEvent> {
@@ -165,7 +170,7 @@ function* eventsFor(projectId: string, agentMessage: SDKMessage, turnTracking: T
         errorText: agentMessage.subtype === "success" ? undefined : agentMessage.errors.join("\n"),
         lastChainUuid: turnTracking.lastChainUuid,
         contextTokens: turnTracking.contextTokens,
-        contextWindow: contextWindowOf(agentMessage.modelUsage, turnTracking.model),
+        contextWindow: effectiveContextWindow(contextWindowOf(agentMessage.modelUsage, turnTracking.model), turnTracking.autoCompactWindow?.(turnTracking.model)),
       };
       yield { type: "item", payload };
       return;
@@ -276,6 +281,8 @@ type LiveSession = {
   model: string;
   effort: EffortLevel | undefined;
   keepAlive: boolean;
+  /** Where Claude Code reads its settings from (for a custom auto-compact window). */
+  settingsLocation: { workingDirectory: string; env: NodeJS.ProcessEnv };
   /** Messages of the running turn (user- or agent-started); null between turns. */
   activeTurn: AsyncQueue<SDKMessage> | null;
   backgroundTaskIds: Set<string>;
@@ -423,7 +430,7 @@ async function pumpMessages(liveSession: LiveSession): Promise<void> {
 
 /** Turns the messages of one turn into turn events, ending with the outcome. */
 async function* turnEventsFrom(liveSession: LiveSession, turnMessages: AsyncQueue<SDKMessage>, wasStopped: () => boolean): AsyncGenerator<TurnEvent> {
-  const turnTracking: TurnTracking = {};
+  const turnTracking: TurnTracking = { autoCompactWindow: (model) => customAutoCompactWindow(model, liveSession.settingsLocation.workingDirectory, liveSession.settingsLocation.env) };
   let finalText = "";
   let sawResult = false;
   let success = false;
@@ -508,6 +515,7 @@ async function liveSessionFor(input: TurnInput): Promise<LiveSession> {
     model: input.model,
     effort: input.effort,
     keepAlive: input.keepAlive,
+    settingsLocation: { workingDirectory: input.workingDirectory, env: input.env },
     activeTurn: null,
     backgroundTaskIds: new Set<string>(),
     requestPermission: input.requestPermission,

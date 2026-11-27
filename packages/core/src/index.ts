@@ -1,3 +1,4 @@
+import { providerLimits } from "./provider-limits.ts";
 import fs from "node:fs";
 import os from "node:os";
 import { spawn } from "node:child_process";
@@ -1093,6 +1094,12 @@ const readEnvironmentId = async (context: { req: { json: () => Promise<unknown> 
 app.get("/api/claude/status", async (context) =>
   context.json(await claudeAuth.status(context.req.query("refresh") === "1", claudeProfileOf(context.req.query("environmentId")))),
 );
+
+app.get("/api/limits", async (context) => {
+  const projectId = context.req.query("projectId");
+  const environmentId = projectId ? environmentStore.forProject(projectId)?.id : context.req.query("environmentId");
+  return context.json(await providerLimits.read(environmentId));
+});
 
 app.post("/api/runtimes/:runtimeId/download", (context) => {
   agentRuntimes.download(z.enum(["claude-code"]).parse(context.req.param("runtimeId")));

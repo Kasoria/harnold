@@ -680,7 +680,6 @@ export function ChatPane(props: ChatPaneProps) {
             onInterrupt={props.onInterrupt}
             onError={props.onError}
             contextIndicator={(composerModel) =>
-              sessionBackend && !sessionBackend.capabilities.contextBreakdown ? null : (
               <ContextIndicator
                 sessionId={props.session?.id ?? null}
                 model={composerModel}
@@ -688,8 +687,9 @@ export function ChatPane(props: ChatPaneProps) {
                 contextWindow={lastTurnContext?.contextWindow ?? null}
                 running={running}
                 onCompact={() => props.onSend("/compact", "default", composerModel || undefined)}
+                projectId={props.project?.id ?? ""}
+                hasBreakdown={sessionBackend?.capabilities.contextBreakdown ?? true}
               />
-              )
             }
             directories={props.session?.directories}
             onAddDirectory={props.session ? () => void addDirectory() : undefined}

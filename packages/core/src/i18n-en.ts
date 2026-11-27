@@ -189,4 +189,6 @@ export const englishTexts: Record<string, string> = {
   "Zusammenführen nicht möglich (Konflikt oder offene Änderungen): {0}": "Merge not possible (conflict or open changes): {0}",
   "Zusätzliche Ordner (du darfst darin lesen und arbeiten):": "Additional folders (you may read and work in them):",
   "Übernommen aus Chat „{0}“": "Merged from chat “{0}”",
+  "Anmeldung abgelaufen – den Agent einmal kurz benutzen oder neu anmelden": "Login expired – use the agent briefly or sign in again",
+  "Limits nicht abrufbar ({0})": "Limits unavailable ({0})",
 };

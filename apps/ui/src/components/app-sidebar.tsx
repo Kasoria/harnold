@@ -1,3 +1,4 @@
+import { ProviderLimitsList, useProviderLimits } from "@/components/provider-limits";
 import { useRef, useState } from "react";
 import { Blocks, Brain, FolderOpen, CalendarClock, Inbox, Check, ChevronRight, ChevronsUpDown, Layers, Mail, MessageSquare, MessageSquarePlus, MessagesSquare, Moon, Palette, PanelLeftClose, PanelLeftOpen, Play, Plus, Search, Settings, Sun, Users, X } from "lucide-react";
 import { conversationRootId, conversationMembers } from "@/lib/session-versions";
@@ -265,6 +266,18 @@ function CollapseToggle(props: { collapsed: boolean; onToggle: () => void; short
   );
 }
 
+/** Compact usage bars of the active agent's subscription; click opens the settings. */
+function SidebarLimits(props: { environmentId: string | null; onOpen: () => void }) {
+  const { view } = useProviderLimits({ environmentId: props.environmentId });
+  const firstProvider = view?.providers.find((provider) => provider.windows.length > 0);
+  if (!firstProvider) return null;
+  return (
+    <button type="button" className="mx-2 mb-1 grid gap-1.5 rounded-md border-t px-2 pt-2.5 pb-1.5 text-left transition-colors hover:bg-foreground/[0.04]" onClick={props.onOpen} title={t("Nutzungslimits")}>
+      <ProviderLimitsList view={{ ...view!, providers: [{ ...firstProvider, plan: undefined, windows: firstProvider.windows.slice(0, 2) }] }} compact />
+    </button>
+  );
+}
+
 export function AppSidebar(props: AppSidebarProps) {
   if (props.collapsed) return <SidebarRail {...props} />;
   const shortcutBindings = useShortcutBindings();
@@ -378,6 +391,8 @@ export function AppSidebar(props: AppSidebarProps) {
           </div>
         )}
       </div>
+
+      <SidebarLimits environmentId={props.activeEnvironmentId} onOpen={() => props.onOpenScreen("settings")} />
 
       <div className="flex items-center gap-1 border-t p-2">
         <button

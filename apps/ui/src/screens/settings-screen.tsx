@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AgentBackendsView, AgentRoleSettings, ClaudeAuthStatus, CodexStatus, ProvidersView, ImageProvider, ImageSettings, ImageSettingsView, SttProvider, TtsProvider, VoiceSecretKey, VoiceSettings, VoiceSettingsView } from "@/types";
 import { api, coreBaseUrl } from "@/api";
 import { Brain, Image as ImageIcon, Keyboard, Loader2, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
+import { LimitsSection } from "@/components/provider-limits";
 import { AgentConnection } from "@/components/agent-connection";
 import { cn } from "@/lib/utils";
 import { MasterDetail, ScreenLayout } from "./screen-layout";
@@ -255,6 +256,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
                   onDefaultModelChange={props.onDefaultModelChange}
                   onError={props.onError}
                 />
+                <LimitsSection />
                 <AgentRolesSection onRolesChange={props.onAgentRolesChange} onError={props.onError} />
               </div>
             ) : activeSection.value === "general" ? (

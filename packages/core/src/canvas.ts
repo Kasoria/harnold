@@ -43,6 +43,8 @@ export type CanvasDocument = z.infer<typeof canvasDocumentSchema>;
 
 const artifactExtensions = /\.(html?|svg|png|jpe?g|webp|gif)$/i;
 const htmlExtensions = /\.html?$/i;
+/** Folders whose HTML files and images appear on the canvas on their own (typical places for drafts, references and static assets). */
+const artifactFolders = ["design", "design-reference", "assets", "public"];
 const autoFrameTitle = "Entwürfe";
 const framePadding = 40;
 const gridGap = 32;
@@ -61,8 +63,7 @@ function listArtifactPaths(project: Project): string[] {
       else if (artifactExtensions.test(entry.name)) collected.push(entryPath);
     }
   };
-  walk("design");
-  walk("assets");
+  for (const artifactFolder of artifactFolders) walk(artifactFolder);
   return collected.sort();
 }
 

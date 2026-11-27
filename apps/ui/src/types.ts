@@ -141,7 +141,7 @@ export type CanvasElement = {
   toId?: string;
 };
 
-export type CanvasDocument = { version: 1; elements: CanvasElement[] };
+export type CanvasDocument = { version: 1; elements: CanvasElement[]; overviewSeeded?: boolean };
 
 /** Folder Harnold may work in, on one memory level (project, environment, workspace). */
 export type ContextFolder = {

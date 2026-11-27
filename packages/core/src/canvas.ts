@@ -36,6 +36,8 @@ const canvasElementSchema = z.object({
 export const canvasDocumentSchema = z.object({
   version: z.literal(1),
   elements: z.array(canvasElementSchema),
+  /** Set once the project overview (app, key files, main folders) has been laid out; the user's edits are never overwritten afterwards. */
+  overviewSeeded: z.boolean().optional(),
 });
 
 export type CanvasElement = z.infer<typeof canvasElementSchema>;
@@ -80,7 +82,92 @@ function readCanvasFile(project: Project): CanvasDocument {
 export function writeCanvas(project: Project, canvasDocument: CanvasDocument): void {
   const absolutePath = resolveInsideProject(project, canvasRelativePath);
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-  fs.writeFileSync(absolutePath, JSON.stringify(canvasDocument, null, 2));
+  // The UI doesn't know the flag; keep it so a saved canvas doesn't get the overview laid out again.
+  const overviewSeeded = canvasDocument.overviewSeeded ?? readCanvasFile(project).overviewSeeded;
+  fs.writeFileSync(absolutePath, JSON.stringify({ ...canvasDocument, ...(overviewSeeded ? { overviewSeeded } : {}) }, null, 2));
+}
+
+const overviewFrameTitle = "Projekt";
+const overviewKeyFiles = ["README.md", "AGENTS.md", "CLAUDE.md"];
+/** Top-level folders left out of the overview: generated, hidden, or already shown through their images and drafts. */
+const overviewSkippedFolders = new Set(["node_modules", "dist", "build", "out", "target", "coverage", "attachments", "memory", "design", "design-reference", "assets", "public", "__pycache__"]);
+const overviewMaxFolders = 8;
+const overviewRowWidth = 1280;
+const overviewCardSizes = {
+  app: { width: 480, height: 328 },
+  file: { width: 360, height: 280 },
+  folder: { width: 260, height: 300 },
+};
+
+function hasDevServerScript(projectFolder: string): boolean {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(projectFolder, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    return Boolean(manifest.scripts?.dev ?? manifest.scripts?.start);
+  } catch {
+    return false;
+  }
+}
+
+function folderHasFiles(absoluteFolder: string): boolean {
+  try {
+    return fs.readdirSync(absoluteFolder).some((name) => !name.startsWith("."));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A tidy picture of the project at the top level: the running app, the key documents and the main folders
+ * (not every file). Laid out once; afterwards the canvas belongs to the user.
+ */
+function seedProjectOverview(project: Project, elements: CanvasElement[]): boolean {
+  const projectFolder = resolveInsideProject(project, ".");
+  if (!fs.existsSync(projectFolder)) return false;
+  const topLevelEntries = fs.readdirSync(projectFolder, { withFileTypes: true }).filter((entry) => !entry.name.startsWith("."));
+
+  const cards: Array<Pick<CanvasElement, "type" | "path" | "route"> & { size: { width: number; height: number } }> = [];
+  if (hasDevServerScript(projectFolder)) cards.push({ type: "app", route: "/", size: overviewCardSizes.app });
+  for (const fileName of overviewKeyFiles) {
+    if (topLevelEntries.some((entry) => entry.isFile() && entry.name === fileName)) cards.push({ type: "file", path: fileName, size: overviewCardSizes.file });
+  }
+  const folderNames = topLevelEntries
+    .filter((entry) => entry.isDirectory() && !overviewSkippedFolders.has(entry.name) && folderHasFiles(path.join(projectFolder, entry.name)))
+    .map((entry) => entry.name)
+    .sort((first, second) => first.localeCompare(second))
+    .slice(0, overviewMaxFolders);
+  for (const folderName of folderNames) cards.push({ type: "folder", path: folderName, size: overviewCardSizes.folder });
+  if (!cards.length) return false;
+
+  const lowestBottom = elements.reduce((bottom, element) => Math.max(bottom, element.y + element.height), -gridGap * 2);
+  const overviewFrame: CanvasElement = { id: randomUUID(), type: "frame", title: overviewFrameTitle, x: 0, y: lowestBottom + gridGap * 2, width: 0, height: 0 };
+  const originX = overviewFrame.x + framePadding;
+  let cursorX = originX;
+  let cursorY = overviewFrame.y + framePadding;
+  let rowHeight = 0;
+  const placed: CanvasElement[] = [];
+  for (const card of cards) {
+    if (cursorX > originX && cursorX + card.size.width > originX + overviewRowWidth) {
+      cursorX = originX;
+      cursorY += rowHeight + gridGap;
+      rowHeight = 0;
+    }
+    placed.push({
+      id: randomUUID(),
+      type: card.type,
+      ...(card.path ? { path: card.path } : {}),
+      ...(card.route ? { route: card.route } : {}),
+      frameId: overviewFrame.id,
+      x: cursorX,
+      y: cursorY,
+      ...card.size,
+    });
+    cursorX += card.size.width + gridGap;
+    rowHeight = Math.max(rowHeight, card.size.height);
+  }
+  overviewFrame.width = Math.max(...placed.map((card) => card.x + card.width)) - overviewFrame.x + framePadding;
+  overviewFrame.height = cursorY + rowHeight - overviewFrame.y + framePadding;
+  elements.push(overviewFrame, ...placed);
+  return true;
 }
 
 /** Whether the file/folder an element shows still exists; an unresolvable root (folder detached) counts as gone. */
@@ -111,6 +198,11 @@ export function readCanvas(project: Project): CanvasDocument {
 
   let changed = keptElements.length !== canvasDocument.elements.length;
   const elements = keptElements;
+  let overviewSeeded = canvasDocument.overviewSeeded;
+  if (!overviewSeeded && seedProjectOverview(project, elements)) {
+    overviewSeeded = true;
+    changed = true;
+  }
 
   if (missingPaths.length) {
     changed = true;
@@ -145,7 +237,7 @@ export function readCanvas(project: Project): CanvasDocument {
     autoFrame.height = Math.max(...children.map((child) => child.y + child.height)) - autoFrame.y + framePadding;
   }
 
-  const result: CanvasDocument = { version: 1, elements };
+  const result: CanvasDocument = { version: 1, elements, ...(overviewSeeded ? { overviewSeeded } : {}) };
   if (changed) writeCanvas(project, result);
   return result;
 }
@@ -195,5 +287,5 @@ export function placeImagesOnCanvas(project: Project, images: CanvasImagePlaceme
     generatedFrame.width = Math.max(...children.map((child) => child.x + child.width)) - generatedFrame.x + framePadding;
     generatedFrame.height = Math.max(...children.map((child) => child.y + child.height)) - generatedFrame.y + framePadding;
   }
-  writeCanvas(project, { version: 1, elements });
+  writeCanvas(project, { ...canvasDocument, elements });
 }

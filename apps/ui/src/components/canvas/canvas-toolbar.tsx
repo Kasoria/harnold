@@ -1,9 +1,9 @@
-import { Hand, Hash, MousePointer2, Pencil, Sparkles, Square, StickyNote, Type } from "lucide-react";
+import { AppWindow, FolderPlus, Hand, Hash, MousePointer2, MoveUpRight, Pencil, Sparkles, Square, StickyNote, Type } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 
-export type CanvasTool = "select" | "hand" | "text" | "frame" | "note" | "pen" | "rect";
+export type CanvasTool = "select" | "hand" | "text" | "frame" | "note" | "pen" | "rect" | "connector";
 
 export const canvasTools: { tool: CanvasTool; label: string; shortcut: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { tool: "select", label: t("Auswahl"), shortcut: "V", icon: MousePointer2 },
@@ -13,6 +13,7 @@ export const canvasTools: { tool: CanvasTool; label: string; shortcut: string; i
   { tool: "note", label: t("Notiz"), shortcut: "N", icon: StickyNote },
   { tool: "pen", label: t("Stift"), shortcut: "P", icon: Pencil },
   { tool: "rect", label: t("Rechteck"), shortcut: "R", icon: Square },
+  { tool: "connector", label: t("Verbinden"), shortcut: "A", icon: MoveUpRight },
 ];
 
 const buttonSize = 32;
@@ -23,11 +24,15 @@ export function CanvasToolbar({
   onToolChange,
   imagePanelOpen,
   onToggleImagePanel,
+  onAddApp,
+  onAddFiles,
 }: {
   activeTool: CanvasTool;
   onToolChange: (tool: CanvasTool) => void;
   imagePanelOpen: boolean;
   onToggleImagePanel: () => void;
+  onAddApp: () => void;
+  onAddFiles?: () => void;
 }) {
   const activeIndex = canvasTools.findIndex((entry) => entry.tool === activeTool);
   return (
@@ -65,6 +70,14 @@ export function CanvasToolbar({
         ))}
       </div>
       <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
+      {onAddFiles && (
+        <ExtraButton label={t("Dateien & Ordner hinzufügen")} hint={t("Aus dem Dateibaum ziehen")} onClick={onAddFiles}>
+          <FolderPlus className="size-4" />
+        </ExtraButton>
+      )}
+      <ExtraButton label={t("Live-App hinzufügen")} onClick={onAddApp}>
+        <AppWindow className="size-4" />
+      </ExtraButton>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -86,5 +99,26 @@ export function CanvasToolbar({
       </Tooltip>
       </div>
     </div>
+  );
+}
+
+function ExtraButton(props: { label: string; hint?: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          aria-label={props.label}
+          onClick={props.onClick}
+          className="flex items-center justify-center rounded-lg text-muted-foreground transition-colors duration-200 hover:bg-foreground/5 hover:text-foreground"
+          style={{ width: buttonSize, height: buttonSize }}
+        >
+          {props.children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        {props.label}
+        {props.hint && <span className="ml-1 opacity-60">{props.hint}</span>}
+      </TooltipContent>
+    </Tooltip>
   );
 }

@@ -135,7 +135,7 @@ export const api = {
   applySessionWorktree: (sessionId: string) => request<{ worktree: WorktreeStatus | null }>("POST", `/api/sessions/${sessionId}/worktree/apply`),
   removeSessionWorktree: (sessionId: string, deleteBranch: boolean) => request<{ worktree: null }>("DELETE", `/api/sessions/${sessionId}/worktree${deleteBranch ? "?deleteBranch=1" : ""}`),
   listDevServers: () => request<DevServer[]>("GET", "/api/dev-servers"),
-  openDevServer: (port: number) => request<PreviewOpening>("POST", `/api/dev-servers/${port}/open`),
+  openDevServer: (port: number, route?: string) => request<PreviewOpening>("POST", `/api/dev-servers/${port}/open`, route ? { route } : undefined),
   listBackgroundTasks: (sessionId: string) => request<BackgroundTask[]>("GET", `/api/sessions/${sessionId}/background-tasks`),
   stopBackgroundTask: (sessionId: string, taskId: string) => request("POST", `/api/sessions/${sessionId}/background-tasks/${encodeURIComponent(taskId)}/stop`),
   answerPermission: (requestId: string, answer: PermissionAnswer) => request("POST", `/api/permissions/${requestId}`, answer),
@@ -325,18 +325,27 @@ export function connectEvents(
   let closedByClient = false;
   let reconnectTimer: number | undefined;
   let hasConnectedBefore = false;
+  let lastMessageAt = Date.now();
+  const heartbeatTimeoutMs = 40_000; // Core sends a heartbeat every 15 s
 
   const open = () => {
+    lastMessageAt = Date.now();
     window.clearTimeout(reconnectTimer);
     const httpBase = coreBaseUrl || window.location.origin;
     const socketUrl = httpBase.replace(/^http/, "ws") + "/ws" + (accessToken ? `?token=${encodeURIComponent(accessToken)}` : "");
     const currentSocket = new WebSocket(socketUrl);
     socket = currentSocket;
     currentSocket.onopen = () => {
+      lastMessageAt = Date.now();
       onConnectionChange?.(true, hasConnectedBefore);
       hasConnectedBefore = true;
     };
-    currentSocket.onmessage = (messageEvent) => onServerEvent(JSON.parse(messageEvent.data) as ServerEvent);
+    currentSocket.onmessage = (messageEvent) => {
+      lastMessageAt = Date.now();
+      const parsedEvent = JSON.parse(messageEvent.data) as ServerEvent | { type: "heartbeat" };
+      if (parsedEvent.type === "heartbeat") return;
+      onServerEvent(parsedEvent as ServerEvent);
+    };
     currentSocket.onerror = () => console.warn(`Harnold: Live-Verbindung zu ${socketUrl.replace(/\?token=.*/, "")} fehlgeschlagen`);
     currentSocket.onclose = () => {
       if (socket !== currentSocket) return; // already replaced on purpose
@@ -357,6 +366,10 @@ export function connectEvents(
   const onWindowBackAgain = () => {
     if (document.visibilityState === "visible") replaceSocket();
   };
+  // Watchdog: a socket that looks open but stays silent (silently dropped by proxy/NAT, throttled timers) is replaced.
+  const watchdogTimer = window.setInterval(() => {
+    if (socket && Date.now() - lastMessageAt > heartbeatTimeoutMs) replaceSocket();
+  }, 10_000);
   document.addEventListener("visibilitychange", onWindowBackAgain);
   window.addEventListener("online", replaceSocket);
   open();
@@ -366,6 +379,7 @@ export function connectEvents(
     document.removeEventListener("visibilitychange", onWindowBackAgain);
     window.removeEventListener("online", replaceSocket);
     window.clearTimeout(reconnectTimer);
+    window.clearInterval(watchdogTimer);
     socket?.close();
   };
 }

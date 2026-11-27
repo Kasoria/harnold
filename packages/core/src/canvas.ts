@@ -4,13 +4,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Project } from "./db.ts";
 import { resolveInsideProject } from "./files.ts";
+import { resolveInsideProjectRoot } from "./project-roots.ts";
 
 /** Canvas lives inside the project (design/canvas.json) so the agent can read and arrange it too. */
 export const canvasRelativePath = "design/canvas.json";
 
 const canvasElementSchema = z.object({
   id: z.string(),
-  type: z.enum(["frame", "artifact", "note", "text", "rect", "drawing"]),
+  type: z.enum(["frame", "artifact", "note", "text", "rect", "drawing", "file", "folder", "app", "connector"]),
   x: z.number(),
   y: z.number(),
   width: z.number(),
@@ -22,6 +23,14 @@ const canvasElementSchema = z.object({
   points: z.array(z.tuple([z.number(), z.number()])).optional(),
   viewportWidth: z.number().optional(),
   viewportHeight: z.number().optional(),
+  /** file/folder: absolute path of the project root the path is relative to; absent = project folder. */
+  root: z.string().optional(),
+  /** app: route of the dev server shown, and the preferred port (absent = the project's first server). */
+  route: z.string().optional(),
+  port: z.number().optional(),
+  /** connector: the two connected elements. */
+  fromId: z.string().optional(),
+  toId: z.string().optional(),
 });
 
 export const canvasDocumentSchema = z.object({
@@ -73,14 +82,28 @@ export function writeCanvas(project: Project, canvasDocument: CanvasDocument): v
   fs.writeFileSync(absolutePath, JSON.stringify(canvasDocument, null, 2));
 }
 
-/** Reads the canvas and places artifact files that are not on it yet; drops artifacts whose file is gone. */
+/** Whether the file/folder an element shows still exists; an unresolvable root (folder detached) counts as gone. */
+function elementTargetExists(project: Project, element: CanvasElement): boolean {
+  if (!element.path) return false;
+  try {
+    const absolutePath = element.type === "artifact" ? resolveInsideProject(project, element.path) : resolveInsideProjectRoot(project, element.root, element.path);
+    return fs.existsSync(absolutePath);
+  } catch {
+    return false;
+  }
+}
+
+/** Reads the canvas and places artifact files that are not on it yet; drops elements whose file is gone and dangling connectors. */
 export function readCanvas(project: Project): CanvasDocument {
   const canvasDocument = readCanvasFile(project);
   const artifactPaths = listArtifactPaths(project);
-  const existingArtifactPaths = new Set(artifactPaths);
 
-  const keptElements = canvasDocument.elements.filter(
-    (element) => element.type !== "artifact" || (element.path !== undefined && existingArtifactPaths.has(element.path)),
+  const elementsWithTargets = canvasDocument.elements.filter(
+    (element) => !["artifact", "file", "folder"].includes(element.type) || elementTargetExists(project, element),
+  );
+  const remainingIds = new Set(elementsWithTargets.map((element) => element.id));
+  const keptElements = elementsWithTargets.filter(
+    (element) => element.type !== "connector" || (remainingIds.has(element.fromId ?? "") && remainingIds.has(element.toId ?? "")),
   );
   const placedPaths = new Set(keptElements.flatMap((element) => (element.type === "artifact" && element.path ? [element.path] : [])));
   const missingPaths = artifactPaths.filter((artifactPath) => !placedPaths.has(artifactPath));

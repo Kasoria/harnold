@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AtSign, ChevronRight, File, Folder, FolderGit2, GitBranch, Loader2 } from "lucide-react";
+import { AtSign, ChevronRight, File, Folder, FolderGit2, GitBranch, LayoutDashboard, Loader2 } from "lucide-react";
+import { canvasDragType, type CanvasAddItem } from "@/components/canvas/project-canvas";
 import { api } from "@/api";
 import type { DirectoryEntry, Project, ProjectRoot } from "@/types";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,45 @@ type TreeContext = {
   refreshKey: number;
   onSelect: (selection: FileSelection) => void;
   onReference: (selection: FileSelection) => void;
+  /** Set while the canvas is shown: a button per row places the file/folder on it. */
+  onPlaceOnCanvas?: (item: CanvasAddItem) => void;
 };
+
+/** Every row can be dragged onto the canvas. */
+function dragOntoCanvas(item: CanvasAddItem) {
+  return {
+    draggable: true,
+    onDragStart: (dragEvent: React.DragEvent) => {
+      dragEvent.dataTransfer.setData(canvasDragType, JSON.stringify(item));
+      dragEvent.dataTransfer.setData("text/plain", item.path);
+      dragEvent.dataTransfer.effectAllowed = "copy";
+    },
+  };
+}
+
+function RowAction(props: { label: string; onActivate: () => void; children: React.ReactNode }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={props.label}
+      aria-label={props.label}
+      onClick={(clickEvent) => {
+        clickEvent.stopPropagation();
+        props.onActivate();
+      }}
+      onKeyDown={(keyboardEvent) => {
+        if (keyboardEvent.key === "Enter") {
+          keyboardEvent.stopPropagation();
+          props.onActivate();
+        }
+      }}
+      className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/file:opacity-100 hover:bg-foreground/10 hover:text-foreground"
+    >
+      {props.children}
+    </span>
+  );
+}
 
 const rowClassName =
   "group/file flex h-6 w-full items-center gap-1.5 rounded-md pr-1 text-left text-[12.5px] transition-colors duration-150 hover:bg-foreground/5";
@@ -64,10 +103,23 @@ function DirectoryNode(props: TreeContext & { entry: DirectoryEntry; depth: numb
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className={cn(rowClassName, props.entry.heavy && "text-muted-foreground")} style={{ paddingLeft: 4 + props.depth * 12 }} onClick={() => setOpen((wasOpen) => !wasOpen)}>
+      <button
+        type="button"
+        className={cn(rowClassName, props.entry.heavy && "text-muted-foreground")}
+        style={{ paddingLeft: 4 + props.depth * 12 }}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        {...dragOntoCanvas({ root: props.root, path: props.entry.path, kind: "directory" })}
+      >
         <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-90")} />
         <Folder className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{props.entry.name}</span>
+        {props.onPlaceOnCanvas && (
+          <span className="ml-auto flex">
+            <RowAction label={t("Auf den Canvas legen")} onActivate={() => props.onPlaceOnCanvas?.({ root: props.root, path: props.entry.path, kind: "directory" })}>
+              <LayoutDashboard className="size-3" />
+            </RowAction>
+          </span>
+        )}
       </button>
       {open && <DirectoryLevel {...props} directoryPath={props.entry.path} depth={props.depth + 1} />}
     </>
@@ -83,27 +135,19 @@ function FileRow(props: TreeContext & { entry: DirectoryEntry; depth: number }) 
       className={cn(rowClassName, isSelected && "bg-foreground/[0.07] font-medium")}
       style={{ paddingLeft: 4 + props.depth * 12 + 16 }}
       onClick={() => props.onSelect(selection)}
+      {...dragOntoCanvas({ ...selection, kind: "file" })}
     >
       <File className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="truncate">{props.entry.name}</span>
-      <span
-        role="button"
-        tabIndex={0}
-        title={t("Im Chat referenzieren")}
-        aria-label={t("Im Chat referenzieren")}
-        onClick={(clickEvent) => {
-          clickEvent.stopPropagation();
-          props.onReference(selection);
-        }}
-        onKeyDown={(keyboardEvent) => {
-          if (keyboardEvent.key === "Enter") {
-            keyboardEvent.stopPropagation();
-            props.onReference(selection);
-          }
-        }}
-        className="ml-auto flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/file:opacity-100 hover:bg-foreground/10 hover:text-foreground"
-      >
-        <AtSign className="size-3" />
+      <span className="ml-auto flex">
+        {props.onPlaceOnCanvas && (
+          <RowAction label={t("Auf den Canvas legen")} onActivate={() => props.onPlaceOnCanvas?.({ ...selection, kind: "file" })}>
+            <LayoutDashboard className="size-3" />
+          </RowAction>
+        )}
+        <RowAction label={t("Im Chat referenzieren")} onActivate={() => props.onReference(selection)}>
+          <AtSign className="size-3" />
+        </RowAction>
       </span>
     </button>
   );

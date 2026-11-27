@@ -184,7 +184,7 @@ export async function listDevServers(): Promise<DevServer[]> {
 // --- Opening ---
 
 type PreviewTarget = { port: number; targetHost: string };
-type PreviewTicket = PreviewTarget & { expiresAt: number };
+type PreviewTicket = PreviewTarget & { expiresAt: number; route: string };
 /** One-time tickets from the authenticated API; redeemed on the proxy port for a session cookie. */
 const ticketsById = new Map<string, PreviewTicket>();
 /** Session cookie → dev server; in memory, a restart requires opening the preview again. */
@@ -198,19 +198,29 @@ export type PreviewOpening =
   | { mode: "proxy"; url?: string; path: string; publicPort: number }
   | { mode: "unavailable"; reason: string };
 
-export async function openDevServer(port: number): Promise<PreviewOpening> {
+/** Only same-origin paths ("/pricing?x=1"), never "//other.host" or full URLs. */
+export function normalizeRoute(route: string | undefined | null): string {
+  const trimmedRoute = (route ?? "").trim();
+  if (!trimmedRoute) return "/";
+  const withSlash = trimmedRoute.startsWith("/") ? trimmedRoute : "/" + trimmedRoute;
+  if (/^\/[\/\\]/.test(withSlash)) return "/";
+  // Header-safe: spaces, umlauts and control characters percent-encoded.
+  return withSlash.replace(/[^\x21-\x7e]/g, (character) => encodeURIComponent(character));
+}
+
+export async function openDevServer(port: number, route?: string): Promise<PreviewOpening> {
   // A local server wins over a container with the same published port.
   const devServer = (await listDevServers()).find((candidate) => candidate.port === port);
   if (!devServer) return { mode: "unavailable", reason: t("Auf Port {0} läuft kein Server mehr.", String(port)) };
   // Desktop app: the browser runs on the same machine as the dev server.
-  if (!previewProxyPort) return { mode: "direct", url: `http://localhost:${port}/` };
+  if (!previewProxyPort) return { mode: "direct", url: `http://localhost:${port}${normalizeRoute(route)}` };
   if (!previewPublicPort && !previewPublicUrl) {
     return { mode: "unavailable", reason: t("Die Vorschau braucht eine neuere Compose-Datei: install.sh auf dem Server erneut ausführen.") };
   }
   const now = Date.now();
   for (const [ticketId, ticket] of ticketsById) if (ticket.expiresAt < now) ticketsById.delete(ticketId);
   const ticketId = randomBytes(24).toString("base64url");
-  ticketsById.set(ticketId, { port, targetHost: devServer.targetHost, expiresAt: now + ticketLifetimeMs });
+  ticketsById.set(ticketId, { port, targetHost: devServer.targetHost, expiresAt: now + ticketLifetimeMs, route: normalizeRoute(route) });
   const pathWithTicket = `${ticketPath}?ticket=${ticketId}`;
   return previewPublicUrl
     ? { mode: "proxy", url: previewPublicUrl + pathWithTicket, path: pathWithTicket, publicPort: previewPublicPort ?? 0 }
@@ -283,7 +293,7 @@ function redeemTicket(request: http.IncomingMessage, response: http.ServerRespon
   // Partitioned keeps it working where third-party cookies are blocked.
   const cookieAttributes = isHttpsRequest(request) ? "SameSite=None; Secure; Partitioned" : "SameSite=Lax";
   response.writeHead(302, {
-    location: "/",
+    location: ticket.route,
     "set-cookie": `${previewCookieName}=${sessionId}; Path=/; HttpOnly; ${cookieAttributes}`,
     "cache-control": "no-store",
   });

@@ -29,6 +29,8 @@ export type ServerEvent =
   | { type: "permission_mode_changed"; sessionId: string; permissionMode: string }
   | { type: "permission_resolved"; sessionId: string; requestId: string }
   | { type: "files_changed"; projectId: string; paths: string[] }
+  /** The agent is editing a file (tool call) or finished it; root = project folder the path is relative to. */
+  | { type: "file_activity"; projectId: string; sessionId: string; root: string; path: string; phase: "editing" | "done" | "failed"; at: number }
   | { type: "sessions_changed"; projectId: string }
   | { type: "tasks_changed" }
   /** Folders with access changed – the memory and task screens reload. */

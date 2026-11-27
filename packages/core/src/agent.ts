@@ -18,6 +18,7 @@ import { agentRoleSettings, defaultAgentRole, type AgentRole } from "./agent-rol
 import { secretInput } from "./secret-input.ts";
 import { t } from "./i18n.ts";
 import { devServerInstructions } from "./dev-servers.ts";
+import { publishFileActivity } from "./file-activity.ts";
 
 /** A folder inside the chat's repository is used from its worktree instead (same relative place). */
 const throughWorktree = (folderPath: string, session: Session): string => {
@@ -75,7 +76,7 @@ const harnoldSystemAppend = () => `
 Du läufst in Harnold, einem Workspace, in dem Chat, Code und Design im selben Projektordner liegen.
 - Visuelle Entwürfe (Artifacts) als eigenständige HTML-Dateien unter design/ anlegen (z. B. design/hero.html). Sie werden dem Nutzer sofort live angezeigt.
 - Ist ein Design System verknüpft, steht es unten (Pfad, Tokens, Einbindung).
-- design/canvas.json ist der Canvas des Nutzers (Frames + Elemente mit x/y/width/height, frameId). Neue Dateien unter design/ erscheinen dort automatisch; zum Gruppieren Frames anlegen und frameId/Position setzen.
+- design/canvas.json ist der Canvas des Nutzers – die visuelle Arbeitsfläche des ganzen Projekts. Elemente haben x/y/width/height und optional frameId. Typen: frame (title), artifact (path; Bild/HTML im Projektordner), file bzw. folder (path, optional root = absoluter Pfad eines angehängten Projektordners; zeigt Code/Markdown bzw. Ordnerinhalt), app (Live-Vorschau des Dev-Servers: route z. B. "/pricing", optional port, viewportWidth/viewportHeight), connector (Pfeil: fromId, toId, optional text), note/text (text). Neue Dateien unter design/ und assets/ erscheinen automatisch. Code-Dateien nur gezielt und sparsam auflegen (wichtige Einstiegspunkte, nicht ganze Ordner) und mit Frames gruppieren, damit der Canvas aufgeräumt bleibt.
 - Referenzen wie @pfad/zur/datei beziehen sich auf Dateien im Projekt.
 
 ${workspaceInstructions}
@@ -150,6 +151,7 @@ function startNextQueuedMessage(sessionId: string) {
 function persistAndPublish(sessionId: string, payload: ChatItemPayload) {
   const chatItem = chatItemStore.append(sessionId, payload);
   eventHub.publish({ type: "chat_item", sessionId, chatItem });
+  publishFileActivity(sessionId, payload);
   return chatItem;
 }
 

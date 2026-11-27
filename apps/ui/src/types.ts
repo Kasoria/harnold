@@ -112,9 +112,10 @@ export type ServerEvent =
   | { type: "environments_changed" }
   | { type: "team_changed" }
   | { type: "projects_changed" }
-  | { type: "settings_changed" };
+  | { type: "settings_changed" }
+  | { type: "file_activity"; projectId: string; sessionId: string; root: string; path: string; phase: "editing" | "done" | "failed"; at: number };
 
-export type CanvasElementType = "frame" | "artifact" | "note" | "text" | "rect" | "drawing";
+export type CanvasElementType = "frame" | "artifact" | "note" | "text" | "rect" | "drawing" | "file" | "folder" | "app" | "connector";
 
 export type CanvasElement = {
   id: string;
@@ -130,6 +131,14 @@ export type CanvasElement = {
   points?: [number, number][];
   viewportWidth?: number;
   viewportHeight?: number;
+  /** file/folder: absolute path of the project root the path is relative to; absent = project folder. */
+  root?: string;
+  /** app: route shown and preferred dev-server port. */
+  route?: string;
+  port?: number;
+  /** connector: connected elements. */
+  fromId?: string;
+  toId?: string;
 };
 
 export type CanvasDocument = { version: 1; elements: CanvasElement[] };

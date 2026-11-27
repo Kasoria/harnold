@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-allow-embedded-origin"
+description = "Enables the allow_embedded_origin command without any pre-configured scope."
+commands.allow = ["allow_embedded_origin"]
+
+[[permission]]
+identifier = "deny-allow-embedded-origin"
+description = "Denies the allow_embedded_origin command without any pre-configured scope."
+commands.deny = ["allow_embedded_origin"]

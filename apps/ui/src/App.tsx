@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, connectEvents } from "@/api";
+import { recordFileActivity } from "@/lib/file-activity";
 import type { BackgroundTask, EffortLevel, TeamAgent, Attachment, SessionReference, Channel, MailInbox, ChatItem, AgentBackendsView, ClaudeAuthStatus, CodexStatus, ProvidersView, DesignSystemLinkTarget, Environment, PermissionMode, PermissionRequest, Project, QueuedMessage, ServerEvent, Session, Task, VoiceSettingsView } from "@/types";
 import { cn } from "@/lib/utils";
 import { safeStorage } from "@/lib/storage";
@@ -297,6 +298,9 @@ export function App() {
           case "permission_mode_changed":
             // Plan approved → the composer continues in the chosen mode (otherwise the next message would switch back to plan).
             if (serverEvent.sessionId === currentSessionId) window.dispatchEvent(new CustomEvent(permissionModeChangedEvent, { detail: serverEvent.permissionMode }));
+            return;
+          case "file_activity":
+            recordFileActivity(serverEvent);
             return;
           case "files_changed":
             if (serverEvent.projectId !== currentProjectId) return;

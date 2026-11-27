@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { api } from "@/api";
-import type { CanvasElement } from "@/types";
+import type { CanvasElement, DevServer } from "@/types";
+import { ActivityRing, AppTile, FileCard, FolderCard, type ActivityState } from "./canvas-cards";
 import { cn, isActionEnter } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
@@ -16,6 +17,15 @@ type CanvasElementViewProps = {
   onDoubleClick: (element: CanvasElement) => void;
   onTextChange: (element: CanvasElement, text: string) => void;
   onFinishEditing: () => void;
+  /** app tiles: the dev servers to show (project's first). */
+  devServers: DevServer[];
+  interactive: boolean;
+  /** file/folder cards from an attached folder: its name. */
+  rootLabel?: string;
+  activityState: ActivityState;
+  /** folder cards: paths (relative to the root) the agent is working on. */
+  activePaths: Set<string>;
+  onOpenEntry: (filePath: string, root?: string) => void;
 };
 
 const htmlExtensions = /\.html?$/i;
@@ -90,6 +100,23 @@ export function CanvasElementView(props: CanvasElementViewProps) {
           </>
         );
       }
+      case "file":
+        return <FileCard element={element} projectId={props.projectId} rootLabel={props.rootLabel} reloadKey={props.reloadKey} />;
+      case "folder":
+        return (
+          <FolderCard
+            element={element}
+            projectId={props.projectId}
+            rootLabel={props.rootLabel}
+            reloadKey={props.reloadKey}
+            activePaths={props.activePaths}
+            onOpenEntry={(filePath) => props.onOpenEntry(filePath, element.root)}
+          />
+        );
+      case "app":
+        return <AppTile element={element} devServers={props.devServers} interactive={props.interactive} reloadKey={props.reloadKey} />;
+      case "connector":
+        return null;
       case "note":
         return (
           <div className="size-full rounded-md bg-amber-100 p-3 text-[13px] leading-snug text-amber-950 shadow-sm dark:bg-amber-200">
@@ -158,6 +185,7 @@ export function CanvasElementView(props: CanvasElementViewProps) {
         </div>
       )}
       {body}
+      <ActivityRing state={props.activityState} inverseZoom={inverseZoom} />
       <div
         className={cn(
           "pointer-events-none absolute inset-0 rounded-md transition-opacity duration-150",

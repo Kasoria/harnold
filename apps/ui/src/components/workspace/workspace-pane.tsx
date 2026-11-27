@@ -12,7 +12,7 @@ import { AppPreview, useDevServers } from "./app-preview";
 import { preferredCodeRoot, serverBelongsToProject, useProjectRoots } from "./project-roots";
 import { GitView } from "./git-view";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { ProjectCanvas } from "@/components/canvas/project-canvas";
+import { canvasAddEvent, ProjectCanvas } from "@/components/canvas/project-canvas";
 import { t } from "@/lib/i18n";
 import { useIsMobile } from "@/lib/mobile";
 import { toast } from "@/lib/toast";
@@ -50,7 +50,7 @@ const languageByExtension: Record<string, string> = {
 type ViewChoice = "canvas" | "file" | "app" | "git";
 
 const viewChoices: { value: ViewChoice; label: string; hint: string; icon: typeof AppWindow }[] = [
-  { value: "canvas", label: t("Canvas"), hint: t("Entwürfe, Bilder, Notizen"), icon: LayoutDashboard },
+  { value: "canvas", label: t("Canvas"), hint: t("Entwürfe, Code, Live-App, Notizen"), icon: LayoutDashboard },
   { value: "file", label: t("Datei"), hint: t("Vorschau und Editor"), icon: FileCode2 },
   { value: "app", label: t("App"), hint: t("Laufende Dev-Server"), icon: AppWindow },
   { value: "git", label: "Git", hint: t("Änderungen, Commits, Branches"), icon: GitBranch },
@@ -98,8 +98,11 @@ export function WorkspacePane(props: WorkspacePaneProps) {
   const codeRoot = preferredCodeRoot(roots, project);
   const [chosenGitRoot, setChosenGitRoot] = useState<string | null>(null);
   const gitRoot = chosenGitRoot && roots.some((root) => root.path === chosenGitRoot) ? chosenGitRoot : codeRoot;
-  const devServers = useDevServers(activeView === "app" ? 4000 : 15_000);
+  const devServers = useDevServers(activeView === "app" ? 4000 : activeView === "canvas" ? 8000 : 15_000);
   const projectHasRunningServer = devServers.some((devServer) => serverBelongsToProject(devServer, project, roots));
+  // App tiles on the canvas: the project's own servers, else other dev servers (never background ports).
+  const projectDevServers = devServers.filter((devServer) => serverBelongsToProject(devServer, project, roots));
+  const canvasDevServers = projectDevServers.length ? projectDevServers : devServers.filter((devServer) => devServer.likelyApp);
   const [gitChangeCount, setGitChangeCount] = useState(0);
   const [terminalOpen, setTerminalOpen] = useState(false);
 
@@ -224,7 +227,16 @@ export function WorkspacePane(props: WorkspacePaneProps) {
         >
           <div className="h-full w-64 overflow-y-auto p-1.5 max-md:w-full">
             {filePanelOpen && (
-              <ProjectFiles project={project} roots={roots} codeRoot={codeRoot} selected={selection} refreshKey={fileTreeReloadKey} onSelect={selectFile} onReference={referenceFile} />
+              <ProjectFiles
+                project={project}
+                roots={roots}
+                codeRoot={codeRoot}
+                selected={selection}
+                refreshKey={fileTreeReloadKey}
+                onSelect={selectFile}
+                onReference={referenceFile}
+                onPlaceOnCanvas={activeView === "canvas" ? (item) => window.dispatchEvent(new CustomEvent(canvasAddEvent, { detail: item })) : undefined}
+              />
             )}
           </div>
         </nav>
@@ -235,10 +247,15 @@ export function WorkspacePane(props: WorkspacePaneProps) {
               projectId={project.id}
               fileChangeCounter={props.fileChangeCounter}
               lastChangedPaths={props.lastChangedPaths}
-              onOpenFile={(filePath) => {
-                setSelection({ root: project.path, path: filePath });
-                setActiveView("preview");
+              projectPath={project.path}
+              roots={roots}
+              devServers={canvasDevServers}
+              onOpenFile={(filePath, root) => {
+                const fileRoot = root ?? project.path;
+                setSelection({ root: fileRoot, path: filePath });
+                setActiveView(fileRoot === project.path && previewableExtensions.test(filePath) ? "preview" : "code");
               }}
+              onOpenFilePanel={() => setFilePanelOpen(true)}
               onSendToAgent={props.onInsertIntoComposer}
               onError={onError}
             />

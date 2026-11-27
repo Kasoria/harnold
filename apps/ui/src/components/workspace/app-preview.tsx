@@ -7,6 +7,7 @@ import { t } from "@/lib/i18n";
 import type { DevServer, Project, ProjectRoot } from "@/types";
 import { cn } from "@/lib/utils";
 import { serverBelongsToProject } from "./project-roots";
+import { allowEmbeddedOrigin } from "@/lib/embedded-origins";
 
 /** Preview tickets live 60 s on the Core; the "open externally" link is renewed before that. */
 const externalLinkRefreshMs = 45_000;
@@ -73,7 +74,9 @@ export function AppPreview(props: { project: Project; roots: ProjectRoot[]; devS
         setFrameUrl(null);
         setOpenError(preview.reason);
       } else {
-        setFrameUrl(previewOpeningUrl(preview));
+        const openingUrl = previewOpeningUrl(preview);
+        if (openingUrl) await allowEmbeddedOrigin(openingUrl);
+        setFrameUrl(openingUrl);
       }
     } catch (openFailure) {
       setOpenError(openFailure instanceof Error ? openFailure.message : String(openFailure));

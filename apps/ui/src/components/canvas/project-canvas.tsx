@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ExternalLink, Maximize, MessageSquarePlus, Minus, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, Maximize, MessageSquarePlus, Minus, Monitor, MousePointerClick, Plus, Smartphone, Trash2 } from "lucide-react";
 import { api } from "@/api";
-import type { CanvasDocument, CanvasElement } from "@/types";
+import type { CanvasDocument, CanvasElement, DevServer, ProjectRoot } from "@/types";
+import { useFileActivity, type FileActivity } from "@/lib/file-activity";
+import { appViewports, cardDefaults, cardHeaderHeight, type ActivityState } from "./canvas-cards";
+import { CanvasActivityPanel } from "./canvas-activity-panel";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,7 +17,14 @@ type ProjectCanvasProps = {
   projectId: string;
   fileChangeCounter: number;
   lastChangedPaths: string[];
-  onOpenFile: (filePath: string) => void;
+  /** Absolute path of the project folder (file cards without root live there). */
+  projectPath: string;
+  roots: ProjectRoot[];
+  /** Running dev servers, the project's own first (for app tiles). */
+  devServers: DevServer[];
+  onOpenFile: (filePath: string, root?: string) => void;
+  /** Opens the file panel, from which files and folders are dragged onto the canvas. */
+  onOpenFilePanel?: () => void;
   onSendToAgent: (referenceText: string) => void;
   onError: (unknownError: unknown) => void;
 };
@@ -27,14 +37,46 @@ type Interaction =
   | { kind: "move"; elementId: string; startPoint: WorldPoint; originalPositions: Map<string, WorldPoint>; moved: boolean }
   | { kind: "resize"; elementId: string; startPoint: WorldPoint; startWidth: number; startHeight: number }
   | { kind: "create"; elementId: string; startPoint: WorldPoint }
-  | { kind: "draw"; elementId: string; absolutePoints: [number, number][] };
+  | { kind: "draw"; elementId: string; absolutePoints: [number, number][] }
+  | { kind: "connect"; fromId: string };
+
+/** What the file tree puts into a drag (and the "add to canvas" event carries). */
+export const canvasDragType = "application/x-harnold-canvas";
+export const canvasAddEvent = "harnold:canvas-add";
+export type CanvasAddItem = { root: string; path: string; kind: "file" | "directory" };
+
+type Rect = { x: number; y: number; width: number; height: number };
 
 const minZoom = 0.08;
 const maxZoom = 4;
 const artifactPathPattern = /^(design|assets)\/.+\.(html?|svg|png|jpe?g|webp|gif)$/i;
+/** Files the canvas shows as a picture/page (only inside the project folder, where /preview serves them). */
+const visualFilePattern = /\.(html?|svg|png|jpe?g|webp|gif)$/i;
+const placementGap = 40;
+/** "Done" stays highlighted this long; "editing" counts as stale after a few minutes (turn aborted). */
+const doneHighlightMs = 6000;
+const editingStaleMs = 5 * 60_000;
 const clampZoom = (zoom: number) => Math.min(maxZoom, Math.max(minZoom, zoom));
 
-function boundsOf(elements: CanvasElement[]) {
+/** The point where the line from the rect's center towards a target leaves the rect. */
+function edgePoint(rect: Rect, targetX: number, targetY: number) {
+  const centerX = rect.x + rect.width / 2;
+  const centerY = rect.y + rect.height / 2;
+  const deltaX = targetX - centerX;
+  const deltaY = targetY - centerY;
+  if (!deltaX && !deltaY) return { x: centerX, y: centerY };
+  const scale = Math.min(Math.abs(deltaX) > 1e-6 ? rect.width / 2 / Math.abs(deltaX) : Infinity, Math.abs(deltaY) > 1e-6 ? rect.height / 2 / Math.abs(deltaY) : Infinity);
+  return { x: centerX + deltaX * scale, y: centerY + deltaY * scale };
+}
+
+function connectorEnds(from: Rect, to: Rect) {
+  const start = edgePoint(from, to.x + to.width / 2, to.y + to.height / 2);
+  const end = edgePoint(to, from.x + from.width / 2, from.y + from.height / 2);
+  return { start, end };
+}
+
+function boundsOf(allElements: CanvasElement[]) {
+  const elements = allElements.filter((element) => element.type !== "connector");
   if (!elements.length) return null;
   const minX = Math.min(...elements.map((element) => element.x));
   const minY = Math.min(...elements.map((element) => element.y - (element.type === "frame" ? 28 : 0)));
@@ -60,6 +102,9 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   const [reloadKeysByPath, setReloadKeysByPath] = useState<Record<string, number>>({});
   const [interactionKind, setInteractionKind] = useState<Interaction["kind"] | null>(null);
   const [imagePanelOpen, setImagePanelOpen] = useState(false);
+  const [interactiveElementId, setInteractiveElementId] = useState<string | null>(null);
+  const [connectPreview, setConnectPreview] = useState<{ fromId: string; x: number; y: number } | null>(null);
+  const [dropActive, setDropActive] = useState(false);
 
   const interactionRef = useRef<Interaction | null>(null);
   const viewportRef = useRef(viewport);
@@ -129,12 +174,17 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   useEffect(() => {
     if (props.fileChangeCounter === 0) return;
     const changedArtifactPaths = props.lastChangedPaths.filter((changedPath) => artifactPathPattern.test(changedPath));
-    if (!changedArtifactPaths.length) return;
-    const knownPaths = new Set(elementsRef.current.flatMap((element) => (element.path ? [element.path] : [])));
+    const knownPaths = new Set(elementsRef.current.flatMap((element) => (element.path && !element.root ? [element.path] : [])));
     if (changedArtifactPaths.some((changedPath) => !knownPaths.has(changedPath))) void loadCanvas(false);
+    // Project-folder files and their folders (folder cards) reload; attached folders follow the agent activity.
     setReloadKeysByPath((previous) => {
       const next = { ...previous };
-      for (const changedPath of changedArtifactPaths) next[changedPath] = (next[changedPath] ?? 0) + 1;
+      const touchedPaths = new Set<string>();
+      for (const changedPath of props.lastChangedPaths) {
+        const segments = changedPath.split("/");
+        for (let depth = 0; depth <= segments.length; depth++) touchedPaths.add(segments.slice(0, depth).join("/"));
+      }
+      for (const touchedPath of touchedPaths) next[touchedPath] = (next[touchedPath] ?? 0) + 1;
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,7 +203,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   const removeElement = (elementId: string) => {
     setElements((previous) =>
       previous
-        .filter((element) => element.id !== elementId)
+        .filter((element) => element.id !== elementId && element.fromId !== elementId && element.toId !== elementId)
         .map((element) => (element.frameId === elementId ? { ...element, frameId: null } : element)),
     );
     setSelectedElementId(null);
@@ -175,6 +225,177 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
     const container = containerRef.current;
     if (container) zoomAround(factor, container.clientWidth / 2, container.clientHeight / 2, true);
   };
+
+  // --- Placement, lookup, live activity ---
+  /** Topmost element under a world point; content wins over the frame around it. */
+  const elementAt = (point: WorldPoint): CanvasElement | undefined =>
+    elementsRef.current
+      .filter(
+        (element) =>
+          element.type !== "connector" && point.x >= element.x && point.x <= element.x + element.width && point.y >= element.y && point.y <= element.y + element.height,
+      )
+      .sort((first, second) => Number(first.type === "frame") - Number(second.type === "frame") || first.width * first.height - second.width * second.height)[0];
+
+  /** Where an element is drawn; connectors span between their two ends. */
+  function displayRectOf(element: CanvasElement): Rect | null {
+    if (element.type !== "connector") return element;
+    const fromElement = elements.find((candidate) => candidate.id === element.fromId);
+    const toElement = elements.find((candidate) => candidate.id === element.toId);
+    if (!fromElement || !toElement) return null;
+    const { start, end } = connectorEnds(fromElement, toElement);
+    return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+  }
+
+  const viewportCenter = (): WorldPoint => {
+    const { panX, panY, zoom } = viewportRef.current;
+    const container = containerRef.current;
+    return { x: ((container?.clientWidth ?? 800) / 2 - panX) / zoom, y: ((container?.clientHeight ?? 600) / 2 - panY) / zoom };
+  };
+
+  /** Free spot near a point (row by row to the right and below), so new cards never land on top of others. */
+  const findFreeSpot = (width: number, height: number, near: WorldPoint): WorldPoint => {
+    const obstacles = elementsRef.current.filter((element) => element.type !== "frame" && element.type !== "connector");
+    const startX = Math.round(near.x - width / 2);
+    const startY = Math.round(near.y - height / 2);
+    const isFree = (candidateX: number, candidateY: number) =>
+      !obstacles.some(
+        (obstacle) =>
+          candidateX < obstacle.x + obstacle.width + placementGap &&
+          candidateX + width + placementGap > obstacle.x &&
+          candidateY < obstacle.y + obstacle.height + placementGap &&
+          candidateY + height + placementGap > obstacle.y,
+      );
+    for (let row = 0; row < 12; row++) {
+      for (let column = 0; column < 8; column++) {
+        const candidateX = startX + column * (width + placementGap);
+        const candidateY = startY + row * (height + placementGap);
+        if (isFree(candidateX, candidateY)) return { x: candidateX, y: candidateY };
+      }
+    }
+    return { x: startX, y: startY };
+  };
+
+  /** Selects an element and moves the view to it. */
+  const locateElement = (element: CanvasElement) => {
+    const container = containerRef.current;
+    if (!container) return;
+    setSelectedElementId(element.id);
+    const zoom = clampZoom(Math.min(1, (container.clientWidth * 0.6) / Math.max(element.width, 1), (container.clientHeight * 0.6) / Math.max(element.height, 1)));
+    setViewportAnimating(true);
+    window.setTimeout(() => setViewportAnimating(false), 220);
+    setViewport({
+      zoom,
+      panX: container.clientWidth / 2 - (element.x + element.width / 2) * zoom,
+      panY: container.clientHeight / 2 - (element.y + element.height / 2) * zoom,
+    });
+  };
+
+  const rootOf = (element: CanvasElement) => element.root ?? props.projectPath;
+  const findPlaced = (root: string, filePath: string) =>
+    elementsRef.current.find((element) => ["artifact", "file", "folder"].includes(element.type) && element.path === filePath && rootOf(element) === root);
+
+  /** A file or folder onto the canvas (dropped at a point, or at a free spot in view). Already there → show it. */
+  const placeItem = (item: CanvasAddItem, dropPoint?: WorldPoint) => {
+    const existingElement = findPlaced(item.root, item.path);
+    if (existingElement) return locateElement(existingElement);
+    const inProjectFolder = item.root === props.projectPath;
+    const isVisual = item.kind === "file" && inProjectFolder && visualFilePattern.test(item.path);
+    const isHtml = /\.html?$/i.test(item.path);
+    const size = isVisual ? (isHtml ? { width: 320, height: 200 } : { width: 220, height: 220 }) : item.kind === "directory" ? cardDefaults.folder : cardDefaults.file;
+    const position = dropPoint ? { x: Math.round(dropPoint.x - size.width / 2), y: Math.round(dropPoint.y - cardHeaderHeight / 2) } : findFreeSpot(size.width, size.height, viewportCenter());
+    const newElement: CanvasElement = {
+      id: crypto.randomUUID(),
+      type: isVisual ? "artifact" : item.kind === "directory" ? "folder" : "file",
+      path: item.path,
+      ...(inProjectFolder ? {} : { root: item.root }),
+      ...(isVisual && isHtml ? { viewportWidth: 1280, viewportHeight: 800 } : {}),
+      ...position,
+      ...size,
+    };
+    setElements((previous) => [...previous, newElement]);
+    setSelectedElementId(newElement.id);
+  };
+
+  const addAppTile = () => {
+    const size = cardDefaults.app;
+    const newElement: CanvasElement = { id: crypto.randomUUID(), type: "app", route: "/", ...findFreeSpot(size.width, size.height, viewportCenter()), ...size };
+    setElements((previous) => [...previous, newElement]);
+    setSelectedElementId(newElement.id);
+  };
+
+  const setAppViewport = (element: CanvasElement, device: keyof typeof appViewports) => {
+    const preset = appViewports[device];
+    updateElement(element.id, {
+      viewportWidth: preset.viewportWidth,
+      viewportHeight: preset.viewportHeight,
+      width: preset.width,
+      height: Math.round((preset.width * preset.viewportHeight) / preset.viewportWidth) + cardHeaderHeight,
+    });
+  };
+
+  // The file tree's "add to canvas" button.
+  const placeItemRef = useRef(placeItem);
+  placeItemRef.current = placeItem;
+  useEffect(() => {
+    const handleAdd = (addEvent: Event) => placeItemRef.current((addEvent as CustomEvent<CanvasAddItem>).detail);
+    window.addEventListener(canvasAddEvent, handleAdd);
+    return () => window.removeEventListener(canvasAddEvent, handleAdd);
+  }, []);
+
+  const handleDragOver = (dragEvent: React.DragEvent) => {
+    if (!dragEvent.dataTransfer.types.includes(canvasDragType)) return;
+    dragEvent.preventDefault();
+    dragEvent.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  };
+  const handleDrop = (dragEvent: React.DragEvent) => {
+    setDropActive(false);
+    const payload = dragEvent.dataTransfer.getData(canvasDragType);
+    if (!payload) return;
+    dragEvent.preventDefault();
+    try {
+      placeItem(JSON.parse(payload) as CanvasAddItem, toWorldPoint(dragEvent.clientX, dragEvent.clientY));
+    } catch {
+      // foreign drag data
+    }
+  };
+
+  // Live activity of this project: rings on cards, list in the panel.
+  const allActivities = useFileActivity();
+  const projectActivities = allActivities.filter((activity) => activity.projectId === projectId);
+  const [activityClock, setActivityClock] = useState(Date.now());
+  useEffect(() => {
+    // Re-render once the "done" highlight should fade.
+    const fadeTimer = window.setTimeout(() => setActivityClock(Date.now()), doneHighlightMs + 100);
+    return () => window.clearTimeout(fadeTimer);
+  }, [allActivities]);
+  const activityStateOf = (element: CanvasElement): ActivityState => {
+    if (!element.path && element.type !== "folder") return null;
+    const elementRoot = rootOf(element);
+    const elementPath = element.path ?? "";
+    const matching = projectActivities.filter(
+      (activity) =>
+        activity.root === elementRoot && (element.type === "folder" ? elementPath === "" || activity.path.startsWith(elementPath + "/") : activity.path === elementPath),
+    );
+    if (matching.some((activity) => activity.phase === "editing" && activityClock - activity.at < editingStaleMs)) return "editing";
+    if (matching.some((activity) => activity.phase === "done" && Date.now() - activity.at < doneHighlightMs)) return "done";
+    return null;
+  };
+  const latestActivityAt = (element: CanvasElement) => {
+    const elementRoot = rootOf(element);
+    const elementPath = element.path ?? "";
+    return projectActivities
+      .filter((activity) => activity.root === elementRoot && activity.phase === "done" && (activity.path === elementPath || elementPath === "" || activity.path.startsWith(elementPath + "/")))
+      .reduce((latest, activity) => Math.max(latest, activity.at), 0);
+  };
+  const editingPathsByRoot = new Map<string, Set<string>>();
+  for (const activity of projectActivities) {
+    if (activity.phase !== "editing") continue;
+    if (!editingPathsByRoot.has(activity.root)) editingPathsByRoot.set(activity.root, new Set());
+    editingPathsByRoot.get(activity.root)!.add(activity.path);
+  }
+  const emptyPathSet = new Set<string>();
+  const rootLabelOf = (root: string | undefined) => (root && root !== props.projectPath ? (props.roots.find((projectRoot) => projectRoot.path === root)?.label ?? root.split("/").pop()) : undefined);
 
   // --- Wheel (needs non-passive listener) ---
   useEffect(() => {
@@ -213,6 +434,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
 
     /** The first finger may already have started something (pan, move, drawing, new shape): undo it, the gesture is a pinch. */
     const cancelSingleFingerInteraction = () => {
+      setConnectPreview(null);
       const interaction = interactionRef.current;
       interactionRef.current = null;
       setInteractionKind(null);
@@ -306,6 +528,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
         return;
       }
       if (keyboardEvent.key === "Escape") {
+        setInteractiveElementId(null);
         setSelectedElementId(null);
         setActiveTool("select");
         return;
@@ -344,6 +567,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
     if (!pointerEvent.isPrimary) return;
     if (pointerEvent.button !== 0 && pointerEvent.button !== 1) return;
     setEditingElementId(null);
+    setInteractiveElementId(null);
     if (panning || pointerEvent.button === 1) {
       beginInteraction(
         { kind: "pan", startClientX: pointerEvent.clientX, startClientY: pointerEvent.clientY, startPanX: viewport.panX, startPanY: viewport.panY },
@@ -356,6 +580,7 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
 
     switch (activeTool) {
       case "select":
+      case "connector":
         setSelectedElementId(null);
         beginInteraction(
           { kind: "pan", startClientX: pointerEvent.clientX, startClientY: pointerEvent.clientY, startPanX: viewport.panX, startPanY: viewport.panY },
@@ -389,8 +614,16 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   };
 
   const handleElementPointerDown = (pointerEvent: React.PointerEvent, element: CanvasElement) => {
+    if (activeTool === "connector" && !panning && pointerEvent.button === 0 && pointerEvent.isPrimary) {
+      pointerEvent.stopPropagation();
+      const startPoint = toWorldPoint(pointerEvent.clientX, pointerEvent.clientY);
+      setConnectPreview({ fromId: element.id, ...startPoint });
+      beginInteraction({ kind: "connect", fromId: element.id }, pointerEvent);
+      return;
+    }
     if (activeTool !== "select" || panning || pointerEvent.button !== 0 || !pointerEvent.isPrimary) return;
     pointerEvent.stopPropagation();
+    if (interactiveElementId && interactiveElementId !== element.id) setInteractiveElementId(null);
     if (editingElementId === element.id) return;
     setEditingElementId(null);
     setSelectedElementId(element.id);
@@ -427,6 +660,9 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
     }
     const currentPoint = toWorldPoint(pointerEvent.clientX, pointerEvent.clientY);
     switch (interaction.kind) {
+      case "connect":
+        setConnectPreview({ fromId: interaction.fromId, ...currentPoint });
+        return;
       case "move": {
         const deltaX = currentPoint.x - interaction.startPoint.x;
         const deltaY = currentPoint.y - interaction.startPoint.y;
@@ -469,11 +705,26 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (pointerEvent: React.PointerEvent) => {
     const interaction = interactionRef.current;
     interactionRef.current = null;
     setInteractionKind(null);
     if (!interaction) return;
+
+    if (interaction.kind === "connect") {
+      setConnectPreview(null);
+      const target = elementAt(toWorldPoint(pointerEvent.clientX, pointerEvent.clientY));
+      const alreadyConnected = elementsRef.current.some(
+        (element) => element.type === "connector" && ((element.fromId === interaction.fromId && element.toId === target?.id) || (element.toId === interaction.fromId && element.fromId === target?.id)),
+      );
+      if (target && target.id !== interaction.fromId && !alreadyConnected) {
+        const connectorId = crypto.randomUUID();
+        setElements((previous) => [...previous, { id: connectorId, type: "connector", x: 0, y: 0, width: 0, height: 0, fromId: interaction.fromId, toId: target.id }]);
+        setSelectedElementId(connectorId);
+      }
+      setActiveTool("select");
+      return;
+    }
 
     if (interaction.kind === "create") {
       setElements((previous) =>
@@ -504,10 +755,27 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
   // --- Selection actions ---
   const selectedElement = elements.find((element) => element.id === selectedElementId) ?? null;
 
+  const labelOf = (element: CanvasElement | undefined): string =>
+    !element ? "?" : element.title || element.path?.split("/").pop() || element.text?.slice(0, 40) || (element.type === "app" ? t("App") : element.type);
+
   const describeForAgent = (element: CanvasElement): string => {
     switch (element.type) {
       case "artifact":
         return `@${element.path} `;
+      case "file":
+      case "folder":
+        return `@${element.root ? `${element.root}/` : ""}${element.path} `;
+      case "app": {
+        const shownPort = props.devServers.find((devServer) => devServer.port === element.port)?.port ?? props.devServers[0]?.port;
+        return t("Live-App (Route {0}{1}): ", element.route || "/", shownPort ? `, Port ${shownPort}` : "");
+      }
+      case "connector": {
+        const describeEnd = (endId: string | undefined) => {
+          const endElement = elements.find((candidate) => candidate.id === endId);
+          return endElement?.path ? `@${endElement.root ? `${endElement.root}/` : ""}${endElement.path}` : `„${labelOf(endElement)}“`;
+        };
+        return t("Verbindung {0} → {1}{2}: ", describeEnd(element.fromId), describeEnd(element.toId), element.text ? ` („${element.text}“)` : "");
+      }
       case "frame": {
         const childPaths = elements.filter((child) => child.frameId === element.id && child.path).map((child) => `@${child.path}`);
         return t("Canvas-Frame „{0}“{1}: ", element.title || t("Frame"), childPaths.length ? ` (${childPaths.join(" ")})` : "");
@@ -529,12 +797,45 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
     return () => resizeObserver.disconnect();
   }, []);
 
-  const selectionToolbarPosition = selectedElement
-    ? {
-        left: Math.min(Math.max(8, selectedElement.x * viewport.zoom + viewport.panX), containerSize.width - 220),
-        top: Math.max(8, (selectedElement.y - (selectedElement.type === "frame" ? 28 : 0)) * viewport.zoom + viewport.panY - 44),
-      }
-    : null;
+  const selectedRect = selectedElement ? displayRectOf(selectedElement) : null;
+  const selectionToolbarPosition =
+    selectedElement && selectedRect
+      ? {
+          left: Math.min(Math.max(8, selectedRect.x * viewport.zoom + viewport.panX), containerSize.width - 320),
+          top: Math.max(8, (selectedRect.y - (selectedElement.type === "frame" ? 28 : 0)) * viewport.zoom + viewport.panY - 44),
+        }
+      : null;
+
+  const renderElement = (element: CanvasElement) => {
+    const projectReloadKey = !element.root && element.path !== undefined ? (reloadKeysByPath[element.path] ?? 0) : 0;
+    return (
+      <CanvasElementView
+        key={element.id}
+        element={element}
+        projectId={projectId}
+        zoom={viewport.zoom}
+        selected={element.id === selectedElementId}
+        editing={element.id === editingElementId}
+        reloadKey={element.type === "app" ? 0 : projectReloadKey + latestActivityAt(element)}
+        devServers={props.devServers}
+        interactive={element.id === interactiveElementId}
+        rootLabel={rootLabelOf(element.root)}
+        activityState={activityStateOf(element)}
+        activePaths={element.type === "folder" ? (editingPathsByRoot.get(rootOf(element)) ?? emptyPathSet) : emptyPathSet}
+        onOpenEntry={(filePath, root) => props.onOpenFile(filePath, root)}
+        onPointerDown={handleElementPointerDown}
+        onResizePointerDown={handleResizePointerDown}
+        onDoubleClick={(clickedElement) => {
+          if ((clickedElement.type === "artifact" || clickedElement.type === "file") && clickedElement.path) props.onOpenFile(clickedElement.path, clickedElement.root);
+          else if (clickedElement.type === "app") setInteractiveElementId(clickedElement.id);
+          else if (clickedElement.type === "note" || clickedElement.type === "text") setEditingElementId(clickedElement.id);
+          else if (clickedElement.type === "frame") setEditingElementId(clickedElement.id);
+        }}
+        onTextChange={(changedElement, text) => updateElement(changedElement.id, changedElement.type === "frame" ? { title: text } : { text })}
+        onFinishEditing={() => setEditingElementId(null)}
+      />
+    );
+  };
 
   const cursorClassName =
     interactionKind === "pan" ? "cursor-grabbing" : panning ? "cursor-grab" : activeTool === "select" ? "cursor-default" : "cursor-crosshair";
@@ -555,6 +856,9 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={handleDrop}
     >
       <div
         className="absolute top-0 left-0 origin-top-left"
@@ -563,35 +867,88 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
           transition: viewportAnimating ? "transform 200ms ease-out" : undefined,
         }}
       >
-        {[...elements]
-          .sort((first, second) => Number(second.type === "frame") - Number(first.type === "frame"))
-          .map((element) => (
-            <CanvasElementView
-              key={element.id}
-              element={element}
-              projectId={projectId}
-              zoom={viewport.zoom}
-              selected={element.id === selectedElementId}
-              editing={element.id === editingElementId}
-              reloadKey={element.path ? (reloadKeysByPath[element.path] ?? 0) : 0}
-              onPointerDown={handleElementPointerDown}
-              onResizePointerDown={handleResizePointerDown}
-              onDoubleClick={(clickedElement) => {
-                if (clickedElement.type === "artifact" && clickedElement.path) props.onOpenFile(clickedElement.path);
-                else if (clickedElement.type === "note" || clickedElement.type === "text") setEditingElementId(clickedElement.id);
-                else if (clickedElement.type === "frame") setEditingElementId(clickedElement.id);
-              }}
-              onTextChange={(changedElement, text) =>
-                updateElement(changedElement.id, changedElement.type === "frame" ? { title: text } : { text })
-              }
-              onFinishEditing={() => setEditingElementId(null)}
-            />
-          ))}
+        {elements.filter((element) => element.type === "frame").map((element) => renderElement(element))}
+        <svg className="pointer-events-none absolute top-0 left-0 overflow-visible" width={1} height={1} aria-hidden>
+          <defs>
+            <marker id="canvas-arrow-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="context-stroke" />
+            </marker>
+          </defs>
+          {elements
+            .filter((element) => element.type === "connector")
+            .map((connector) => {
+              const fromElement = elements.find((candidate) => candidate.id === connector.fromId);
+              const toElement = elements.find((candidate) => candidate.id === connector.toId);
+              if (!fromElement || !toElement) return null;
+              const { start, end } = connectorEnds(fromElement, toElement);
+              const isSelected = connector.id === selectedElementId;
+              const strokeWidth = 2 / Math.min(viewport.zoom, 1);
+              return (
+                <g key={connector.id}>
+                  <line
+                    x1={start.x}
+                    y1={start.y}
+                    x2={end.x}
+                    y2={end.y}
+                    stroke="transparent"
+                    strokeWidth={14 / viewport.zoom}
+                    style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                    onPointerDown={(pointerEvent) => {
+                      if (activeTool !== "select" || pointerEvent.button !== 0) return;
+                      pointerEvent.stopPropagation();
+                      setSelectedElementId(connector.id);
+                    }}
+                  />
+                  <line
+                    x1={start.x}
+                    y1={start.y}
+                    x2={end.x}
+                    y2={end.y}
+                    stroke={isSelected ? "rgb(14 165 233)" : "color-mix(in oklch, var(--foreground) 55%, transparent)"}
+                    strokeWidth={strokeWidth}
+                    strokeLinecap="round"
+                    markerEnd="url(#canvas-arrow-head)"
+                  />
+                  {connector.text && (
+                    <text
+                      x={(start.x + end.x) / 2}
+                      y={(start.y + end.y) / 2 - 6 / viewport.zoom}
+                      textAnchor="middle"
+                      fontSize={12 / Math.min(viewport.zoom, 1)}
+                      className="fill-muted-foreground"
+                      style={{ paintOrder: "stroke", stroke: "var(--canvas, var(--background))", strokeWidth: 4 / Math.min(viewport.zoom, 1) }}
+                    >
+                      {connector.text}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          {connectPreview &&
+            (() => {
+              const fromElement = elements.find((candidate) => candidate.id === connectPreview.fromId);
+              if (!fromElement) return null;
+              const start = edgePoint(fromElement, connectPreview.x, connectPreview.y);
+              return (
+                <line
+                  x1={start.x}
+                  y1={start.y}
+                  x2={connectPreview.x}
+                  y2={connectPreview.y}
+                  stroke="rgb(14 165 233)"
+                  strokeWidth={2 / Math.min(viewport.zoom, 1)}
+                  strokeDasharray={`${6 / viewport.zoom} ${4 / viewport.zoom}`}
+                  markerEnd="url(#canvas-arrow-head)"
+                />
+              );
+            })()}
+        </svg>
+        {elements.filter((element) => element.type !== "frame" && element.type !== "connector").map((element) => renderElement(element))}
       </div>
 
       {loaded && elements.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8 text-center text-[13px] text-muted-foreground">
-          {t("Der Canvas ist leer. Entwürfe des Agents unter design/ erscheinen hier automatisch.")}
+          {t("Der Canvas ist leer. Entwürfe unter design/ erscheinen automatisch – Dateien und Ordner aus dem Dateibaum hierher ziehen, die laufende App über die Leiste unten hinzufügen.")}
         </div>
       )}
 
@@ -605,10 +962,56 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
           <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => props.onSendToAgent(describeForAgent(selectedElement))}>
             <MessageSquarePlus className="size-3.5" /> {t("An Agent")}
           </Button>
-          {selectedElement.type === "artifact" && selectedElement.path && (
-            <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => props.onOpenFile(selectedElement.path!)}>
+          {(selectedElement.type === "artifact" || selectedElement.type === "file") && selectedElement.path && (
+            <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-[12px]" onClick={() => props.onOpenFile(selectedElement.path!, selectedElement.root)}>
               <ExternalLink className="size-3.5" /> {t("Öffnen")}
             </Button>
+          )}
+          {selectedElement.type === "app" && (
+            <>
+              <ToolbarInput
+                key={`route-${selectedElement.id}`}
+                initialValue={selectedElement.route || "/"}
+                placeholder="/"
+                label={t("Route")}
+                className="w-28 font-mono"
+                onCommit={(route) => updateElement(selectedElement.id, { route: route.trim() || "/" })}
+              />
+              {props.devServers.length > 1 && (
+                <select
+                  className="h-7 rounded-md bg-transparent px-1 text-[12px] text-muted-foreground outline-none hover:bg-foreground/5"
+                  aria-label={t("Server")}
+                  value={selectedElement.port ?? ""}
+                  onChange={(changeEvent) => updateElement(selectedElement.id, { port: changeEvent.target.value ? Number(changeEvent.target.value) : undefined })}
+                >
+                  <option value="">{t("Automatisch")}</option>
+                  {props.devServers.map((devServer) => (
+                    <option key={devServer.port} value={devServer.port}>
+                      :{devServer.port}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <IconButton label={t("Desktop")} active={(selectedElement.viewportWidth ?? 1280) > 600} onClick={() => setAppViewport(selectedElement, "desktop")}>
+                <Monitor className="size-3.5" />
+              </IconButton>
+              <IconButton label={t("Mobil")} active={(selectedElement.viewportWidth ?? 1280) <= 600} onClick={() => setAppViewport(selectedElement, "mobile")}>
+                <Smartphone className="size-3.5" />
+              </IconButton>
+              <IconButton label={t("Bedienen (Doppelklick, Esc beendet)")} active={interactiveElementId === selectedElement.id} onClick={() => setInteractiveElementId((current) => (current === selectedElement.id ? null : selectedElement.id))}>
+                <MousePointerClick className="size-3.5" />
+              </IconButton>
+            </>
+          )}
+          {selectedElement.type === "connector" && (
+            <ToolbarInput
+              key={`label-${selectedElement.id}`}
+              initialValue={selectedElement.text ?? ""}
+              placeholder={t("Beschriftung")}
+              label={t("Beschriftung")}
+              className="w-36"
+              onCommit={(text) => updateElement(selectedElement.id, { text: text.trim() || undefined })}
+            />
           )}
           <Button
             size="icon"
@@ -643,7 +1046,27 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
         />
       )}
 
-      <CanvasToolbar activeTool={activeTool} onToolChange={setActiveTool} imagePanelOpen={imagePanelOpen} onToggleImagePanel={() => setImagePanelOpen((open) => !open)} />
+      <CanvasActivityPanel
+        activities={projectActivities}
+        isOnCanvas={(activity: FileActivity) => Boolean(findPlaced(activity.root, activity.path))}
+        rootLabel={(root) => rootLabelOf(root)}
+        onPlace={(activity) => placeItem({ root: activity.root, path: activity.path, kind: "file" })}
+        onLocate={(activity) => {
+          const placedElement = findPlaced(activity.root, activity.path);
+          if (placedElement) locateElement(placedElement);
+        }}
+      />
+
+      {dropActive && <div className="pointer-events-none absolute inset-2 z-10 rounded-xl border-2 border-dashed border-sky-500/60 bg-sky-500/5" />}
+
+      <CanvasToolbar
+        activeTool={activeTool}
+        onToolChange={setActiveTool}
+        imagePanelOpen={imagePanelOpen}
+        onToggleImagePanel={() => setImagePanelOpen((open) => !open)}
+        onAddApp={addAppTile}
+        onAddFiles={props.onOpenFilePanel}
+      />
 
       <div
         className="absolute right-4 bottom-4 z-20 flex items-center gap-0.5 rounded-lg border bg-popover p-0.5 shadow-md"
@@ -666,5 +1089,42 @@ export function ProjectCanvas(props: ProjectCanvasProps) {
         </Tooltip>
       </div>
     </div>
+  );
+}
+
+function IconButton(props: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button size="icon" variant="ghost" className={cn("size-7 text-muted-foreground", props.active && "bg-foreground/10 text-foreground")} aria-label={props.label} aria-pressed={props.active} onClick={props.onClick}>
+          {props.children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{props.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Small text field in the selection toolbar; commits on Enter and on leaving the field. */
+function ToolbarInput(props: { initialValue: string; placeholder: string; label: string; className?: string; onCommit: (value: string) => void }) {
+  const [value, setValue] = useState(props.initialValue);
+  return (
+    <input
+      className={cn("h-7 rounded-md border bg-background px-2 text-[12px] outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring", props.className)}
+      value={value}
+      placeholder={props.placeholder}
+      aria-label={props.label}
+      title={props.label}
+      onChange={(changeEvent) => setValue(changeEvent.target.value)}
+      onKeyDown={(keyboardEvent) => {
+        keyboardEvent.stopPropagation();
+        if (keyboardEvent.key === "Enter") keyboardEvent.currentTarget.blur();
+        if (keyboardEvent.key === "Escape") {
+          setValue(props.initialValue);
+          keyboardEvent.currentTarget.blur();
+        }
+      }}
+      onBlur={() => value !== props.initialValue && props.onCommit(value)}
+    />
   );
 }

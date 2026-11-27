@@ -1427,19 +1427,28 @@ app.get(
 
 // --- Dev servers (Workspace → App): running servers and opening them through the preview proxy ---
 app.get("/api/dev-servers", async (context) => context.json(await listDevServers()));
-app.post("/api/dev-servers/:port/open", async (context) => context.json(await openDevServer(Number(context.req.param("port")))));
+app.post("/api/dev-servers/:port/open", async (context) => {
+  const requestBody = (await context.req.json().catch(() => ({}))) as { route?: unknown };
+  return context.json(await openDevServer(Number(context.req.param("port")), typeof requestBody.route === "string" ? requestBody.route : undefined));
+});
 
 // --- Live events ---
 app.get(
   "/ws",
   upgradeWebSocket(() => {
     let unsubscribe: (() => void) | undefined;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     return {
       onOpen(_openEvent, socket) {
         unsubscribe = eventHub.subscribe((serverEvent) => socket.send(JSON.stringify(serverEvent)));
+        // Heartbeat: lets the UI notice a half-dead connection (proxy/NAT dropped it silently) and reconnect.
+        heartbeatTimer = setInterval(() => {
+          try { socket.send('{"type":"heartbeat"}'); } catch { /* socket already closing */ }
+        }, 15_000);
       },
       onClose() {
         unsubscribe?.();
+        clearInterval(heartbeatTimer);
       },
     };
   }),

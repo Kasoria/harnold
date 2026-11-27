@@ -1,6 +1,7 @@
 // Harnold desktop: starts the bundled Core (Node sidecar) and shows its UI in a native window.
 use std::fs::{self, File};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -19,6 +20,21 @@ const CORE_START_TIMEOUT: Duration = Duration::from_secs(600);
 const MAIN_WINDOW_LABEL: &str = "main";
 
 struct CoreProcess(Mutex<Option<Child>>);
+
+/// Origins the UI shows in frames (remote Core, its preview proxy). WKWebView asks the navigation handler for
+/// iframe loads too; without this list they were cancelled and opened in the browser instead.
+#[derive(Default)]
+struct EmbeddedOrigins(Mutex<HashSet<String>>);
+
+#[tauri::command]
+fn allow_embedded_origin(url: String, embedded_origins: tauri::State<EmbeddedOrigins>) -> Result<(), String> {
+    let parsed_url = Url::parse(&url).map_err(|error| error.to_string())?;
+    if !matches!(parsed_url.scheme(), "http" | "https") {
+        return Err("Nur http(s) erlaubt".into());
+    }
+    embedded_origins.0.lock().unwrap().insert(parsed_url.origin().ascii_serialization());
+    Ok(())
+}
 
 fn core_address() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], CORE_PORT))
@@ -152,7 +168,8 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .center()
         // External links go to the default browser, not into the app window.
         .on_navigation(move |url| {
-            if is_core_url(url) {
+            let is_embedded_origin = navigation_handle.state::<EmbeddedOrigins>().0.lock().unwrap().contains(&url.origin().ascii_serialization());
+            if is_core_url(url) || is_embedded_origin {
                 return true;
             }
             let _ = navigation_handle.opener().open_url(url.as_str(), None::<&str>);
@@ -172,7 +189,8 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .manage(CoreProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![updates::check_for_update, updates::install_update])
+        .manage(EmbeddedOrigins::default())
+        .invoke_handler(tauri::generate_handler![updates::check_for_update, updates::install_update, allow_embedded_origin])
         .setup(|app| {
             let app_handle = app.handle().clone();
             updates::start_update_checks(app_handle.clone());

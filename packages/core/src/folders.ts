@@ -123,3 +123,40 @@ export const folderStore = {
     return `## Ordner mit Zugriff\nDu darfst in diesen Ordnern lesen und arbeiten:\n${lines.join("\n")}${missing.length ? `\nNicht mehr vorhanden: ${missing.join(", ")}` : ""}`;
   },
 };
+
+export type FolderBrowseResult = {
+  /** The folder being listed (absolute). */
+  path: string;
+  /** Its parent; null at the top. */
+  parent: string | null;
+  /** Subfolders (hidden ones left out), sorted by name. */
+  folders: { name: string; path: string }[];
+  /** Jump targets: home, the folders the server shares (HARNOLD_HOST_FOLDERS), /data. */
+  shortcuts: { label: string; path: string }[];
+};
+
+/** One level of subfolders, for the folder picker of the browser UI (the server's file system, not the user's computer). */
+export function browseFolders(rawPath: string | undefined): FolderBrowseResult {
+  const startPath = normalizeFolderPath(rawPath?.trim() || os.homedir());
+  let currentPath = startPath;
+  while (currentPath !== "/" && !fs.statSync(currentPath, { throwIfNoEntry: false })?.isDirectory()) currentPath = path.dirname(currentPath);
+  let folders: { name: string; path: string }[] = [];
+  try {
+    folders = fs
+      .readdirSync(currentPath, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith(".") && (entry.isDirectory() || (entry.isSymbolicLink() && (fs.statSync(path.join(currentPath, entry.name), { throwIfNoEntry: false })?.isDirectory() ?? false))))
+      .map((entry) => ({ name: entry.name, path: path.join(currentPath, entry.name) }))
+      .sort((first, second) => first.name.localeCompare(second.name));
+  } catch {
+    // unreadable folder: shown empty
+  }
+  const sharedFolders = (process.env.HARNOLD_HOST_FOLDERS ?? "").split(/\s+/).filter(Boolean).map((sharedPath) => normalizeFolderPath(sharedPath));
+  const shortcutCandidates = [{ label: t("Home"), path: os.homedir() }, ...sharedFolders.map((sharedPath) => ({ label: labelOf(sharedPath), path: sharedPath })), { label: "/data", path: "/data" }];
+  const seenPaths = new Set<string>();
+  const shortcuts = shortcutCandidates.filter((shortcut) => {
+    if (seenPaths.has(shortcut.path) || !fs.statSync(shortcut.path, { throwIfNoEntry: false })?.isDirectory()) return false;
+    seenPaths.add(shortcut.path);
+    return true;
+  });
+  return { path: currentPath, parent: currentPath === "/" ? null : path.dirname(currentPath), folders, shortcuts };
+}

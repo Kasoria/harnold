@@ -24,7 +24,7 @@ import { agentExtensions } from "./agent-extensions.ts";
 import { readFileTree, resolveInsideProject, unwatchProject, watchProject } from "./files.ts";
 import { canvasDocumentSchema, readCanvas, writeCanvas } from "./canvas.ts";
 import { nextRunOf, runTask, scheduleTask, startScheduler, taskStore, unscheduleTask } from "./tasks.ts";
-import { folderStore } from "./folders.ts";
+import { browseFolders, folderStore } from "./folders.ts";
 import { channelStore, toPublicChannel } from "./channels/store.ts";
 import { channelManager } from "./channels/manager.ts";
 import { mailActionStore, mailInboxFieldDefinitions, mailInboxInputSchema, mailInboxStore, mailMessageStore, type MailInbox } from "./mail/inbox.ts";
@@ -511,6 +511,8 @@ function foldersForProject(projectId: string | null) {
 }
 
 app.get("/api/folders", (context) => context.json(foldersForProject(context.req.query("projectId") || null)));
+
+app.get("/api/folders/browse", (context) => context.json(browseFolders(context.req.query("path"))));
 
 app.post("/api/folders", async (context) => {
   const body = z.object({ scope: folderScopeSchema, projectId: z.string().nullish(), path: z.string().trim().min(1) }).parse(await context.req.json());

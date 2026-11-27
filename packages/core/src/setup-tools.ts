@@ -45,7 +45,7 @@ export const setupReadOnlyToolNames = ["settings_overview", "plugin_list"];
 export const setupInstructions = `
 Harnold einrichten (Tools harnold): Der Nutzer kann Harnold komplett im Chat einrichten. Erledige solche Wünsche direkt:
 - Projekte: project_create, project_update (Name, Emoji-Icon), project_set_environment.
-- Kontext: memory_write für Notizen, memory_add_file für Dateien (z. B. Anhänge dieser Nachricht) – Ebene "project", "environment" (alle Projekte der Umgebung) oder "workspace" (alle Projekte). HARNOLD.md einer Ebene = dauerhafte Anweisungen.
+- Kontext: memory_write für Notizen, memory_add_file für Dateien (z. B. Anhänge dieser Nachricht), memory_add_folder für Ordner des Servers – Ebene "project", "environment" (alle Projekte der Umgebung) oder "workspace" (alle Projekte). HARNOLD.md einer Ebene = dauerhafte Anweisungen.
 - Einstellungen: settings_overview zeigt den Stand, settings_update ändert Standardmodell, Quick-Chat-Aufräumen, Memory (Ordner, Embeddings), Bilder und Sprache – auch API-Keys, wenn der Nutzer sie nennt.
 - Integrationen: mcp_server_save/mcp_server_delete, skill_create/skill_delete, skill_set_enabled, plugin_list/plugin_set_enabled/plugin_add_folder/plugin_remove_folder. Channels: channel_save/channel_delete. Postfächer: mail_inbox_save/mail_inbox_delete (Auftrag, Ton, Signatur, Absender-Filter, eigenes Modell).
 - Agenten und Einheiten können ein eigenes Agent-Programm und Modell bekommen (backendId/model bei team_save, channel_save, task_save, mail_inbox_save): null = wie Einstellungen/Umgebung.

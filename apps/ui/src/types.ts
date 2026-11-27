@@ -154,6 +154,7 @@ export type ContextFolder = {
   createdAt: number;
 };
 
+export type FolderBrowseResult = { path: string; parent: string | null; folders: { name: string; path: string }[]; shortcuts: { label: string; path: string }[] };
 export type ContextFolders = { project: ContextFolder[]; environment: ContextFolder[]; workspace: ContextFolder[] };
 
 export type TaskRun = {

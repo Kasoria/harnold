@@ -6,10 +6,12 @@ import type { Project } from "./db.ts";
 import { eventHub } from "./events.ts";
 import { memoryIndex, memoryNotes, type MemoryScope } from "./memory.ts";
 import { memoryFiles } from "./memory-files.ts";
+import { folderStore } from "./folders.ts";
+import { environmentStore } from "./environments.ts";
 import { t } from "./i18n.ts";
 
 export const memoryServerName = "harnold_memory";
-export const memoryToolNames = ["memory_search", "memory_read", "memory_write", "memory_list", "memory_add_file"].map((toolName) => `mcp__${memoryServerName}__${toolName}`);
+export const memoryToolNames = ["memory_search", "memory_read", "memory_write", "memory_list", "memory_add_file", "memory_list_folders", "memory_add_folder", "memory_remove_folder"].map((toolName) => `mcp__${memoryServerName}__${toolName}`);
 
 export const memoryInstructions = `
 Langzeit-Gedächtnis (Tools ${memoryServerName}):
@@ -18,6 +20,7 @@ Langzeit-Gedächtnis (Tools ${memoryServerName}):
 - Speichern, wenn der Nutzer darum bittet oder dauerhaft relevante Fakten/Entscheidungen entstehen: memory_write. Eine Notiz pro Thema, sprechender Dateiname (z. B. entscheidungen/datenbank.md), Markdown mit # Titel, Obsidian-kompatibel ([[Wikilinks]] erlaubt). Vorhandene Notiz lieber ergänzen als duplizieren.
 - Löschen: memory_delete.
 - Dateien (PDFs, Bilder, Dokumente – z. B. Anhänge einer Nachricht) als Kontext ablegen: memory_add_file. Sie erscheinen danach in jedem Durchlauf als Pfadliste.
+- Ordner anhängen (Code, Doku, Assets außerhalb des Projektordners): memory_add_folder mit Ebene und absolutem Pfad. Angehängte Ordner gehören dann zum Kontext jeder Session der Ebene (Lese-/Schreibzugriff, Dateibaum, Git, Terminal) und stehen im Systemprompt. Sie gelten ab der nächsten Nachricht. Ansehen: memory_list_folders, lösen (Platte bleibt unberührt): memory_remove_folder.
 - HARNOLD.md (Projekt-Root, Umgebungs- bzw. Workspace-Memory) enthält dauerhafte Anweisungen und wird automatisch geladen.
 `.trim();
 
@@ -85,6 +88,49 @@ export function createMemoryServer(project: Project) {
             const savedFile = memoryFiles.save(scope, scope === "workspace" ? null : project, fileName, fs.readFileSync(absoluteSource));
             eventHub.publish({ type: "memory_changed", projectId: project.id });
             return textResult(`Abgelegt: [${scope}] ${savedFile.path}`);
+          } catch (toolError) {
+            return { ...textResult(toolError instanceof Error ? toolError.message : String(toolError)), isError: true };
+          }
+        },
+      ),
+      tool(
+        "memory_list_folders",
+        "Listet die Ordner, die dem Projekt als Kontext angehängt sind (Projekt-, Umgebungs- und Workspace-Ebene).",
+        {},
+        async () => {
+          const folders = folderStore.forProject(project.id);
+          return textResult(folders.map((folder) => `[${folder.scope}] ${folder.path}`).join("\n") || "Keine Ordner angehängt.");
+        },
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "memory_add_folder",
+        "Hängt einen Ordner des Servers als Kontext an: Er gehört danach zu jeder Session der Ebene (project = nur dieses Projekt, environment = alle Projekte der Umgebung, workspace = alle Projekte).",
+        { scope: scopeSchema, path: z.string().describe("Absoluter Pfad des Ordners (oder ~/…)") },
+        async ({ scope, path: folderPath }) => {
+          try {
+            const environment = environmentStore.forProject(project.id);
+            if (scope === "environment" && !environment) throw new Error(t("Projekt gehört zu keiner Umgebung"));
+            const ownerId = scope === "workspace" ? "" : scope === "project" ? project.id : environment!.id;
+            const addedFolder = folderStore.add(scope, ownerId, folderPath);
+            eventHub.publish({ type: "folders_changed" });
+            return textResult(`Angehängt: [${scope}] ${addedFolder.path} (gilt ab der nächsten Nachricht)`);
+          } catch (toolError) {
+            return { ...textResult(toolError instanceof Error ? toolError.message : String(toolError)), isError: true };
+          }
+        },
+      ),
+      tool(
+        "memory_remove_folder",
+        "Löst einen angehängten Ordner von der Ebene. Auf der Platte ändert sich nichts.",
+        { scope: scopeSchema, path: z.string() },
+        async ({ scope, path: folderPath }) => {
+          try {
+            const environment = environmentStore.forProject(project.id);
+            if (scope === "environment" && !environment) throw new Error(t("Projekt gehört zu keiner Umgebung"));
+            folderStore.remove(scope, scope === "workspace" ? "" : scope === "project" ? project.id : environment!.id, folderPath);
+            eventHub.publish({ type: "folders_changed" });
+            return textResult(`Gelöst: [${scope}] ${folderPath}`);
           } catch (toolError) {
             return { ...textResult(toolError instanceof Error ? toolError.message : String(toolError)), isError: true };
           }

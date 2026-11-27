@@ -39,6 +39,7 @@ import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/component
 import { formatFileSize } from "@/components/chat/attachment-views";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { TextPromptDialogHost, askForText } from "@/components/text-prompt-dialog";
+import { FolderPickerDialogHost } from "@/components/folder-picker-dialog";
 import type { MenuAction } from "@/components/action-menu";
 import { Copy, FolderOpen, FolderInput, FolderPlus, Layers, MessageSquarePlus, Keyboard, Moon, PanelRight, Pencil, Settings, Smile, Sun, Trash2, Users, Zap } from "lucide-react";
 import { TeamScreen } from "@/screens/team-screen";
@@ -1258,6 +1259,7 @@ export function App() {
       />
       <ConfirmDialogHost />
       <TextPromptDialogHost />
+      <FolderPickerDialogHost />
       <ProjectIconDialog
         target={iconDialogProject}
         onOpenChange={(open) => !open && setIconDialogProject(null)}

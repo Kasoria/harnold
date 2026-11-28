@@ -1115,4 +1115,9 @@ export const englishTexts: Record<string, string> = {
   "vor {0} min": "{0} min ago",
   "vor {0} s": "{0} s ago",
   "{0} in Arbeit": "{0} in progress",
+  "Freigabe nötig": "Approval needed",
+  "Anfragen im Fenster anzeigen – auch in anderen Tabs": "Show requests in a floating window – also in other tabs",
+  "Keine offenen Anfragen": "No open requests",
+  "Diese Anfrage brauchst du im Chat zu beantworten.": "This request has to be answered in the chat.",
+  "Chat öffnen": "Open chat",
 };

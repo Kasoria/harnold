@@ -188,6 +188,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(CoreProcess(Mutex::new(None)))
         .manage(EmbeddedOrigins::default())
         .invoke_handler(tauri::generate_handler![updates::check_for_update, updates::install_update, allow_embedded_origin])

@@ -35,6 +35,7 @@ function addColumnIfMissing(tableName: string, columnName: string, columnDefinit
 }
 addColumnIfMissing("projects", "icon", "TEXT");
 addColumnIfMissing("projects", "kind", "TEXT NOT NULL DEFAULT 'project'");
+addColumnIfMissing("projects", "sort_order", "INTEGER");
 addColumnIfMissing("sessions", "fork_origin_session_id", "TEXT");
 addColumnIfMissing("sessions", "fork_origin_item_id", "TEXT");
 addColumnIfMissing("sessions", "fork_item_id", "TEXT");
@@ -167,7 +168,13 @@ const mapSession = (row: Row): Session => ({
 
 export const projectStore = {
   list(): Project[] {
-    return database.prepare("SELECT * FROM projects ORDER BY created_at DESC").all().map(mapProject);
+    // Manually ordered projects by position; new ones (no position yet) first, newest on top.
+    return database.prepare("SELECT * FROM projects ORDER BY sort_order IS NOT NULL, sort_order, created_at DESC").all().map(mapProject);
+  },
+  /** Sidebar order set by drag & drop: position = index in the list. */
+  reorder(projectIds: string[]): void {
+    const setPosition = database.prepare("UPDATE projects SET sort_order = ? WHERE id = ?");
+    projectIds.forEach((projectId, position) => setPosition.run(position, projectId));
   },
   get(projectId: string): Project | undefined {
     const row = database.prepare("SELECT * FROM projects WHERE id = ?").get(projectId);

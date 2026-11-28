@@ -116,7 +116,6 @@ function describeSuggestions(suggestions: PermissionSuggestion[]): string | unde
     if (suggestion.type === "addRules" && Array.isArray(suggestion.rules)) {
       return (suggestion.rules as { toolName: string; ruleContent?: string }[]).map((rule) => (rule.ruleContent ? `${rule.toolName}(${rule.ruleContent})` : rule.toolName));
     }
-    if (suggestion.type === "setMode" && suggestion.mode === "acceptEdits") return [t("Edits automatisch erlauben")];
     if (suggestion.type === "addDirectories" && Array.isArray(suggestion.directories)) return [t("Ordner {0}", (suggestion.directories as string[]).join(", "))];
     return [];
   });
@@ -277,7 +276,26 @@ async function adoptGeneratedTitle(sessionId: string, provisionalTitle: string, 
 }
 
 /** Asks the user (app or channel) and waits for the answer. */
-function requestPermission(sessionId: string, toolName: string, toolInput: unknown, signal: AbortSignal, suggestions: PermissionSuggestion[] = []): Promise<PermissionDecision> {
+/**
+ * "Always allow" must never switch the permission mode (Claude Code offers `setMode: acceptEdits` for edits):
+ * that silently changes the whole chat. Becomes a rule for just this tool instead.
+ */
+function withoutModeSwitch(toolName: string, suggestions: PermissionSuggestion[]): PermissionSuggestion[] {
+  const converted = suggestions.map((suggestion): PermissionSuggestion =>
+    suggestion.type === "setMode" ? { type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "session" } : suggestion,
+  );
+  const seenRules = new Set<string>();
+  return converted.filter((suggestion) => {
+    if (suggestion.type !== "addRules") return true;
+    const ruleKey = JSON.stringify(suggestion.rules);
+    if (seenRules.has(ruleKey)) return false;
+    seenRules.add(ruleKey);
+    return true;
+  });
+}
+
+function requestPermission(sessionId: string, toolName: string, toolInput: unknown, signal: AbortSignal, rawSuggestions: PermissionSuggestion[] = []): Promise<PermissionDecision> {
+  const suggestions = withoutModeSwitch(toolName, rawSuggestions);
   return new Promise<PermissionDecision>((resolve) => {
     const requestId = randomUUID();
     const alwaysAllowLabel = describeSuggestions(suggestions);

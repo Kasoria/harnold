@@ -37,6 +37,7 @@ import type { AgentRole, AgentRoleSettings } from "@/types";
 import { permissionModeChangedEvent } from "@/components/chat/composer";
 import { ConfirmDialogHost, confirmAction, confirmWithOption } from "@/components/confirm-dialog";
 import { formatFileSize } from "@/components/chat/attachment-views";
+import { summarizeToolInput } from "@/components/chat/tool-group";
 import { ProjectIconDialog } from "@/components/project-icon-dialog";
 import { TextPromptDialogHost, askForText } from "@/components/text-prompt-dialog";
 import { FolderPickerDialogHost } from "@/components/folder-picker-dialog";
@@ -48,6 +49,8 @@ import { systemSpeechAvailable } from "@/lib/system-speech";
 import { t } from "@/lib/i18n";
 import { AppVersionBadge } from "@/components/app-version-badge";
 import { Toaster } from "@/components/toaster";
+import { PermissionPipHost } from "@/components/chat/permission-pip";
+import { askForNotificationPermissionOnFirstClick, notifyPermissionRequest, setAppBadgeCount } from "@/lib/permission-alerts";
 import { toast } from "@/lib/toast";
 import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
 import { formatCombo, useShortcutBindings, type ShortcutId } from "@/lib/shortcuts";
@@ -120,6 +123,8 @@ export function App() {
   useEffect(() => setMobileNavOpen(false), [route]);
 
   const workspaceOpenRef = useRef(true);
+  const sessionReferenceForRef = useRef<(sessionId: string) => SessionReference | null>(() => null);
+  const openSessionFromScreenRef = useRef<(projectId: string, sessionId: string) => void>(() => {});
   const openWorkspaceRef = useRef<() => void>(() => undefined);
   const [liveConnected, setLiveConnected] = useState(true);
   const activeIdsRef = useRef({ activeProjectId, activeSessionId });
@@ -285,6 +290,10 @@ export function App() {
             if (serverEvent.sessionId === currentSessionId) setLiveContextTokens(serverEvent.tokens);
             return;
           case "permission_request":
+            notifyPermissionRequest(t("Freigabe nötig"), `${serverEvent.toolName} ${summarizeToolInput(serverEvent.input)}`.trim().slice(0, 140), () => {
+              const reference = sessionReferenceForRef.current(serverEvent.sessionId);
+              if (reference) openSessionFromScreenRef.current(reference.projectId, reference.sessionId);
+            });
             setPermissionRequests((previous) => (previous.some((request) => request.requestId === serverEvent.requestId) ? previous : [...previous, serverEvent]));
             return;
           case "permission_resolved":
@@ -425,6 +434,8 @@ export function App() {
     }
     return null;
   };
+
+  sessionReferenceForRef.current = sessionReferenceFor;
 
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const activeSession = activeProjectId
@@ -571,6 +582,17 @@ export function App() {
       .catch(reportError);
 
   const isDesktopApp = "__TAURI_INTERNALS__" in window;
+
+  useEffect(() => askForNotificationPermissionOnFirstClick(), []);
+  // Open approvals show in the tab title, visible in other tabs too.
+  useEffect(() => {
+    const baseTitle = document.title.replace(/^\(\d+\) /, "");
+    document.title = permissionRequests.length ? `(${permissionRequests.length}) ${baseTitle}` : baseTitle;
+    setAppBadgeCount(permissionRequests.length);
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [permissionRequests.length]);
 
   const renameProject = async (project: Project) => {
     const name = await askForText({ title: t("Projekt umbenennen"), initialValue: project.name });
@@ -736,6 +758,7 @@ export function App() {
     setExpandedProjectIds((previous) => new Set(previous).add(projectId));
     navigate("/");
   };
+  openSessionFromScreenRef.current = openSessionFromScreen;
 
   const shortcutBindings = useShortcutBindings();
   const shortcutHint = (shortcutId: ShortcutId) => formatCombo(shortcutBindings[shortcutId]) || undefined;
@@ -1013,6 +1036,15 @@ export function App() {
     onOpenTask: (taskId) => navigate(routePath("tasks", taskId)),
     onRunTask: (taskId) => void api.runTask(taskId).catch(reportError),
     onNewProject: () => setNewProjectDialogOpen(true),
+    onReorderProjects: (visibleProjectIds) => {
+      // Only the visible projects (environment filter) move; they refill their own slots in the full order.
+      const visibleIdSet = new Set(visibleProjectIds);
+      const queuedIds = [...visibleProjectIds];
+      const fullOrder = projects.map((project) => (visibleIdSet.has(project.id) ? queuedIds.shift()! : project.id));
+      const byId = new Map(projects.map((project) => [project.id, project]));
+      setProjects(fullOrder.flatMap((projectId) => byId.get(projectId) ?? []));
+      api.reorderProjects(fullOrder).catch(reportError);
+    },
     onNewQuickChat: () => void createQuickChat(),
     onOpenSearch: () => setCommandPaletteOpen(true),
     activeScreen: route.screen,
@@ -1270,6 +1302,12 @@ export function App() {
         onOpenChange={setNewProjectDialogOpen}
         onCreate={createProject}
         environmentName={environments.find((environment) => environment.id === activeEnvironmentId)?.name}
+      />
+      <PermissionPipHost
+        requests={permissionRequests}
+        sessionReferenceFor={sessionReferenceFor}
+        onAnswer={(requestId, answer) => api.answerPermission(requestId, answer).catch(reportError)}
+        onOpenSession={(reference) => openSessionFromScreen(reference.projectId, reference.sessionId)}
       />
       <Toaster />
     </TooltipProvider>

@@ -34,6 +34,8 @@ type AppSidebarProps = {
   onOpenTask: (taskId: string) => void;
   onRunTask: (taskId: string) => void;
   onNewProject: () => void;
+  /** Drag & drop in the sidebar: ids of the visible projects in their new order. */
+  onReorderProjects: (visibleProjectIds: string[]) => void;
   onNewQuickChat: () => void;
   onOpenSearch: () => void;
   activeScreen: ScreenName;
@@ -197,11 +199,41 @@ function TaskRow({ task, projectSessions, ...props }: AppSidebarProps & { task: 
   );
 }
 
-function ProjectTreeItem({ project, ...props }: AppSidebarProps & { project: Project }) {
+type ProjectDrag = {
+  draggingId: string | null;
+  dropIndicator: { projectId: string; position: "before" | "after" } | null;
+  onDragStart: (projectId: string) => void;
+  onDragOver: (projectId: string, position: "before" | "after") => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+};
+
+function ProjectTreeItem({ project, drag, ...props }: AppSidebarProps & { project: Project; drag?: ProjectDrag }) {
   const expanded = props.expandedProjectIds.has(project.id);
   const hasSessions = (props.sessionsByProjectId[project.id] ?? []).length > 0;
+  const indicator = drag?.dropIndicator?.projectId === project.id && drag.draggingId !== project.id ? drag.dropIndicator.position : null;
   return (
-    <li>
+    <li
+      className={cn("relative", drag?.draggingId === project.id && "opacity-40")}
+      draggable={Boolean(drag)}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", project.id);
+        drag?.onDragStart(project.id);
+      }}
+      onDragOver={(event) => {
+        if (!drag?.draggingId) return;
+        event.preventDefault();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        drag.onDragOver(project.id, event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        drag?.onDrop();
+      }}
+      onDragEnd={() => drag?.onDragEnd()}
+    >
+      {indicator && <div className={cn("pointer-events-none absolute inset-x-2 z-10 h-0.5 rounded-full bg-primary", indicator === "before" ? "-top-px" : "-bottom-px")} />}
       <Collapsible open={expanded} onOpenChange={(open) => props.onToggleProject(project.id, open)}>
         <ActionContextMenu actions={props.projectActions(project)}>
           <CollapsibleTrigger className={cn(rowClassName, "font-medium")} title={project.path}>
@@ -229,6 +261,40 @@ function ProjectTreeItem({ project, ...props }: AppSidebarProps & { project: Pro
         </CollapsibleContent>
       </Collapsible>
     </li>
+  );
+}
+
+function ProjectList({ visibleProjects, ...props }: AppSidebarProps & { visibleProjects: Project[] }) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<ProjectDrag["dropIndicator"]>(null);
+  const endDrag = () => {
+    setDraggingId(null);
+    setDropIndicator(null);
+  };
+  const drag: ProjectDrag | undefined = props.mobile
+    ? undefined
+    : {
+        draggingId,
+        dropIndicator,
+        onDragStart: setDraggingId,
+        onDragOver: (projectId, position) => setDropIndicator((previous) => (previous?.projectId === projectId && previous.position === position ? previous : { projectId, position })),
+        onDrop: () => {
+          if (draggingId && dropIndicator && draggingId !== dropIndicator.projectId) {
+            const remainingIds = visibleProjects.map((project) => project.id).filter((projectId) => projectId !== draggingId);
+            const targetIndex = remainingIds.indexOf(dropIndicator.projectId) + (dropIndicator.position === "after" ? 1 : 0);
+            remainingIds.splice(targetIndex, 0, draggingId);
+            props.onReorderProjects(remainingIds);
+          }
+          endDrag();
+        },
+        onDragEnd: endDrag,
+      };
+  return (
+    <ul className="space-y-0.5">
+      {visibleProjects.map((project) => (
+        <ProjectTreeItem key={project.id} project={project} drag={drag} {...props} />
+      ))}
+    </ul>
   );
 }
 
@@ -378,11 +444,7 @@ export function AppSidebar(props: AppSidebarProps) {
           <p className="px-2 py-1 text-[13px] text-muted-foreground">{activeEnvironment ? t("Noch keine Projekte in {0}.", activeEnvironment.name) : t("Noch keine Projekte.")}</p>
         )}
 
-        <ul className="space-y-0.5">
-          {visibleProjects.map((project) => (
-            <ProjectTreeItem key={project.id} project={project} {...props} />
-          ))}
-        </ul>
+        <ProjectList visibleProjects={visibleProjects} {...props} />
 
         {quickChatProject && hasQuickChats && (
           <div className="mt-3">

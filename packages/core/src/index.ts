@@ -290,6 +290,12 @@ app.post("/api/projects", async (context) => {
   return context.json(createProjectRecord(body.name, body.path, body.environmentId));
 });
 
+app.put("/api/projects-order", async (context) => {
+  const body = z.object({ projectIds: z.array(z.string()) }).parse(await context.req.json());
+  projectStore.reorder(body.projectIds);
+  return context.json(projectStore.list());
+});
+
 app.patch("/api/projects/:projectId", async (context) => {
   const project = requireProject(context.req.param("projectId"));
   const body = z.object({ name: z.string().trim().min(1).optional(), icon: z.string().trim().max(40).nullable().optional() }).parse(await context.req.json());

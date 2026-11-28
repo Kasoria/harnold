@@ -65,6 +65,7 @@ export const api = {
   checkEnvironmentAccounts: (environmentId: string) => request<EnvironmentAccountChecks>("POST", `/api/environments/${environmentId}/check`),
   deleteProject: (projectId: string) => request<{ ok: true }>("DELETE", `/api/projects/${projectId}`),
   revealProject: (projectId: string) => request<{ ok: true }>("POST", `/api/projects/${projectId}/reveal`),
+  reorderProjects: (projectIds: string[]) => request<Project[]>("PUT", "/api/projects-order", { projectIds }),
   updateProject: (projectId: string, changes: { name?: string; icon?: string | null }) => request<Project>("PATCH", `/api/projects/${projectId}`, changes),
   createQuickChat: () => request<Session>("POST", "/api/quick-chats"),
   readQuickChatSettings: () => request<QuickChatSettings>("GET", "/api/settings/quick-chats"),

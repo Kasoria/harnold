@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ClipboardList, ShieldAlert } from "lucide-react";
+import { ClipboardList, PictureInPicture2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
@@ -153,7 +153,7 @@ function PlanCard(props: { request: PermissionRequest; onAnswer: (answer: Permis
 }
 
 /** Tool approval: diff for edits, "always allow" when the agent offers a rule, deny with a reason. */
-export function PermissionCard(props: { request: PermissionRequest; onAnswer: (answer: PermissionAnswer) => void }) {
+export function PermissionCard(props: { request: PermissionRequest; onAnswer: (answer: PermissionAnswer) => void; onPopOut?: () => void }) {
   const { request } = props;
   const [givingFeedback, setGivingFeedback] = useState(false);
   if (request.toolName === "ExitPlanMode") return <PlanCard request={request} onAnswer={props.onAnswer} />;
@@ -162,8 +162,8 @@ export function PermissionCard(props: { request: PermissionRequest; onAnswer: (a
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 rounded-xl border bg-card p-3 shadow-xs duration-200">
       <div className="flex items-center gap-2 text-[13px]">
-        <ShieldAlert className="size-4 text-status-waiting" />
-        <span>
+        <ShieldAlert className="size-4 shrink-0 text-status-waiting" />
+        <span className="min-w-0 flex-1">
           {isFolderAccess ? (
             t("Zugriff auf einen Ordner außerhalb des Projekts")
           ) : (
@@ -172,6 +172,11 @@ export function PermissionCard(props: { request: PermissionRequest; onAnswer: (a
             </>
           )}
         </span>
+        {props.onPopOut && (
+          <Button size="icon" variant="ghost" className="size-6 shrink-0 text-muted-foreground" title={t("Anfragen im Fenster anzeigen – auch in anderen Tabs")} onClick={props.onPopOut}>
+            <PictureInPicture2 className="size-3.5" />
+          </Button>
+        )}
       </div>
       <div className="mt-1.5 truncate font-mono text-[12px] text-muted-foreground">
         {isFolderAccess

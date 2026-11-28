@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { QuestionCard, isQuestionRequest } from "@/components/chat/question-card";
 import { SecretInputCard, isSecretInputRequest } from "@/components/chat/secret-input-card";
 import { PermissionCard } from "@/components/chat/permission-card";
+import { openPermissionPip, permissionPipSupported } from "@/lib/permission-pip";
 import { BackgroundTasksBar, TodoPanel, todosFromChat } from "@/components/chat/agent-progress";
 import { ArrowDown, ArrowRightLeft, Clock, CornerDownLeft, Eraser, Layers, Loader2, MoreHorizontal, PanelRight, Paperclip, Pencil, Square, SquarePen, Trash2, Users, Volume2 } from "lucide-react";
 import { MobileNavButton } from "@/lib/mobile";
@@ -594,7 +595,12 @@ export function ChatPane(props: ChatPaneProps) {
                 onSkip={() => props.onAnswerPermission(permissionRequest.requestId, { allow: false })}
               />
             ) : (
-              <PermissionCard key={permissionRequest.requestId} request={permissionRequest} onAnswer={(answer) => props.onAnswerPermission(permissionRequest.requestId, answer)} />
+              <PermissionCard
+                key={permissionRequest.requestId}
+                request={permissionRequest}
+                onAnswer={(answer) => props.onAnswerPermission(permissionRequest.requestId, answer)}
+                onPopOut={permissionPipSupported() ? () => void openPermissionPip() : undefined}
+              />
             ),
           )}
 

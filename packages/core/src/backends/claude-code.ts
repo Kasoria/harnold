@@ -201,7 +201,8 @@ async function sharedAgentOptions(context: TurnContext): Promise<Options> {
     model: context.model,
     thinking: { type: "adaptive", display: "summarized" },
     permissionMode,
-    allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
+    // Always allowed, so "allow everything" can be switched on mid-chat (otherwise only from the next chat on).
+    allowDangerouslySkipPermissions: true,
     settingSources: ["user", "project", "local"],
     // Backups before each edit, so files can be restored to the state before any user message.
     enableFileCheckpointing: true,

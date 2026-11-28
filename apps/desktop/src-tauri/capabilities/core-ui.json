@@ -16,6 +16,8 @@
     "allow-check-for-update",
     "allow-install-update",
     "allow-allow-embedded-origin",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "notification:default",
+    "core:window:allow-set-badge-count"
   ]
 }
